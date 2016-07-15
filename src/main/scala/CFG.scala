@@ -4,6 +4,7 @@ import scala.tools.nsc._
 object CFG {
   val settings : Settings = new Settings()
   settings.stopAfter.value = List("typer")
+  settings.embeddedDefaults[CFG.type]
   val global : Global = new Global(settings)
   import global._
 
