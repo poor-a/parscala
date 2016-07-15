@@ -104,12 +104,19 @@ object CFG {
     Entry(splitStmts(toList(body), Exit()))
   }
 
+  def expandPath(path : String) : String = 
+    if (path startsWith "~")
+      new File(System.getProperty("user.home"), path.tail).getPath()
+    else
+      path
+
   def main(args : Array[String]) : Unit = {
     val run = new global.Run()
     println("args exists?")
-    val xs : Array[(String, Boolean)] = args zip args.map{s => new File(s).exists()}
+    val pathes : Array[String] = args map expandPath
+    val xs : Array[(String, Boolean)] = args zip pathes.map{s => new File(s).exists()}
     xs foreach {x => println(s"${x._1} - ${x._2}")}
-    run.compile(args.toList)
+    run.compile(pathes.toList)
     println(s"units: ${run.units.length}")
     val units : Iterator[Tree] = run.units.map(_.body)
     val classes : Iterator[Tree] = units.flatMap(classesOf)
