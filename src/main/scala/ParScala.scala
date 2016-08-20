@@ -2,9 +2,11 @@ import java.io.{File,PrintWriter}
 import java.nio.file.{Paths,Files,Path,StandardOpenOption}
 
 import parscala._
+import parscala.tree._
 
 case class Config(val method : String,
              val showCfg : Boolean,
+             val showCallGraph : Boolean,
              val dotOutput : String,
              val files : List[String],
              val showHelp : Boolean
@@ -42,11 +44,15 @@ object ParScala {
           val xs : List[(String, Boolean)] = c.files zip pathes.map{new File(_).exists()}
           xs foreach {x => println("%s - %s".format(x._1, x._2))}
           if (xs.forall(_._2)) {
-            val units : List[CompilationUnit] = parscala.ParScala.analyse(pathes).toList
-            println(s"units: ${units.length}")
-            val classes : List[Class] = units.map(_.body).map(new Package(_)).flatMap(_.classes).map(new Class(_)).toList
-            println(s"classes (${classes.length}): ${classes.mkString(", ")}")
-            val methods : List[Method] = classes.flatMap(_.methods)
+            val g : ProgramGraph = parscala.ParScala.analyse(pathes)
+            if (c.showCallGraph) {
+              val d = new parscala.callgraph.Dot
+              println(d.format(g.callGraph._1))
+              MainWindow.showCallGraph(g.callGraph._1)
+            }
+            val classes : Set[Class] = g.packages flatMap (_.classes)
+            println(s"classes (${classes.size}): ${classes.mkString(", ")}")
+            val methods : Set[Method] = classes.flatMap(_.methods)
             println(s"methods: ${methods.mkString(", ")}")
             val parts : Array[String] = c.method.split('.')
             val oMethod : Option[Method] = methods.find(_.name == parts.last)

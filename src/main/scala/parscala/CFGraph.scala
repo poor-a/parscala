@@ -1,110 +1,28 @@
 package parscala
 
 import scala.language.higherKinds
+import tree._
 
-import compiler.TermSymbol
+abstract class O
+abstract class C
 
-class Class(val ast : Tree) {
+class Label
+
+object Done extends Label
+object Start extends Label
+
+object CFGraph {
   import compiler.Quasiquote
 
-  private val details : (Name,List[Tree],List[Tree],List[Tree]) = ast match {
-    case q"$_ class $name extends ..$earlydefs { ..$defs }" => (name,earlydefs,List(),defs)
-    case q"$_ class $name extends $earlydefs with ..$parents { ..$defs }" => (name,List(earlydefs),parents,defs)
-    case q"$_ object $name extends ..$earlydefs { ..$defs }" => (name,earlydefs,List(),defs)
-    case q"$_ object $name extends $earlydefs with ..$parents { ..$defs }" => (name,List(earlydefs),parents,defs)
-    case q"package object $name extends ..$earlydefs { ..$defs }" => (name,earlydefs,List(),defs)
-    case q"package object $name extends $earlydefs with ..$parents { ..$defs }" => (name,List(earlydefs),parents,defs)
-    case _ => throw new RuntimeException("not a class")
-  }
-
-  val name : String = details._1.toString()
-
-  override def toString : String = s"class $name"
-
-  lazy val methods : List[Method] = {
-    def isMethod (definition : Tree) : Boolean = definition match {
-      case q"$_ def $_ (...$_) : $_ = $_" => true
-      case _ => false
-    }
-
-    details._4 filter isMethod map {new Method(_, this)}
-  }
-}
-
-class Package(val ast : Tree) {
-  import compiler.Quasiquote
-
-  val name : String = ast match {
-    case q"package $p { ..$_ }" => p.toString
-    case _ => throw new RuntimeException("not a package")
-  }
-
-  lazy val classes : List[Tree] = {
-    def classesOf(packageDef : Tree) : List[Tree] = {
-      val q"package $_ { ..$topstats }" = packageDef
-      topstats.foldLeft(List[Tree]()){(cs, ast) => ast match {
-        case q"package $_ { ..$_ }" => classesOf(ast) ++ cs
-        case q"$_ class $_ extends $_" => ast :: cs
-        case q"$_ class $_ extends $_ { ..$_ }" => ast :: cs
-        case q"$_ class $_ extends $_ with $_ { ..$_ }" => ast :: cs
-        case q"$_ object $_ extends $_" => ast :: cs
-        case q"$_ object $_ extends $_ { ..$_ }" => ast :: cs
-        case q"$_ object $_ extends $_ with $_ { ..$_ }" => ast :: cs
-        case q"package object $_ extends $_" => ast :: cs
-        case q"package object $_ extends $_ { ..$_ }" => ast :: cs
-        case q"package object $_ extends $_ with $_ { ..$_ }" => ast :: cs
-        case _                    => cs
-      }}
-    }
-    
-    classesOf(ast)
-  }
-}
-
-class Method(val ast : Tree, val parent : Class) {
-  import compiler.Quasiquote
-
-  assert(ast != null, "ast of a method may not be null")
-  assert(parent != null, "parent of a method may not be null")
-
-  val (name, args, body) : (String, List[List[Tree]], Tree) = ast match {
-    case q"$_ def $name (...$args) : $_ = $body" => 
-      (name.toString(), args, body)
-    case _ => 
-      throw new RuntimeException("not a method")
-  }
-
-  lazy val vars : List[Variable] = {
-    def traverse[A](acc : A, t : Tree)(f : (A,Tree) => A) : A = {
+  def apply(m : Method) : CFGraph = {
+    def toList(t : Tree) : List[Tree] = 
       t match {
-        case q"{ ..$stmts}" => 
-          stmts.foldLeft(acc)(f)
-        case q"if ($p) $a else $b" => {
-          val acc1 = traverse(acc, p)(f)
-          val acc2 = traverse(acc1, a)(f)
-          traverse(acc2, b)(f)
+        case _ if t.isInstanceOf[compiler.Block] => {
+          val q"{ ..$stmts }" = t
+          stmts
         }
-        case q"while ($p) $body" => {
-          val acc1 = traverse(acc, p)(f)
-          traverse(acc1, body)(f)
-        }
+        case q"$stmt" => List(stmt)
       }
-    }
-
-    traverse(List[Variable](), body){(acc : List[Variable], t : Tree) => {
-        if (Variable.isVariableDef(t))
-          new Variable(t) :: acc
-        else
-          acc
-      }
-    }
-  }
-
-  lazy val cfg : CFGraph = {
-    def toList(t : Tree) : List[Tree] = t match {
-      case q"{ ..$stmts }" => stmts
-      case q"$stmt" => List(stmt)
-    }
 
     def cfgStmts(graph : CFGraph, b : Block[Node,C,O], nextLabel : Label, stmts : List[Tree]) : CFGraph = {
       def g(stmt : Tree) : Node[O,O] = NStmt(stmt)
@@ -144,58 +62,29 @@ class Method(val ast : Tree, val parent : Class) {
           val b1 = BCat(b, BLast(NJump(Done)))
           graph + (b.entryLabel -> b1)
         }
-        case x :: xs =>
+        case x :: xs => {
           val n : Node[O,O] = g(x)
           cfgStmts(graph, BCat(b, BMiddle(n)), nextLabel, xs)
-        case List() => 
+        }
+        case List() => {
           val flushed = BCat(b, BLast(NJump(nextLabel)))
           graph + (flushed.entryLabel -> flushed)
+        }
       }
     }
 
     val first = Block.empty[Node]
     val start = BCat(Block.empty(Start), BLast(NJump(first.entryLabel)))
     val graph = new CFGraph() + start
-    
-    cfgStmts(graph, first, Done, toList(body))
-  }
-  
 
-  override def toString : String = s"method ${parent.name}.$name"
-}
-
-object Variable {
-  def isVariableDef(ast : Tree) : Boolean = {
-    val isTerm : Boolean = ast.symbol != null && ast.symbol.isTerm
-    if (isTerm) {
-      val symbol : TermSymbol = ast.symbol.asTerm
-      symbol.isVar || symbol.isVal
-    }
-    else {
-      false
+    m.body match {
+      case Some(ast) => 
+        cfgStmts(graph, first, Done, toList(ast))
+      case None =>
+        cfgStmts(graph, first, Done, List.empty)
     }
   }
 }
-
-class Variable (val definition : Tree) {
-  assert(Variable.isVariableDef(definition), "not a variable")
-  val info : TermSymbol = definition.symbol.asTerm
-  val name : String = info.name.toString
-
-  override def toString : String = s"variable $name"
-}
-
-class Expression(val ast : Tree) {
-  override def toString : String = s"expression $ast"
-}
-
-abstract class O
-abstract class C
-
-class Label
-
-object Done extends Label
-object Start extends Label
 
 class CFGraph private (private[this] val graph : Map[Label, Block[Node,C,C]]) {
   def this() = this(Map())
@@ -211,7 +100,7 @@ trait NonLocal[E,X] {
   def successors(implicit evidence : X =:= C) : List[Label]
 }
 
-abstract class Node[E,X] extends NonLocal[E,X]
+sealed abstract class Node[E,X] extends NonLocal[E,X]
 
 case class NLabel(val label : Label) extends Node[C,O] {
   def entryLabel(implicit evidence : C =:= C) = label
@@ -238,15 +127,13 @@ case class NJump(val target : Label) extends Node[O,C] {
   def successors(implicit evidence : C =:= C) : List[Label] = List(target)
 }
 
-abstract class Block[A[_,_],E,X] extends NonLocal[E,X] {
-  
-}
-
 object Block {
   def empty[A[_,_]] : Block[Node,C,O] = BFirst(NLabel(new Label))
   def empty[A[_,_]](label : Label) : Block[Node,C,O] = 
     BFirst(NLabel(label))
 }
+
+sealed abstract class Block[A[_,_],E,X] extends NonLocal[E,X]
 
 case class BFirst[A[E,X] <: NonLocal[E,X]](val n : A[C,O]) extends Block[A,C,O] {
   def entryLabel(implicit evidence : C =:= C) : Label = n.entryLabel
@@ -267,20 +154,3 @@ case class BCat[A[_,_],E,X](val n1 : Block[A,E,O], val n2 : Block[A,O,X]) extend
   override def entryLabel(implicit evidence : E =:= C) : Label = n1.entryLabel
   override def successors(implicit evidence : X =:= C) : List[Label] = n2.successors
 }
-
-/*
-case class Block(stmts : List[Tree]) extends CFGraph {
-  override val successors : List[CFGraph] = List(cont)
-}
-
-case class If(thenBranch : CFGraph, elseBranch : CFGraph) extends CFGraph
-case class While(var body : CFGraph, cont : CFGraph) extends CFGraph {
-  override def toString() : String = s"While(<body>, $cont)"
-}
-case class Entry() extends CFGraph {
-  private[this] var Succs : Set[CFGraph] = HashSet()
-}
-
-case class Exit() extends CFGraph
-
-*/

@@ -17,6 +17,13 @@ class Cli {
      .required(false)
      .build()
 
+  private[this] val showCalls : cli.Option = 
+    cli.Option.builder("c")
+     .longOpt("show-calls")
+     .desc("show the call graph in a window")
+     .required(false)
+     .build()
+
   private[this] val dotOutput : cli.Option = 
     cli.Option.builder("o")
      .desc("dump the control flow graph into a dot file")
@@ -42,7 +49,7 @@ class Cli {
      .build()  
 
   private val options : cli.Options = {
-    val options = List(method, showCfg, dotOutput, files, help)
+    val options = List(method, showCfg, showCalls, dotOutput, files, help)
     options.foldLeft(new cli.Options){(acc, o) => acc.addOption(o)}
   }
 
@@ -61,6 +68,7 @@ class Cli {
       val result = parser.parse(options, args)
       Right(new Config(result.getOptionValue(method.getOpt, ""),
                        result.hasOption(showCfg.getOpt),
+                       result.hasOption(showCalls.getOpt),
                        result.getOptionValue(dotOutput.getOpt, ""),
                        result.getOptionValues(files.getOpt) match {
                          case null => List()
