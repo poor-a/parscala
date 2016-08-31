@@ -83,7 +83,10 @@ object Dot {
     val subs : List[(String,String)] = 
       List("\"" -> "\\\"",
            "<" -> "\\<",
-           ">" -> "\\>")
+           ">" -> "\\>",
+           "\n" -> "\\l",
+           "{" -> "\\{",
+           "}" -> "\\}")
     subs.foldLeft(s)((acc,p) => acc.replaceAllLiterally(p._1, p._2))
   }
 }

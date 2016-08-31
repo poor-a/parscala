@@ -13,7 +13,7 @@ object MainWindow {
       case Right(image) => {
         SwingUtilities.invokeLater(new Runnable() {
           def run() : Unit = {
-            val window : JFrame = createWindow("Control flow graph of %s.%s".format(method.parent.name, method.name))
+            val window : JFrame = createWindow("Control flow graph of %s".format(method.symbol.fullName.toString))
             window.add(image, BorderLayout.CENTER)
             window.pack()
             window.setVisible(true)
