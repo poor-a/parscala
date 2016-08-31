@@ -5,6 +5,7 @@ version := "0.0"
 scalaVersion := "2.11.8"
 
 libraryDependencies ++= Seq("org.scala-lang" % "scala-compiler" % "2.11.8",
+                            "org.scala-lang" % "scala-reflect" % "2.11.8",
                             "commons-cli" % "commons-cli" % "1.3.1")
 
 scalacOptions ++= Seq("-Xlint",
@@ -15,3 +16,5 @@ scalacOptions ++= Seq("-Xlint",
                       "-Ywarn-unused-import",
                       "-Ywarn-adapted-args",
                       "-target:jvm-1.8")
+
+enablePlugins(JavaAppPackaging)

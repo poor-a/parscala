@@ -1,11 +1,9 @@
-import scala.tools.nsc.Global
-
 import scala.tools.nsc.{Settings, Global}
 
 package object parscala {
-  private val settings : Settings = new Settings()
-  settings.stopAfter.value = List("typer")
+  private val settings : Settings = new Settings
   settings.embeddedDefaults[ParScala.type]
+  settings.stopAfter.value = List("typer")
   val compiler : Global = new Global(settings)
 
   type Tree = compiler.Tree

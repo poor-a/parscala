@@ -1,10 +1,6 @@
 package parscala;
 
-import java.io._
-import java.nio.charset.Charset
-import javax.swing.{JLabel,JScrollPane,JComponent,ImageIcon}
-import javax.imageio.ImageIO
-import scala.sys.process.{Process, ProcessBuilder}
+import parscala.dot._
 
 object CFGPrinter {
   def topoSort(graph : CFGraph) : List[Label] = {
@@ -27,122 +23,85 @@ object CFGPrinter {
     sort(Start, Set(), List())._2.reverse
   }
 
-  def formatLabels(graph : CFGraph, labels : List[(Label,Int)]) : String = {
-    def formatLabel(x : (Label, Int)) : String = {
+  def formatLabels(graph : CFGraph, labels : List[(Label,Int)]) : (List[DotNode], List[DotEdge]) = {
+    def formatLabel(x : (Label, Int)) : (DotNode, List[DotEdge]) = {
       val (l, n) = x
       l match {
         case Start => {
-          val id : String = block(n)
           val succs : List[Label] = graph(l).successors
-          val edges : List[String] = for (succ <- succs; 
+          val edges : List[DotEdge] = for (succ <- succs; 
                                           mId = labels.find(_._1 == succ); 
                                           if (!mId.isEmpty);
                                           targetId = mId.get._2)
-                                     yield edge(id, block(targetId))
+                                     yield edge(DotNode(n.toString), DotNode(targetId.toString))
 
-          String.format("%s [label=\"Start\"]\n%s", id, edges.mkString("\n"))
+          (DotNode(n.toString) !! DotAttr.label("Start"), edges)
         }
         case Done => {
-          val id : String = block(n)
-          String.format("%s [label=\"Done\"]", id)
+          (DotNode(n.toString) !! DotAttr.label("Done"), List.empty)
         }
         case _ => {
           val b : Block[Node,C,C] = graph(l)
-          val id : String = block(n)
           def contents(block : Block[Node,_,_]) : List[String] = block match {
             case BFirst(node) => List(formatNode(node, n))
             case BMiddle(node) => List(formatNode(node, n))
             case BLast(node) => List(formatNode(node, n))
             case BCat(node1, node2) => contents(node1) ++ contents(node2)
           }
-          def edges(block : Block[Node,_,C]) : List[String] = block match {
+          def edges(block : Block[Node,_,C]) : List[DotEdge] = block match {
             case BLast(node) => formatEdges(node, n, labels)
             case BCat(node1, node2) => edges(node2)
             case _ => List()
           }
           val header :: stmts = contents(b)
           val prettyStmts : String = stmts.mkString("\\l")
-          val prettyEdges : String = edges(b).mkString("\n")
+          val content : String = "{ %s | %s }".format(header, prettyStmts)
 
-          String.format("%s [shape=record, label=\"{ %s | %s }\"];\n%s", id, header, prettyStmts, prettyEdges)
+          (DotNode(n.toString) !! DotAttr.shape("record") !! DotAttr.labelWithPorts(content), edges(b))
         }
       }
     }
 
-    labels.map(formatLabel).mkString("\n")
+    labels.foldLeft(List[DotNode](), List[DotEdge]()) {(acc, x) =>
+      val (nodes, edges) = acc
+      val (xNode, xEdges) = formatLabel(x)
+      (xNode :: nodes, xEdges ++ edges)
+    }
   }
 
-  def formatEdges(node : Node[O,C], id : Int, labels : List[(Label,Int)]) : List[String] = {
+  def formatEdges(node : Node[O,C], id : Int, labels : List[(Label,Int)]) : List[DotEdge] = {
     def getId(label : Label) : Option[Int] = labels.find(_._1 == label).map(_._2)
     node match {
       case NJump(l) => 
         getId(l) match {
-          case Some(targetId) => List(edge(block(id), block(targetId)))
+          case Some(targetId) => List(edge(DotNode(id.toString), DotNode(targetId.toString)))
           case None => List()
         }
       case NCond(_,t,f) => 
         for ((targetId,port) <- List((getId(t),"p0"),(getId(f),"p1"));
              if (!targetId.isEmpty))
-        yield edgeP(block(id), port, block(targetId.get))
+        yield edgeP(DotNode(id.toString), port, DotNode(targetId.get.toString))
     }
   }
 
-  def formatNode(n : Node[_,_], i : Int) : String = { 
-    def dotEscape(s : String) : String = {
-      val subs : List[(String,String)] = 
-        List(("\"" -> "\\\""),
-             ("<" -> "\\<"),
-             (">" -> "\\>"))
-      subs.foldLeft(s)((acc,p) => acc.replaceAllLiterally(p._1, p._2))
-    }
-
+  def formatNode(n : Node[_,_], i : Int) : String = {
     n match {
       case NLabel(_) => "Block " + i.toString
-      case NStmt(stmt) => dotEscape(stmt.toString)
-      case NCond(expr,_,_) => dotEscape(expr.ast.toString) + " | {<p0> T | <p1> F}"
+      case NStmt(stmt) => Dot.dotEscape(stmt.toString)
+      case NCond(expr,_,_) => Dot.dotEscape(expr.ast.toString) + " | {<p0> T | <p1> F}"
       case NJump(_) => ""
       case _ => ""
     }
   }
 
-  def formatGraph(graph : CFGraph) : String = {
+  def formatGraph(graph : CFGraph) : DotGraph = {
     val labels : List[Label] = topoSort(graph)
-    val dotGraph : String = formatLabels(graph, labels zip (1 to labels.length))
-    s"digraph CFG {\n$dotGraph\n}"
+    val (nodes, edges) = formatLabels(graph, labels zip (1 to labels.length))
+    DotGraph("CFG", nodes, edges)
   }
 
-  def drawGraph(graph : CFGraph) : JComponent = {
-    invokeDot(formatGraph(graph)) match {
-      case Some(image) =>
-        new JScrollPane(new JLabel(new ImageIcon(ImageIO.read(image))))
-      case None => 
-        new JLabel("Error happened during image generation.")
-    }
-  }
-
-
-  private def invokeDot(input : String) : Option[InputStream] = {
-    val bytes : Array[Byte] = input.getBytes(Charset.forName("UTF-8"))
-    val dotInput : InputStream = new BufferedInputStream(new ByteArrayInputStream(bytes))
-    val image : ByteArrayOutputStream = new ByteArrayOutputStream
-    val dotOutput : BufferedOutputStream = new BufferedOutputStream(image)
-    val dot : ProcessBuilder = Process("dot", List("-Tpng"))
-    val exitCode : Int = (dot #< dotInput #> dotOutput).!
-    val readOnlyImage : Option[InputStream] = 
-      if (exitCode == 0) {
-        dotOutput.flush()
-        Some(new BufferedInputStream(new ByteArrayInputStream(image.toByteArray())))
-      } else {
-        None
-      }
-    dotInput.close()
-    dotOutput.close()
-    readOnlyImage
-  }
-
-  private def block(n : Int) : String = s"block$n"
-  private def edge(source : String, target : String) : String = 
-    s"$source -> $target;"
-  private def edgeP(source : String, port : String, target : String) : String = 
-    s"$source:$port -> $target;"
+  private def edge(source : DotNode, target : DotNode) : DotEdge = 
+    DotEdge(source, target, List())
+  private def edgeP(source : DotNode, port : String, target : DotNode) : DotEdge = 
+    edge(source, target) sourcePort port
 }

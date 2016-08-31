@@ -21,6 +21,12 @@ class CallGraph(val calls : List[Edge], val unresolved : List[(Symbol, Method =>
   def ++(other : CallGraph) : CallGraph = {
     new CallGraph(calls ++ other.calls, unresolved ++ other.unresolved)
   }
+
+  def call(m : Method) : List[Method] =
+    for (e <- calls; if (e.caller == m)) yield e.callee
+
+  def calledBy(m : Method) : List[Method] = 
+    for (e <- calls; if (e.callee == m)) yield e.caller
 }
 
 object CallGraphBuilder {

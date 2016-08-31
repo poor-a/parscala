@@ -46,8 +46,6 @@ object ParScala {
           if (xs.forall(_._2)) {
             val g : ProgramGraph = parscala.ParScala.analyse(pathes)
             if (c.showCallGraph) {
-              val d = new parscala.callgraph.Dot
-              println(d.format(g.callGraph._1))
               MainWindow.showCallGraph(g.callGraph._1)
             }
             val classes : Set[Class] = g.packages flatMap (_.classes)
