@@ -53,6 +53,10 @@ object CallGraphBuilder {
         fold(expr, acc)(f)
       case q"$_ var $_: $_ = $expr" =>
         fold(expr, acc)(f)
+      case q"new $parent(...$args)" =>
+        args.flatten.foldLeft(f(acc, ast)){(acc, arg) => fold(arg, acc)(f)}
+      case q"$g(...$args)" if ast.isInstanceOf[compiler.Apply] =>
+        args.flatten.foldLeft(f(acc, ast)){(acc, arg) => fold(arg, acc)(f)}
       case _ => 
         f(acc, ast)
     }
