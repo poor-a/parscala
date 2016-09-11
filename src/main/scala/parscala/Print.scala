@@ -8,40 +8,50 @@ object CFGPrinter {
       if (marked(from)) {
           (marked, sorted)
       } else {
-        if (from == Done) {
+        if (from == graph.done) {
           (marked + from, from :: sorted)
         } else {
-          val succs : List[Label] = graph(from).successors
-          succs.foldLeft((marked + from, from :: sorted)){(acc, l) =>
-            val (m, s) = acc
-            sort(l, m, s)
+          graph.get(from) map (_.successors) match {
+            case Some(succs : List[Label]) => 
+              succs.foldLeft((marked + from, from :: sorted)){(acc, l) =>
+                val (m, s) = acc
+                sort(l, m, s)
+              }
+            case None => (marked, sorted)
           }
         }
       }
     }
 
-    sort(Start, Set(), List())._2.reverse
+    sort(graph.start, Set(), List())._2.reverse
   }
 
   def formatLabels(graph : CFGraph, labels : List[(Label,Int)]) : (List[DotNode], List[DotEdge]) = {
-    def formatLabel(x : (Label, Int)) : (DotNode, List[DotEdge]) = {
+    def formatLabel(x : (Label, Int)) : Option[(DotNode, List[DotEdge])] = {
       val (l, n) = x
       l match {
-        case Start => {
-          val succs : List[Label] = graph(l).successors
-          val edges : List[DotEdge] = for (succ <- succs; 
-                                          mId = labels.find(_._1 == succ); 
-                                          if (!mId.isEmpty);
-                                          targetId = mId.get._2)
-                                     yield edge(DotNode(n.toString), DotNode(targetId.toString))
-
-          (DotNode(n.toString) !! DotAttr.label("Start"), edges)
+        case graph.start => {
+          graph.get(l) match {
+            case Some(b) => {
+              val succs : List[Label] = b.successors
+              val edges : List[DotEdge] = for (succ <- succs; 
+                                               mId = labels.find(_._1 == succ); 
+                                               if (!mId.isEmpty);
+                                               targetId = mId.get._2)
+                                         yield edge(node(n), node(targetId))
+              Some((DotNode(n.toString) !! DotAttr.label("Start"), edges))
+            }
+            case None =>
+              None
+          }
         }
-        case Done => {
-          (DotNode(n.toString) !! DotAttr.label("Done"), List.empty)
+        case graph.done => {
+          if (!graph.get(l).isEmpty)
+            Some((DotNode(n.toString) !! DotAttr.label("Done"), List.empty))
+          else
+            None
         }
         case _ => {
-          val b : Block[Node,C,C] = graph(l)
           def contents(block : Block[Node,_,_]) : List[String] = block match {
             case BFirst(node) => List(formatNode(node, n))
             case BMiddle(node) => List(formatNode(node, n))
@@ -53,34 +63,42 @@ object CFGPrinter {
             case BCat(node1, node2) => edges(node2)
             case _ => List()
           }
-          val header :: stmts = contents(b)
-          val prettyStmts : String = stmts.mkString("\\l")
-          val content : String = "{ %s | %s }".format(header, prettyStmts)
+          
+          graph.get(l) match {
+            case Some(b : Block[Node,C,C]) => {
+              val header :: stmts = contents(b)
+              val prettyStmts : String = stmts.mkString("\\l")
+              val content : String = "{ %s | %s }".format(header, prettyStmts)
 
-          (DotNode(n.toString) !! DotAttr.shape("record") !! DotAttr.labelWithPorts(content), edges(b))
+              Some((DotNode(n.toString) !! DotAttr.shape("record") !! DotAttr.labelWithPorts(content), edges(b)))
+            }
+            case None => None
+          }
         }
       }
     }
 
     labels.foldLeft(List[DotNode](), List[DotEdge]()) {(acc, x) =>
       val (nodes, edges) = acc
-      val (xNode, xEdges) = formatLabel(x)
-      (xNode :: nodes, xEdges ++ edges)
+      formatLabel(x) map (x => (x._1 :: nodes, x._2 ++ edges)) getOrElse acc
     }
   }
 
-  def formatEdges(node : Node[O,C], id : Int, labels : List[(Label,Int)]) : List[DotEdge] = {
+  def formatEdges(n : Node[O,C], id : Int, labels : List[(Label,Int)]) : List[DotEdge] = {
     def getId(label : Label) : Option[Int] = labels.find(_._1 == label).map(_._2)
-    node match {
+    n match {
       case NJump(l) => 
         getId(l) match {
-          case Some(targetId) => List(edge(DotNode(id.toString), DotNode(targetId.toString)))
-          case None => List()
+          case Some(targetId) => 
+            List(edge(node(id), node(targetId)))
+          case None =>
+            List()
         }
       case NCond(_,t,f) => 
-        for ((targetId,port) <- List((getId(t),"p0"),(getId(f),"p1"));
-             if (!targetId.isEmpty))
-        yield edgeP(DotNode(id.toString), port, DotNode(targetId.get.toString))
+        for ((Some(targetId),port) <- List((getId(t),"p0"),(getId(f),"p1")))
+        yield edgeP(node(id), port, node(targetId))
+      case NReturn() =>
+        List.empty
     }
   }
 
@@ -89,7 +107,6 @@ object CFGPrinter {
       case NLabel(_) => "Block " + i.toString
       case NStmt(stmt) => Dot.dotEscape(stmt.toString)
       case NCond(expr,_,_) => Dot.dotEscape(expr.ast.toString) + " | {<p0> T | <p1> F}"
-      case NJump(_) => ""
       case _ => ""
     }
   }
@@ -100,6 +117,8 @@ object CFGPrinter {
     DotGraph("CFG", nodes, edges)
   }
 
+  private def node(n : Int) : DotNode = 
+    DotNode(n.toString)
   private def edge(source : DotNode, target : DotNode) : DotEdge = 
     DotEdge(source, target, List())
   private def edgeP(source : DotNode, port : String, target : DotNode) : DotEdge = 

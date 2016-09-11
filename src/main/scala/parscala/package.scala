@@ -10,4 +10,6 @@ package object parscala {
   type Name = compiler.Name
   type Symbol = compiler.Symbol
   type CompilationUnit = compiler.CompilationUnit
+
+  type Label = Int
 }
