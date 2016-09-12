@@ -50,10 +50,9 @@ object ParScala {
             }
             val classes : Set[Class] = g.packages flatMap (_.classes)
             println(s"classes (${classes.size}): ${classes.mkString(", ")}")
-            val methods : Set[Method] = classes.flatMap(_.methods)
+            val methods : Set[Method] = g.methods
             println(s"methods: ${methods.mkString(", ")}")
-            val parts : Array[String] = c.method.split('.')
-            val oMethod : Option[Method] = methods.find(_.name == parts.last)
+            val oMethod : Option[Method] = methods.find(_.symbol.fullName == c.method)
             oMethod match {
               case Some(method) => {
                 if (c.showCfg) {
@@ -63,7 +62,8 @@ object ParScala {
                   dumpDot(c.dotOutput, method.cfg)
                 }
               }
-              case None => ()
+              case None =>
+                println("Method %s is not found.".format(c.method))
             }
           }
         }
