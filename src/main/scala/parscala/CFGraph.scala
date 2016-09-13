@@ -8,10 +8,38 @@ import tree._
 abstract class O
 abstract class C
 
+class ExtensibleCFGraph(graph : CFGraph, gen : Stream[Label]){
+  def mkLabel : (Label, ExtensibleCFGraph) = 
+    (gen.head, new ExtensibleCFGraph(graph, gen.tail))
+
+   def emptyBlock : (Block[Node, C, O], ExtensibleCFGraph) = {
+     val (l, gen2) = mkLabel
+     (BFirst(NLabel(l)), gen2)
+   }
+
+  val (start, done) : (Label, Label) = (graph.start, graph.done)
+
+  def +(block : Block[Node,C,C]) : ExtensibleCFGraph = 
+    new ExtensibleCFGraph(new CFGraph(graph.graph + (block.entryLabel -> block), graph.start, graph.done), gen)
+
+  def +(blocks : List[Block[Node,C,C]]) : ExtensibleCFGraph = 
+    blocks.foldLeft(this)(_ + _)
+
+  def update(l : Label, f : Block[Node,C,C] => Block[Node,C,C]) =
+    graph.get(l) map {b => new ExtensibleCFGraph(new CFGraph(graph.graph.updated(l, f(b)), graph.start, graph.done), gen)} getOrElse this
+
+  def freeze : CFGraph = 
+    graph
+}
+
 object CFGraph {
   import compiler.Quasiquote
 
-  def apply(m : Method) : CFGraph = {
+  def mkCFGraph(m : Method) : CFGraph =
+    apply(m).freeze
+
+  def apply(m : Method) : ExtensibleCFGraph = {
+
     def toList(t : Tree) : List[Tree] = 
       t match {
         case _ if t.isInstanceOf[compiler.Block] => {
@@ -23,95 +51,79 @@ object CFGraph {
 
     def emptyBlockWithLabel(label : Label) : Block[Node, C, O] = 
       BFirst(NLabel(label))
-
-    def emptyBlock(gen : Stream[Int]) : (Block[Node, C, O], Stream[Int]) = {
-      val (n, gen2) = mkLabel(gen)
-      (emptyBlockWithLabel(n), gen2)
-    }
     
-    def mkLabel(gen : Stream[Int]) : (Int, Stream[Int]) = {
-      val n = gen.head
-      (n, gen.tail)
-    }
-
-    def cfgStmts(graph : CFGraph, b : Block[Node,C,O], nextLabel : Label, gen : Stream[Int], stmts : List[Tree]) : (CFGraph, Stream[Int]) = {
+    def cfgStmts(graph : ExtensibleCFGraph, b : Block[Node,C,O], nextLabel : Label, stmts : List[Tree]) : ExtensibleCFGraph = {
       def g(stmt : Tree) : Node[O,O] = NStmt(stmt)
 
       stmts match {
         case q"if ($p) $t else $f" :: xs => {
-          val (tBranch, gen2) = emptyBlock(gen)
-          val (fBranch, gen3) = emptyBlock(gen2)
-          val (succ, gen4) = emptyBlock(gen3)
-          val (graph1, gen5) = cfgStmts(graph, tBranch, succ.entryLabel, gen4, toList(t))
-          val (graph2, gen6) = cfgStmts(graph1, fBranch, succ.entryLabel, gen5, toList(f))
+          val (tBranch, g2) = graph.emptyBlock
+          val (fBranch, g3) = g2.emptyBlock
+          val (succ, g4) = g3.emptyBlock
+          val g5 = cfgStmts(g4, tBranch, succ.entryLabel, toList(t))
+          val g6 = cfgStmts(g5, fBranch, succ.entryLabel, toList(f))
           val flushed = BCat(b, BLast(NCond(new Expression(p), tBranch.entryLabel, fBranch.entryLabel)))
-          val graph3 = graph2 + flushed
-          cfgStmts(graph3, succ, nextLabel, gen6, xs)
+          val g7 = g6 + flushed
+          cfgStmts(g7, succ, nextLabel, xs)
         }
         case q"while ($p) $loopBody" :: xs => {
-          val (succ, gen2) = emptyBlock(gen)
-          val (body, gen3) = emptyBlock(gen2)
-          val (testPBegin, gen4) = emptyBlock(gen3)
+          val (succ, g2) = graph.emptyBlock
+          val (body, g3) = g2.emptyBlock
+          val (testPBegin, g4) = g3.emptyBlock
           val testP = BCat(testPBegin, BLast(NCond(new Expression(p), body.entryLabel, succ.entryLabel)))
           val flushed = BCat(b, BLast(NJump(testP.entryLabel)))
-          val (graph1, gen5) = cfgStmts(graph, body, testP.entryLabel, gen4, toList(loopBody))
-          val graph2 = graph1 + testP + flushed
-          cfgStmts(graph2, succ, nextLabel, gen5, xs)
+          val g5 = cfgStmts(g4, body, testP.entryLabel, toList(loopBody))
+          val g6 = g5 + testP + flushed
+          cfgStmts(g6, succ, nextLabel, xs)
         }
         case q"do $loopBody while ($p)" :: xs => {
-          val (succ, gen2) = emptyBlock(gen)
-          val (body, gen3) = emptyBlock(gen2)
-          val (testPBegin, gen4) = emptyBlock(gen3)
+          val (succ, g2) = graph.emptyBlock
+          val (body, g3) = g2.emptyBlock
+          val (testPBegin, g4) = g3.emptyBlock
           val testP = BCat(testPBegin, BLast(NCond(new Expression(p), body.entryLabel, succ.entryLabel)))
           val flushed = BCat(b, BLast(NJump(body.entryLabel)))
-          val (graph1, gen5) = cfgStmts(graph, body, testP.entryLabel, gen4, toList(loopBody))
-          val graph2 = graph1 + testP + flushed
-          cfgStmts(graph2, succ, nextLabel, gen5, xs)
+          val g5 = cfgStmts(g4, body, testP.entryLabel, toList(loopBody))
+          val g6 = g5 + testP + flushed
+          cfgStmts(g6, succ, nextLabel, xs)
         }
         case q"return $_" :: _ => {
           val b1 = BCat(b, BLast(NJump(graph.done)))
-          (graph + b1, gen)
+          graph + b1
         }
         case q"throw $_" :: _ => {
           val b1 = BCat(b, BLast(NJump(graph.done)))
-          (graph + b1, gen)
+          graph + b1
         }
         case x :: xs => {
           val n : Node[O,O] = g(x)
-          cfgStmts(graph, BCat(b, BMiddle(n)), nextLabel, gen, xs)
+          cfgStmts(graph, BCat(b, BMiddle(n)), nextLabel, xs)
         }
         case List() => {
           val flushed = BCat(b, BLast(NJump(nextLabel)))
-          (graph + flushed, gen)
+          graph + flushed
         }
       }
     }
 
-    val gen = Stream.from(0)
-    val (first, gen2) = emptyBlock(gen)
-    val (s, gen3) = mkLabel(gen2)
-    val (d, gen4) = mkLabel(gen3)
-    val start = BCat(emptyBlockWithLabel(s), BLast(NJump(first.entryLabel)))
+    val gen : Stream[Label] = Stream.from(0)
+    val (List(fst, s, d), gen2) = ((gen take 3).toList, gen drop 3)
+    val start = BCat(emptyBlockWithLabel(s), BLast(NJump(fst)))
     val done = BCat(emptyBlockWithLabel(d), BLast(NReturn()))
-    val graph = new CFGraph(s, d) + start + done
+    val graph = new ExtensibleCFGraph(new CFGraph(start, done), gen2)
+    val first = emptyBlockWithLabel(fst)
 
     m.body match {
       case Some(ast) => 
-        cfgStmts(graph, first, d, gen4, toList(ast))._1
+        cfgStmts(graph, first, d, toList(ast))
       case None =>
-        cfgStmts(graph, first, d, gen4, List.empty)._1
+        cfgStmts(graph, first, d, List.empty)
     }
   }
 }
 
 class CFGraph (val graph : Map[Label, Block[Node,C,C]], val start : Label, val done : Label) {
-  def this(start : Label, done : Label) = this(Map(), start, done)
-
-  def +(block : Block[Node,C,C]) : CFGraph = 
-    new CFGraph(graph + (block.entryLabel -> block), start, done)
-
-  def +(blocks : List[Block[Node,C,C]]) : CFGraph = 
-    blocks.foldLeft(this)(_ + _)
+  def this(start : Block[Node,C,C], done : Block[Node,C,C]) =
+    this(Map(start.entryLabel -> start, done.entryLabel -> done), start.entryLabel, done.entryLabel)
 
   def get(v : Label) : Option[Block[Node,C,C]] = 
     graph.get(v)
@@ -220,7 +232,6 @@ class ReverseCFGraph(val g : CFGraph, val edges : List[(Label,Label)]) {
     val idom : DomTree = immediateDominators(dominators)
     val es : List[ControlEdge] = g.traverse(candidates, List.empty)
     val controlEdges : List[ControlEdge] = es flatMap {x => val (a,b) = x; walkUp(b, a, idom) map (a -> (_ : Label))}
-    
     new ControlDependency(g, controlEdges)
   }
 }
