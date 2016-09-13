@@ -48,7 +48,7 @@ case class Method(val symbol : Symbol, val mAst : Option[Tree]) {
   }
 
   val parent : Class = Class(symbol.owner, Set.empty, Set.empty)
-  val cfg : CFGraph = CFGraph.mkCFGraph(this)
+  lazy val cfg : CFGraph = CFGraph(this)
 }
 
 case class Field(val ast : Tree)

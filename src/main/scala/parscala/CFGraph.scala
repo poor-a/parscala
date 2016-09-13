@@ -20,7 +20,7 @@ class ExtensibleCFGraph(graph : CFGraph, gen : Stream[Label]){
   val (start, done) : (Label, Label) = (graph.start, graph.done)
 
   def +(block : Block[Node,C,C]) : ExtensibleCFGraph = 
-    new ExtensibleCFGraph(new CFGraph(graph.graph + (block.entryLabel -> block), graph.start, graph.done), gen)
+    new ExtensibleCFGraph(graph + block, gen)
 
   def +(blocks : List[Block[Node,C,C]]) : ExtensibleCFGraph = 
     blocks.foldLeft(this)(_ + _)
@@ -30,15 +30,21 @@ class ExtensibleCFGraph(graph : CFGraph, gen : Stream[Label]){
 
   def freeze : CFGraph = 
     graph
+
+  def controlDependency : (ControlDependency, ExtensibleCFGraph) = {
+    val (e, egraph) = emptyBlock
+    val entry : Block[Node,C,C] = BCat(e, BLast(NBranch(start, done)))
+    ((graph + entry).reverse.controlDependency, egraph)
+  }
 }
 
 object CFGraph {
   import compiler.Quasiquote
 
-  def mkCFGraph(m : Method) : CFGraph =
-    apply(m).freeze
+  def apply(m : Method) : CFGraph =
+    mkExtCFGraph(m).freeze
 
-  def apply(m : Method) : ExtensibleCFGraph = {
+  def mkExtCFGraph(m : Method) : ExtensibleCFGraph = {
 
     def toList(t : Tree) : List[Tree] = 
       t match {
@@ -128,6 +134,9 @@ class CFGraph (val graph : Map[Label, Block[Node,C,C]], val start : Label, val d
   def get(v : Label) : Option[Block[Node,C,C]] = 
     graph.get(v)
 
+  def +(b : Block[Node,C,C]) : CFGraph =
+    new CFGraph(graph + (b.entryLabel -> b), start, done)
+
   def traverse[A](f : (Block[Node,C,C], A) => A, x : A) : A = {
     def go(b : Block[Node,C,C], x : A, visited : Set[Block[Node,C,C]]) : (A, Set[Block[Node,C,C]]) = {
       if (visited(b))
@@ -153,6 +162,7 @@ class CFGraph (val graph : Map[Label, Block[Node,C,C]], val start : Label, val d
     }
     new ReverseCFGraph(this, traverse(f, List.empty))
   }
+
 }
 
 class ReverseCFGraph(val g : CFGraph, val edges : List[(Label,Label)]) {
@@ -263,6 +273,11 @@ case class NStmt(val stmt : Tree) extends Node[O,O] {
 case class NCond(val expr : Expression, val t : Label, val f : Label) extends Node[O,C] {
   def entryLabel(implicit evidence : O =:= C) : Label = ???
   def successors(implicit evidence : C =:= C) : List[Label] = List(t,f)
+}
+
+case class NBranch(val s1 : Label, val s2 : Label) extends Node[O,C] {
+  def entryLabel(implicit evidence : O =:= C) : Label = ???
+  def successors(implicit evidence : C =:= C) : List[Label] = List(s1,s2)
 }
 
 case class NJump(val target : Label) extends Node[O,C] {

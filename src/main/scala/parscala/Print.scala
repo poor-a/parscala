@@ -94,9 +94,12 @@ object CFGPrinter {
           case None =>
             List()
         }
-      case NCond(_,t,f) => 
-        for ((Some(targetId),port) <- List((getId(t),"p0"),(getId(f),"p1")))
+      case NCond(_, t, f) => 
+        for ((Some(targetId),port) <- List((getId(t), pTrue),(getId(f), pFalse)))
         yield edgeP(node(id), port, node(targetId))
+      case NBranch(l1, l2) =>
+        for (Some(targetId) <- List(getId(l1),getId(l2)))
+        yield edge(node(id), node(targetId))
       case NReturn() =>
         List.empty
     }
@@ -106,7 +109,7 @@ object CFGPrinter {
     n match {
       case NLabel(_) => "Block " + i.toString
       case NStmt(stmt) => Dot.dotEscape(stmt.toString)
-      case NCond(expr,_,_) => Dot.dotEscape(expr.ast.toString) + " | {<p0> T | <p1> F}"
+      case NCond(expr,_,_) => Dot.dotEscape(expr.ast.toString) + (" | {<%s> T | <%s> F}".format(pTrue, pFalse))
       case _ => ""
     }
   }
@@ -116,6 +119,9 @@ object CFGPrinter {
     val (nodes, edges) = formatLabels(graph, labels zip (1 to labels.length))
     DotGraph("CFG", nodes, edges)
   }
+
+  private val pTrue : String = "p0"
+  private val pFalse : String = "p1"
 
   private def node(n : Int) : DotNode = 
     DotNode(n.toString)
