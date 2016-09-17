@@ -12,8 +12,9 @@ object CFGPrinter {
           (marked + from, from :: sorted)
         } else {
           graph.get(from) map (_.successors) match {
-            case Some(succs : List[Label]) => 
-              succs.foldLeft((marked + from, from :: sorted)){(acc, l) =>
+            case Some(succs : List[(Label, CEdgeTag.TagType)]) => 
+              succs.foldLeft((marked + from, from :: sorted)){(acc, succ) =>
+                val (l, _) = succ
                 val (m, s) = acc
                 sort(l, m, s)
               }
@@ -33,7 +34,7 @@ object CFGPrinter {
         case graph.start => {
           graph.get(l) match {
             case Some(b) => {
-              val succs : List[Label] = b.successors
+              val succs : List[Label] = b.successors.map(_._1)
               val edges : List[DotEdge] = for (succ <- succs; 
                                                mId = labels.find(_._1 == succ); 
                                                if (!mId.isEmpty);
