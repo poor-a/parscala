@@ -103,14 +103,18 @@ object CFGPrinter {
         yield edge(node(id), node(targetId))
       case NReturn() =>
         List.empty
+      case NException(_, _, handler) =>
+        getId(handler) map { handlerId => List(edge(node(id), node(handlerId))) } getOrElse (List())
     }
   }
 
   def formatNode(n : Node[_,_], i : Int) : String = {
     n match {
       case NLabel(_) => "Block " + i.toString
-      case NStmt(stmt) => Dot.dotEscape(stmt.toString)
+      case NStmt(_, stmt) => Dot.dotEscape(stmt.toString)
       case NCond(expr,_,_) => Dot.dotEscape(expr.ast.toString) + (" | {<%s> T | <%s> F}".format(pTrue, pFalse))
+      case NExpr(_, expr) => Dot.dotEscape(expr.toString)
+      case NException(_, exception,_ ) => "throw " + Dot.dotEscape(exception.toString)
       case _ => ""
     }
   }

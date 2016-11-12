@@ -7,18 +7,14 @@ import parscala.callgraph.{CallGraph,CallGraphVisualiser}
 import parscala.dot.Dot
 
 object MainWindow {
-  def showCfg(method : Method) : Unit = {
+  def showCfg(method : Method) {
     val d : Dot = new Dot
     d.drawGraph(CFGPrinter.formatGraph(method.cfg)) match {
       case Right(image) => {
-        SwingUtilities.invokeLater(new Runnable() {
-          def run() : Unit = {
-            val window : JFrame = createWindow("Control flow graph of %s".format(method.symbol.fullName.toString))
-            window.add(image, BorderLayout.CENTER)
-            window.pack()
-            window.setVisible(true)
-         }
-        })
+        showWindow { w => {
+          w.setTitle("Control flow graph of %s".format(method.symbol.fullName.toString))
+          w.add(image, BorderLayout.CENTER)
+        }}
       }
       case Left(err) => {
         Console.err.println(err)
@@ -26,26 +22,32 @@ object MainWindow {
     }
   }
 
-  def showCallGraph(g : CallGraph) : Unit = {
+  def showCallGraph(g : CallGraph) {
     val d : Dot = new Dot
     d.drawGraph(CallGraphVisualiser.format(g)) match {
       case Right(image) => 
-        SwingUtilities.invokeLater(new Runnable() {
-          def run() : Unit = {
-            val window : JFrame = createWindow("Call graph")
-            window.add(image, BorderLayout.CENTER)
-            window.pack()
-            window.setVisible(true)
-          }
-        })
+        showWindow { w => {
+          w.setTitle("Call graph")
+          w.add(image, BorderLayout.CENTER)
+        }}
       case Left(err) =>
         Console.err.println(err)
     }
-
   }
 
-  private def createWindow(title : String) : JFrame = {
-    val frame : JFrame = new JFrame(title)
+  private def showWindow(setUp : JFrame => Unit) {
+    SwingUtilities.invokeLater(new Runnable() {
+      def run() : Unit = {
+        val window : JFrame = createWindow()
+        setUp(window)
+        window.pack()
+        window.setVisible(true)
+      }
+    })
+  }
+
+  private def createWindow() : JFrame = {
+    val frame : JFrame = new JFrame
     frame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE)
     frame.setPreferredSize(new Dimension(800, 600))
     frame

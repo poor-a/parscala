@@ -3,6 +3,8 @@ package parscala
 import scala.language.higherKinds
 import scala.collection.immutable.Stream
 
+import scalaz.State
+
 import tree._
 
 abstract class O
@@ -146,85 +148,223 @@ object CFGraph {
   def apply(m : Method) : CFGraph =
     mkExtCFGraph(m).freeze
 
-  def mkExtCFGraph(m : Method) : ExtensibleCFGraph = {
+  type St = (Stream[Label], CFGraph)
 
-    def toList(t : Tree) : List[Tree] = 
-      t match {
-        case _ if t.isInstanceOf[compiler.Block] => {
-          val q"{ ..$stmts }" = t
-          stmts
-        }
-        case q"$stmt" => List(stmt)
+  type CFGGen[A] = State[St, A]
+
+  def genLabel : CFGGen[Label] =
+    for (l <- State.gets[St, Label](_._1.head);
+         _ <- State.modify[St]{ case (stream, graph) => (stream.tail, graph) })
+    yield l
+
+  private def toList(t : Tree) : List[Tree] = 
+    t match {
+      case _ if t.isInstanceOf[compiler.Block] => {
+        val q"{ ..$stmts }" = t
+        stmts
       }
-
-    def emptyBlockWithLabel(label : Label) : Block[Node, C, O] = 
-      BFirst(NLabel(label))
-    
-    def cfgStmts(graph : ExtensibleCFGraph, b : Block[Node,C,O], nextLabel : Label, stmts : List[Tree]) : ExtensibleCFGraph = {
-      def g(stmt : Tree) : Node[O,O] = NStmt(stmt)
-
-      stmts match {
-        case q"if ($p) $t else $f" :: xs => {
-          val (tBranch, g2) = graph.emptyBlock
-          val (fBranch, g3) = g2.emptyBlock
-          val (succ, g4) = g3.emptyBlock
-          val g5 = cfgStmts(g4, tBranch, succ.entryLabel, toList(t))
-          val g6 = cfgStmts(g5, fBranch, succ.entryLabel, toList(f))
-          val flushed = BCat(b, BLast(NCond(new Expression(p), tBranch.entryLabel, fBranch.entryLabel)))
-          val g7 = g6 + flushed
-          cfgStmts(g7, succ, nextLabel, xs)
-        }
-        case q"while ($p) $loopBody" :: xs => {
-          val (succ, g2) = graph.emptyBlock
-          val (body, g3) = g2.emptyBlock
-          val (testPBegin, g4) = g3.emptyBlock
-          val testP = BCat(testPBegin, BLast(NCond(new Expression(p), body.entryLabel, succ.entryLabel)))
-          val flushed = BCat(b, BLast(NJump(testP.entryLabel)))
-          val g5 = cfgStmts(g4, body, testP.entryLabel, toList(loopBody))
-          val g6 = g5 + testP + flushed
-          cfgStmts(g6, succ, nextLabel, xs)
-        }
-        case q"do $loopBody while ($p)" :: xs => {
-          val (succ, g2) = graph.emptyBlock
-          val (body, g3) = g2.emptyBlock
-          val (testPBegin, g4) = g3.emptyBlock
-          val testP = BCat(testPBegin, BLast(NCond(new Expression(p), body.entryLabel, succ.entryLabel)))
-          val flushed = BCat(b, BLast(NJump(body.entryLabel)))
-          val g5 = cfgStmts(g4, body, testP.entryLabel, toList(loopBody))
-          val g6 = g5 + testP + flushed
-          cfgStmts(g6, succ, nextLabel, xs)
-        }
-        case q"return $_" :: _ => {
-          val b1 = BCat(b, BLast(NJump(graph.done)))
-          graph + b1
-        }
-        case q"throw $_" :: _ => {
-          val b1 = BCat(b, BLast(NJump(graph.done)))
-          graph + b1
-        }
-        case x :: xs => {
-          val n : Node[O,O] = g(x)
-          cfgStmts(graph, BCat(b, BMiddle(n)), nextLabel, xs)
-        }
-        case List() => {
-          val flushed = BCat(b, BLast(NJump(nextLabel)))
-          graph + flushed
-        }
-      }
+      case q"$stmt" => List(stmt)
     }
 
+  def mkExtCFGraph(m : Method) : ExtensibleCFGraph = {
     val gen : Stream[Label] = Stream.from(0)
-    val (List(fst, s, d), gen2) = ((gen take 3).toList, gen drop 3)
+    val (List(fst,s,d), gen2) = ((gen take 3).toList, gen drop 3)
+
     val start = BCat(emptyBlockWithLabel(s), BLast(NJump(fst)))
     val done = BCat(emptyBlockWithLabel(d), BLast(NReturn()))
-    val graph = new ExtensibleCFGraph(new CFGraph(start, done), gen2)
+    val graph = new CFGraph(start, done)
     val first = emptyBlockWithLabel(fst)
 
-    m.body match {
-      case Some(ast) => 
-        cfgStmts(graph, first, d, toList(ast))
-      case None =>
-        cfgStmts(graph, first, d, List.empty)
+    val stmts : List[Tree] = m.body match {
+      case Some(ast) => toList(ast)
+      case None => List.empty
+    }
+
+    val (labelGen, cfg) = cfgStmts(first, d, stmts, detailedStmtCfg) exec ((gen2, graph))
+    new ExtensibleCFGraph(cfg, labelGen)
+  }
+
+  def emptyBlockWithLabel(label : Label) : Block[Node, C, O] = 
+    BFirst(NLabel(label))
+
+  def emptyBlock : State[St, Block[Node, C, O]] = 
+    for (l <- genLabel) yield emptyBlockWithLabel(l)
+    
+  def cfgStmts(b : Block[Node,C,O], nextLabel : Label, stmts : List[Tree], g : (Tree, Block[Node,C,O]) => CFGGen[Block[Node,C,O]]) : State[St, Unit] = {
+
+    stmts match {
+      case q"if ($p) $t else $f" :: xs => {
+        for (tBranch <- emptyBlock;
+             fBranch <- emptyBlock;
+             succ <- emptyBlock;
+             _ <- cfgStmts(tBranch, succ.entryLabel, toList(t), g);
+             _ <- cfgStmts(fBranch, succ.entryLabel, toList(f), g);
+             bWithTest <- g(p, b);
+             flushed =  BCat(bWithTest, BLast(NCond(new Expression(p), tBranch.entryLabel, fBranch.entryLabel)));
+             _ <- State.modify[St]{ case (stream, graph) => (stream, graph + flushed) };
+             _ <- cfgStmts(succ, nextLabel, xs, g))
+        yield ()
+      }
+      case q"while ($p) $loopBody" :: xs => {
+        for (succ <- emptyBlock;
+             body <- emptyBlock;
+             testPBegin <- emptyBlock;
+             withTest <- g(p, testPBegin);
+             testP = BCat(withTest, BLast(NCond(new Expression(p), body.entryLabel, succ.entryLabel)));
+             flushed = BCat(b, BLast(NJump(testP.entryLabel)));
+             _ <- State.modify[St]{ case (stream, graph) => (stream, graph + flushed + testP) };
+             _ <- cfgStmts(body, testP.entryLabel, toList(loopBody), g);
+             _ <- cfgStmts(succ, nextLabel, xs, g))
+        yield ()
+      }
+      case q"do $loopBody while ($p)" :: xs => {
+        for (succ <- emptyBlock;
+             body <- emptyBlock;
+             testPBegin <- emptyBlock;
+             withTest <- g(p, testPBegin);
+             testP = BCat(withTest, BLast(NCond(new Expression(p), body.entryLabel, succ.entryLabel)));
+             flushed = BCat(b, BLast(NJump(body.entryLabel)));
+             _ <- State.modify[St]{ case (stream, graph) => (stream, graph + flushed + testP) };
+             _ <- cfgStmts(body, testP.entryLabel, toList(loopBody), g);
+             _ <- cfgStmts(succ, nextLabel, xs, g))
+        yield ()
+      }
+      case q"$expr match { case ..$cases }" :: xs =>
+        for (succ <- emptyBlock;
+             withExpr <- g(expr, b);
+             done <- State.gets[St, Label](_._2.done);
+             _ <- cfgCases(cases, withExpr, succ.entryLabel, done, g);
+             _ <- cfgStmts(succ, nextLabel, xs, g))
+        yield ()
+      case q"return $e" :: _ =>
+        for (eEvaled <- g(e, b);
+             _ <- State.modify[St]{ case (stream, graph) => 
+                    val b1 = BCat(eEvaled, BLast(NJump(graph.done)))
+                    (stream, graph + b1) })
+        yield ()
+      case q"throw $e" :: _ => { 
+        for (eEvaled <- g(e, b);
+             _ <- State.modify[St]{ case (stream, graph) =>
+                    val b1 = BCat(b, BLast(NJump(graph.done)));
+                    (stream, graph + b1) })
+        yield ()
+      }
+      case x :: xs => {
+        for (b2 <- g(x, b);
+             _ <- cfgStmts(b2, nextLabel, xs, g))
+        yield ()
+      }
+      case List() => {
+        val flushed = BCat(b, BLast(NJump(nextLabel)))
+        State.modify{ case (stream, graph) => (stream, graph + flushed) }
+      }
+    }
+  }
+
+  def cfgCases(cases : List[compiler.CaseDef], current : Block[Node,C,O], next : Label, abruptNext : Label, g : (Tree, Block[Node,C,O]) => CFGGen[Block[Node,C,O]] ) : CFGGen[Unit] = {
+    cases match {
+      case List(c) => 
+        c match {
+          case cq"$pat => $res" =>
+            for (t <- emptyBlock;
+                 f <- emptyBlock;
+                 exceptionL <- genLabel;
+                 error = BCat(f, BLast(new NException(exceptionL, classOf[MatchError], abruptNext)));
+                 flushed = BCat(current, BLast(NCond(new Expression(pat), t.entryLabel, f.entryLabel)));
+                 _ <- State.modify[St]{ case (gen, graph) => (gen, graph + flushed + error) };
+                 _ <- cfgStmts(t, next, toList(res), g))
+            yield ()
+          case cq"$pat if $pred => $res" =>
+            for (predEmpty <- emptyBlock;
+                 t <- emptyBlock;
+                 f <- emptyBlock;
+                 exceptionL <- genLabel;
+                 error = BCat(f, BLast(new NException(exceptionL, classOf[MatchError], abruptNext)));
+                 flushed = BCat(current, BLast(NCond(new Expression(pat), predEmpty.entryLabel, f.entryLabel)));
+                 pred2 = BCat(predEmpty, BLast(NCond(new Expression(pred), t.entryLabel, f.entryLabel)));
+                 _ <- State.modify[St]{ case (gen, graph) => (gen, graph + flushed + error + pred2) };
+                 _ <- cfgStmts(t, next, toList(res), g))
+            yield ()
+        }
+      case c :: cs => 
+        c match {
+          case cq"$pat => $res" =>
+            for (t <- emptyBlock;
+                 f <- emptyBlock;
+                 flushed = BCat(current, BLast(NCond(new Expression(pat), t.entryLabel, f.entryLabel)));
+                 _ <- State.modify[St]{ case (gen, graph) => (gen, graph + flushed) };
+                 _ <- cfgStmts(t, next, toList(res), g);
+                 _ <- cfgCases(cs, f, next, abruptNext, g))
+            yield ()
+          case cq"$pat if $pred => $res" =>
+            for (predEmpty <- emptyBlock;
+                 t <- emptyBlock;
+                 f <- emptyBlock;
+                 flushed = BCat(current, BLast(NCond(new Expression(pat), predEmpty.entryLabel, f.entryLabel)));
+                 pred2 = BCat(predEmpty, BLast(NCond(new Expression(pred), t.entryLabel, f.entryLabel)));
+                 _ <- State.modify[St]{ case (gen, graph) => (gen, graph + flushed + pred2) };
+                 _ <- cfgStmts(t, next, toList(res), g);
+                 _ <- cfgCases(cs, f, next, abruptNext, g))
+            yield ()
+        }
+      case List() =>
+        State.state(())
+    }
+  }
+
+  def simpleStmtCfg(stmt : Tree, current : Block[Node,C,O]) : CFGGen[Block[Node,C,O]] = {
+    for (l <- genLabel)
+    yield BCat(current, BMiddle(NStmt(l, stmt)))
+  }
+
+  def foldM[A, B, S](f : (A, B) => State[S, A], e : A, l : List[B]) : State[S,A] = {
+    l match {
+      case List() => State.state(e)
+      case x :: xs => 
+        for (e2 <- f(e, x);
+             e3 <- foldM(f, e2, xs))
+        yield e3
+    }
+  }
+
+  def detailedStmtCfg(stmt : Tree, current : Block[Node,C,O]) : CFGGen[Block[Node,C,O]] = {
+    println(stmt)
+    def app(b : Block[Node,C,O], f : Label => Node[O,O]) : CFGGen[Block[Node,C,O]] =
+       for (l <- genLabel)
+       yield BCat(b, BMiddle(f(l)))
+
+    stmt match {
+      case q"(..$components)" if components.size >= 2 =>
+        println("  a tuple")
+        for (b <- foldM(app, current, components.reverse map {c => NExpr(_ : Label, c)});
+             l <- genLabel)
+        yield BCat(b, BMiddle(NExpr(l, stmt)))
+      case q"new { ..$earlydefns } with ..$parents { $self => ..$stats }" => 
+        val q"$_(...$args)" :: _ = parents
+        for (b <- foldM((acc : Block[Node,C,O], e : Tree) => detailedStmtCfg(e, acc), current, args.flatten);
+             b2 <- app(b, NExpr(_ : Label, stmt)))
+        yield b2
+      case q"$expr.$tname" =>
+        println("  a selection")
+        for (b <- detailedStmtCfg(expr, current);
+             b2 <- app(b, NExpr(_ : Label, stmt)))
+        yield b2
+      case q"$expr(...$args)" if stmt.isInstanceOf[compiler.Apply] =>
+        println("  an application")
+        println("  " + expr)
+        println("  " + args)
+        for (b <- detailedStmtCfg(expr, current); 
+             b2 <- foldM(app, b, args.flatten.reverse map {c => NExpr(_ : Label, c)});
+             b3 <- app(b2, NExpr(_ : Label, stmt)))
+        yield b3
+      case q"$lexpr = $rexpr" =>
+        for (b <- detailedStmtCfg(lexpr, current);
+             b2 <- detailedStmtCfg(rexpr, b);
+             b3 <- app(b2, NExpr(_ : Label, stmt)))
+        yield b3
+      case _ =>         
+        println("  other")
+        simpleStmtCfg(stmt, current)
     }
   }
 }
@@ -412,7 +552,12 @@ case class NAssign(val variable : Variable, val expr : Expression) extends Node[
   def successors(implicit evidence : O =:= C) : List[(Label, CEdgeTag.TagType)] = ???
 }
 
-case class NStmt(val stmt : Tree) extends Node[O,O] {
+case class NExpr(val l : Label, val expr : Tree) extends Node[O,O] {
+  def entryLabel(implicit evidence : O =:= C) : Label = ???
+  def successors(implicit evidence : O =:= C) : List[(Label, CEdgeTag.TagType)] = ???
+}
+
+case class NStmt(val l : Label, val stmt : Tree) extends Node[O,O] {
   def entryLabel(implicit evidence : O =:= C) : Label = ???
   def successors(implicit evidence : O =:= C) : List[(Label, CEdgeTag.TagType)] = ???
 }
@@ -435,6 +580,11 @@ case class NJump(val target : Label) extends Node[O,C] {
 case class NReturn() extends Node[O,C] {
   def entryLabel(implicit evidence : O =:= C) : Label = ???
   def successors(implicit evidence : C =:= C) : List[(Label, CEdgeTag.TagType)] = List()
+}
+
+case class NException[T <: Throwable](val l : Label, val e : Predef.Class[T], val handler : Label) extends Node[O,C] {
+  def entryLabel(implicit evidence : O =:= C) : Label = l
+  def successors(implicit evidence : C =:= C) : List[(Label, CEdgeTag.TagType)] = List((handler, CEdgeTag.NoLabel))
 }
 
 sealed abstract class Block[A[_,_],E,X] extends NonLocal[E,X]

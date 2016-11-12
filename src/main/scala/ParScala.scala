@@ -70,23 +70,4 @@ object ParScala {
       }
     }
   }
-
-  val ecfg : ExtensibleCFGraph = {
-    val entry : Label = -1
-    val start : Label = 0
-    val done : Label = 8
-
-    val e : Expression = {
-      import parscala.compiler.Quasiquote
-      new Expression(q"1 + 2")
-    }
-
-    def empty0(s : Int) : Block[Node,C,C] = BCat(BFirst(NLabel(s)), BLast(NReturn()))
-    def empty(s : Int, n : Int) : Block[Node,C,C] = BCat(BFirst(NLabel(s)), BLast(NJump(n)))
-    def empty2(s : Int, n1 : Int, n2 : Int) = BCat(BFirst(NLabel(s)), BLast(NCond(e, n1, n2)))
-
-    val nodes : List[Block[Node,C,C]] = List(empty(start, 1), empty2(1,2,3), empty2(2,4,5), empty2(3,5,7), empty(4,6), empty(5,6), empty(6,7),empty(7,8))
-    new ExtensibleCFGraph(new CFGraph(empty(start, 1), empty0(done)) + nodes, Stream.from(done + 1))
-  }
-
 }
