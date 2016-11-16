@@ -8,6 +8,7 @@ package object parscala {
 
   type Tree = compiler.Tree
   type Name = compiler.Name
+  type TermName = compiler.TermName
   type Symbol = compiler.Symbol
   type CompilationUnit = compiler.CompilationUnit
 

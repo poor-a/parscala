@@ -13,6 +13,10 @@ class ProgramGraph(val packages : Set[Package]) {
   def methods : Set[Method] =
     (packages.toIterator flatMap (_.classes) flatMap (_.methods)).toSet
 
+  def findMethod(s : Symbol) : Option[Method] = {
+    methods find (_.symbol == s)
+  }
+
   def callGraph : (CallGraph, ProgramGraph) = {
     val cs : Iterator[CallGraph] = methods.toIterator map (CallGraphBuilder.getCalls(_))
     val g : CallGraph = cs.foldLeft(CallGraphBuilder.empty)(_ ++ _)

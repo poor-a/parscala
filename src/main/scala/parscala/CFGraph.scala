@@ -341,24 +341,27 @@ object CFGraph {
     def app(b : Block[Node,C,O], f : Label => Node[O,O]) : CFGGen[Block[Node,C,O]] =
        for (l <- genLabel)
        yield BCat(b, BMiddle(f(l)))
-
-    stmt match {
-      case q"(..$components)" if components.size >= 2 =>
+        
+    tree.Control.exprCata(
+      components => {
         println("  a tuple")
         for (b <- foldM((acc : Block[Node,C,O], e : Tree) => detailedStmtCfg(e, acc), current, components.reverse);
              l <- genLabel)
-        yield BCat(b, BMiddle(NExpr(l, stmt)))
-      case q"new { ..$earlydefns } with ..$parents { $self => ..$stats }" => 
+        yield BCat(b, BMiddle(NExpr(l, stmt))) 
+      },
+      (earlydefns, parents, stats) => {
         val q"$_(...$args)" :: _ = parents
         for (b <- foldM((acc : Block[Node,C,O], e : Tree) => detailedStmtCfg(e, acc), current, args.flatten.reverse);
              b2 <- app(b, NExpr(_ : Label, stmt)))
         yield b2
-      case q"$expr.$tname" =>
+      },
+      (expr, tname) => {
         println("  a selection")
         for (b <- detailedStmtCfg(expr, current);
              b2 <- app(b, NExpr(_ : Label, stmt)))
         yield b2
-      case q"$expr(...$args)" if stmt.isInstanceOf[compiler.Apply] =>
+      },
+      (expr, args) => {
         println("  an application")
         println("  " + expr)
         println("  " + args)
@@ -366,15 +369,19 @@ object CFGraph {
              b2 <- foldM((acc : Block[Node,C,O], e : Tree) => detailedStmtCfg(e, acc), b, args.flatten.reverse);
              b3 <- app(b2, NExpr(_ : Label, stmt)))
         yield b3
-      case q"$lexpr = $rexpr" =>
+      },
+      (lexpr, rexpr) => {
         for (b <- detailedStmtCfg(lexpr, current);
              b2 <- detailedStmtCfg(rexpr, b);
              b3 <- app(b2, NExpr(_ : Label, stmt)))
         yield b3
-      case _ =>         
+      },
+      (other : Tree) => {
         println("  other")
         simpleStmtCfg(stmt, current)
-    }
+      },
+      stmt
+    )
   }
 }
 
