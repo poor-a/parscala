@@ -18,8 +18,7 @@ scalacOptions ++= Seq("-Xlint",
                       "-Ywarn-unused",
                       "-Ywarn-unused-import",
                       "-Ywarn-adapted-args",
-                      "-target:jvm-1.8",
-                      "-Xmax-classfile-name", "130")
+                      "-target:jvm-1.8")
 
 enablePlugins(JavaAppPackaging)
 
