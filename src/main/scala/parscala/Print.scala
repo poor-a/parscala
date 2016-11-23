@@ -3,8 +3,8 @@ package parscala;
 import parscala.dot._
 
 object CFGPrinter {
-  def topoSort(graph : CFGraph) : List[Label] = {
-    def sort(from : Label, marked : Set[Label], sorted : List[Label]) : (Set[Label],List[Label]) = {
+  def topoSort(graph : CFGraph) : List[BLabel] = {
+    def sort(from : BLabel, marked : Set[BLabel], sorted : List[BLabel]) : (Set[BLabel],List[BLabel]) = {
       if (marked(from)) {
           (marked, sorted)
       } else {
@@ -12,7 +12,7 @@ object CFGPrinter {
           (marked + from, from :: sorted)
         } else {
           graph.get(from) map (_.successors) match {
-            case Some(succs : List[(Label, CEdgeTag.TagType)]) => 
+            case Some(succs : List[(BLabel, CEdgeTag.TagType)]) => 
               succs.foldLeft((marked + from, from :: sorted)){(acc, succ) =>
                 val (l, _) = succ
                 val (m, s) = acc
@@ -27,14 +27,14 @@ object CFGPrinter {
     sort(graph.start, Set(), List())._2.reverse
   }
 
-  def formatLabels(graph : CFGraph, labels : List[(Label,Int)]) : (List[DotNode], List[DotEdge]) = {
-    def formatLabel(x : (Label, Int)) : Option[(DotNode, List[DotEdge])] = {
+  def formatLabels(graph : CFGraph, labels : List[(BLabel,Int)]) : (List[DotNode], List[DotEdge]) = {
+    def formatLabel(x : (BLabel, Int)) : Option[(DotNode, List[DotEdge])] = {
       val (l, n) = x
       l match {
         case graph.start => {
           graph.get(l) match {
             case Some(b) => {
-              val succs : List[Label] = b.successors.map(_._1)
+              val succs : List[BLabel] = b.successors.map(_._1)
               val edges : List[DotEdge] = for (succ <- succs; 
                                                mId = labels.find(_._1 == succ); 
                                                if (!mId.isEmpty);
@@ -85,8 +85,8 @@ object CFGPrinter {
     }
   }
 
-  def formatEdges(n : Node[O,C], id : Int, labels : List[(Label,Int)]) : List[DotEdge] = {
-    def getId(label : Label) : Option[Int] = labels.find(_._1 == label).map(_._2)
+  def formatEdges(n : Node[O,C], id : Int, labels : List[(BLabel,Int)]) : List[DotEdge] = {
+    def getId(label : BLabel) : Option[Int] = labels.find(_._1 == label).map(_._2)
     n match {
       case NJump(l) => 
         getId(l) match {
@@ -101,10 +101,14 @@ object CFGPrinter {
       case NBranch(l1, l2) =>
         for (Some(targetId) <- List(getId(l1),getId(l2)))
         yield edge(node(id), node(targetId))
-      case NReturn() =>
-        List.empty
+      case NReturn(_, _, target) =>
+        getId(target) map {targetId => List(edge(node(id), node(targetId)))} getOrElse List.empty
       case NException(_, _, handler) =>
         getId(handler) map { handlerId => List(edge(node(id), node(handlerId))) } getOrElse (List())
+      case NThrow(_, _, _) =>
+        ???
+      case NDone() =>
+        ???
     }
   }
 
@@ -120,7 +124,7 @@ object CFGPrinter {
   }
 
   def formatGraph(graph : CFGraph) : DotGraph = {
-    val labels : List[Label] = topoSort(graph)
+    val labels : List[BLabel] = topoSort(graph)
     val (nodes, edges) = formatLabels(graph, labels zip (1 to labels.length))
     DotGraph("CFG", nodes, edges)
   }

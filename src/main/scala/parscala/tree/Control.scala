@@ -17,6 +17,7 @@ object Control {
    * @param sel handles a selection of a field or method of an object
    * @param app handles the applied method and its actual parameter lists
    * @param ass handles the left and right side of an assignment
+   * @param idDef handles the modifiers, identifier and right side of an identifier definition (val or var)
    * @return the common type A
    */
   def exprCata[A](tuple : List[Tree] => A,
@@ -24,6 +25,7 @@ object Control {
                   sel : (Tree, TermName) => A,
                   app : (Tree, List[List[Tree]]) => A,
                   ass : (Tree, Tree) => A,
+                  idDef : (Modifiers, TermName, Tree) => A,
                   other : Tree => A,
                   t : Tree) : A = {
     import compiler.Quasiquote
@@ -34,6 +36,8 @@ object Control {
       case q"$expr.$tname" => sel(expr, tname)
       case q"$expr(...$args)" if t.isInstanceOf[compiler.Apply] => app(expr, args)
       case q"$lexpr = $rexpr" => ass(lexpr, rexpr)
+      case q"$mods val $name = $expr" => idDef(mods, name, expr)
+      case q"$mods var $name = $expr" => idDef(mods, name, expr)
       case _ => other(t)
     }
   }
