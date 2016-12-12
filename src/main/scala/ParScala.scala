@@ -3,6 +3,7 @@ import java.nio.file.{Paths,Files,Path,StandardOpenOption}
 
 import parscala._
 import parscala.tree._
+import parscala.controlflow.{CFGraph, CFGPrinter}
 
 case class Config(val method : String,
              val showCfg : Boolean,

@@ -2,7 +2,7 @@ import javax.swing.{JFrame,WindowConstants,SwingUtilities}
 import java.awt.{BorderLayout,Dimension}
 
 import parscala.tree.Method
-import parscala.CFGPrinter
+import parscala.controlflow.CFGPrinter
 import parscala.callgraph.{CallGraph,CallGraphVisualiser}
 import parscala.dot.Dot
 

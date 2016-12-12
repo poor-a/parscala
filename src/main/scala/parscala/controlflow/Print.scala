@@ -1,4 +1,5 @@
-package parscala;
+package parscala
+package controlflow
 
 import parscala.dot._
 
@@ -12,7 +13,7 @@ object CFGPrinter {
           (marked + from, from :: sorted)
         } else {
           graph.get(from) map (_.successors) match {
-            case Some(succs : List[(BLabel, CEdgeTag.TagType)]) => 
+            case Some(succs : List[(BLabel, EdgeLabel.TagType)]) => 
               succs.foldLeft((marked + from, from :: sorted)){(acc, succ) =>
                 val (l, _) = succ
                 val (m, s) = acc
@@ -88,35 +89,38 @@ object CFGPrinter {
   def formatEdges(n : Node[O,C], id : Int, labels : List[(BLabel,Int)]) : List[DotEdge] = {
     def getId(label : BLabel) : Option[Int] = labels.find(_._1 == label).map(_._2)
     n match {
-      case NJump(l) => 
+      case NJump(_, l) => 
         getId(l) match {
           case Some(targetId) => 
             List(edge(node(id), node(targetId)))
           case None =>
             List()
         }
-      case NCond(_, t, f) => 
+      case NCond(_, _, t, f, _) => 
         for ((Some(targetId),port) <- List((getId(t), pTrue),(getId(f), pFalse)))
         yield edgeP(node(id), port, node(targetId))
-      case NBranch(l1, l2) =>
+      case NBranch(_, l1, l2) =>
         for (Some(targetId) <- List(getId(l1),getId(l2)))
         yield edge(node(id), node(targetId))
-      case NReturn(_, _, target) =>
-        getId(target) map {targetId => List(edge(node(id), node(targetId)))} getOrElse List.empty
+      case NReturn(_, _, target, _) =>
+        getId(target)
+          .map{ targetId => List(edge(node(id), node(targetId))) } 
+          .getOrElse(List.empty)
       case NException(_, _, handler) =>
-        getId(handler) map { handlerId => List(edge(node(id), node(handlerId))) } getOrElse (List())
-      case NThrow(_, _, _) =>
+        getId(handler)
+          .map{ handlerId => List(edge(node(id), node(handlerId))) } 
+          .getOrElse(List())
+      case NThrow(_, _, _, _) =>
         ???
-      case NDone() =>
+      case NDone(_) =>
         ???
     }
   }
 
   def formatNode(n : Node[_,_], i : Int) : String = {
     n match {
-      case NLabel(_) => "Block " + i.toString
-      case NStmt(_, stmt) => Dot.dotEscape(stmt.toString)
-      case NCond(expr,_,_) => Dot.dotEscape(expr.ast.toString) + (" | {<%s> T | <%s> F}".format(pTrue, pFalse))
+      case NLabel(_, _) => "Block " + i.toString
+      case NCond(_, expr, _, _, _) => Dot.dotEscape(formatNode(expr, i)) + (" | {<%s> T | <%s> F}".format(pTrue, pFalse))
       case NExpr(_, expr) => Dot.dotEscape(expr.toString)
       case NException(_, exception,_ ) => "throw " + Dot.dotEscape(exception.toString)
       case _ => ""

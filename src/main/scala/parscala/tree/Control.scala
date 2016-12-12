@@ -24,8 +24,9 @@ object Control {
                   newE : (List[Tree], List[Tree], List[Tree]) => A,
                   sel : (Tree, TermName) => A,
                   app : (Tree, List[List[Tree]]) => A,
+                  id : (Symbol) => A,
                   ass : (Tree, Tree) => A,
-                  idDef : (Modifiers, TermName, Tree) => A,
+                  idDef : (Modifiers, Symbol, Tree) => A,
                   other : Tree => A,
                   t : Tree) : A = {
     import compiler.Quasiquote
@@ -36,8 +37,8 @@ object Control {
       case q"$expr.$tname" => sel(expr, tname)
       case q"$expr(...$args)" if t.isInstanceOf[compiler.Apply] => app(expr, args)
       case q"$lexpr = $rexpr" => ass(lexpr, rexpr)
-      case q"$mods val $name = $expr" => idDef(mods, name, expr)
-      case q"$mods var $name = $expr" => idDef(mods, name, expr)
+      case q"$mods val $_ = $expr" => idDef(mods, t.symbol, expr)
+      case q"$mods var $_ = $expr" => idDef(mods, t.symbol, expr)
       case _ => other(t)
     }
   }

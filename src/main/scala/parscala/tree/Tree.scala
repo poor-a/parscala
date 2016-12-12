@@ -1,6 +1,8 @@
 package parscala
 package tree
 
+import parscala.controlflow.CFGraph
+
 import compiler.TermSymbol
 
 case class Class(val symbol : Symbol, val methods : Set[Method], val fields : Set[Field]) {
