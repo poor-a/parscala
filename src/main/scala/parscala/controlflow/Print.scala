@@ -88,42 +88,39 @@ object CFGPrinter {
 
   def formatEdges(n : Node[O,C], id : Int, labels : List[(BLabel,Int)]) : List[DotEdge] = {
     def getId(label : BLabel) : Option[Int] = labels.find(_._1 == label).map(_._2)
-    n match {
-      case NJump(_, l) => 
-        getId(l) match {
-          case Some(targetId) => 
-            List(edge(node(id), node(targetId)))
-          case None =>
-            List()
-        }
-      case NCond(_, _, t, f, _) => 
-        for ((Some(targetId),port) <- List((getId(t), pTrue),(getId(f), pFalse)))
-        yield edgeP(node(id), port, node(targetId))
-      case NBranch(_, l1, l2) =>
-        for (Some(targetId) <- List(getId(l1),getId(l2)))
-        yield edge(node(id), node(targetId))
-      case NReturn(_, _, target, _) =>
-        getId(target)
-          .map{ targetId => List(edge(node(id), node(targetId))) } 
-          .getOrElse(List.empty)
-      case NException(_, _, handler) =>
-        getId(handler)
-          .map{ handlerId => List(edge(node(id), node(handlerId))) } 
-          .getOrElse(List())
-      case NThrow(_, _, _, _) =>
-        ???
-      case NDone(_) =>
-        ???
-    }
+
+    for ((Some(targetId), label) <- n.successors map { x => (getId(x._1), x._2) })
+    yield label match {
+            case EdgeLabel.T => 
+              edgeP(node(id), pTrue, node(targetId))
+            case EdgeLabel.F =>
+              edgeP(node(id), pFalse, node(targetId))
+            case EdgeLabel.NoLabel =>
+              edge(node(id), node(targetId))
+          }
   }
 
   def formatNode(n : Node[_,_], i : Int) : String = {
     n match {
       case NLabel(_, _) => "Block " + i.toString
-      case NCond(_, expr, _, _, _) => Dot.dotEscape(formatNode(expr, i)) + (" | {<%s> T | <%s> F}".format(pTrue, pFalse))
+      case NLiteral(_, lit) => Dot.dotEscape(lit.toString)
+      case NVariable(_, variable) => Dot.dotEscape(variable.toString)
+      case NValDef(_, _, valdef) => Dot.dotEscape(valdef.toString)
+      case NAssign(_, _, _, assign) => Dot.dotEscape(assign.toString)
+      case NApp(_, _, _, app) => Dot.dotEscape(app.toString)
+      case NNew(_, _, _, n) => Dot.dotEscape(n.toString)
+      case NSelect(_, _, _, sel) => Dot.dotEscape(sel.toString)
+      case NThis(_, _, _, t) => Dot.dotEscape(t.toString)
+      case NTuple(_, _, tuple) => Dot.dotEscape(tuple.toString)
+      case NPattern(_, pat, _, _) => Dot.dotEscape(pat.toString)
+      case NCond(_, expr, _, _, _) => formatNode(expr, i) + (" | {<%s> T | <%s> F}".format(pTrue, pFalse))
       case NExpr(_, expr) => Dot.dotEscape(expr.toString)
       case NException(_, exception,_ ) => "throw " + Dot.dotEscape(exception.toString)
-      case _ => ""
+      case NBranch(_, _, _) => ""
+      case NJump(_, _) => ""
+      case NReturn(_, _, _, ret) => Dot.dotEscape(ret.toString)
+      case NThrow(_, _, _, thr) => Dot.dotEscape(thr.toString)
+      case NDone(_) => ""
     }
   }
 
