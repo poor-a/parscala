@@ -2,6 +2,7 @@ package parscala
 package controlflow
 
 import parscala.dot._
+import parscala.{tree => tr}
 
 object CFGPrinter {
   def topoSort(graph : CFGraph) : List[BLabel] = {
@@ -55,9 +56,9 @@ object CFGPrinter {
         }
         case _ => {
           def contents(block : Block[Node,_,_]) : List[String] = block match {
-            case BFirst(node) => List(formatNode(node, n))
-            case BMiddle(node) => List(formatNode(node, n))
-            case BLast(node) => List(formatNode(node, n))
+            case BFirst(node) => List(formatNode(node, n, graph.nodeTree.nodes))
+            case BMiddle(node) => List(formatNode(node, n, graph.nodeTree.nodes))
+            case BLast(node) => List(formatNode(node, n, graph.nodeTree.nodes))
             case BCat(node1, node2) => contents(node1) ++ contents(node2)
           }
           def edges(block : Block[Node,_,C]) : List[DotEdge] = block match {
@@ -100,27 +101,15 @@ object CFGPrinter {
           }
   }
 
-  def formatNode(n : Node[_,_], i : Int) : String = {
+  def formatNode(n : Node[_,_], i : Int, nodes : LabelMap[tr.Node]) : String = {
     n match {
-      case NLabel(_, _) => "Block " + i.toString
-      case NLiteral(_, lit) => Dot.dotEscape(lit.toString)
-      case NVariable(_, variable) => Dot.dotEscape(variable.toString)
-      case NValDef(_, _, valdef) => Dot.dotEscape(valdef.toString)
-      case NAssign(_, _, _, assign) => Dot.dotEscape(assign.toString)
-      case NApp(_, _, _, app) => Dot.dotEscape(app.toString)
-      case NNew(_, _, _, n) => Dot.dotEscape(n.toString)
-      case NSelect(_, _, _, sel) => Dot.dotEscape(sel.toString)
-      case NThis(_, _, _, t) => Dot.dotEscape(t.toString)
-      case NTuple(_, _, tuple) => Dot.dotEscape(tuple.toString)
-      case NPattern(_, pat, _, _) => Dot.dotEscape(pat.toString)
-      case NCond(_, expr, _, _, _) => formatNode(expr, i) + (" | {<%s> T | <%s> F}".format(pTrue, pFalse))
-      case NExpr(_, expr) => Dot.dotEscape(expr.toString)
-      case NException(_, exception,_ ) => "throw " + Dot.dotEscape(exception.toString)
-      case NBranch(_, _, _) => ""
-      case NJump(_, _) => ""
-      case NReturn(_, _, _, ret) => Dot.dotEscape(ret.toString)
-      case NThrow(_, _, _, thr) => Dot.dotEscape(thr.toString)
-      case NDone(_) => ""
+      case Label(_) => "Block " + i.toString
+      case Pattern(pat, _, _) => Dot.dotEscape(pat.toString)
+      case Cond(expr, _, _) => " | {<%s> T | <%s> F}".format(pTrue, pFalse)
+      case Expr(expr) => "%3s: %s".format(expr, scalaz.std.option.cata(nodes.get(expr))(node => Dot.dotEscape(node.tree.toString()), "##Err##"))
+      case Branch(_, _) => ""
+      case Jump(_) => ""
+      case Done() => ""
     }
   }
 
@@ -136,7 +125,7 @@ object CFGPrinter {
   private def node(n : Int) : DotNode = 
     DotNode(n.toString)
   private def edge(source : DotNode, target : DotNode) : DotEdge = 
-    DotEdge(source, target, List())
+    DotEdge(source, target)
   private def edgeP(source : DotNode, port : String, target : DotNode) : DotEdge = 
     edge(source, target) sourcePort port
 }

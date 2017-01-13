@@ -3,7 +3,9 @@ package parscala
 /**
  * Label type for (sub)expressions and statements
  */
-class SLabel (val l : Int) extends AnyVal
+class SLabel (val l : Int) extends AnyVal {
+  override def toString : String = l.toString
+}
 
 /**
  * Helper object for creating source of [[SLabel]]s

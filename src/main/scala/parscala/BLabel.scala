@@ -3,10 +3,12 @@ package parscala
 /**
  * Label type for basic blocks
  */
-class BLabel (val l : Int) extends AnyVal
+class BLabel (val l : Int) extends AnyVal {
+  override def toString : String = l.toString
+}
 
 /**
- * Helper object for creating source of [[SLabel]]s
+ * Helper object for creating source of [[BLabel]]s
  */
 object BLabel {
   /**

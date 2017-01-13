@@ -4,6 +4,7 @@ import java.nio.file.{Paths,Files,Path,StandardOpenOption}
 import parscala._
 import parscala.tree._
 import parscala.controlflow.{CFGraph, CFGPrinter}
+import parscala.df
 
 case class Config(val method : String,
              val showCfg : Boolean,
@@ -12,7 +13,6 @@ case class Config(val method : String,
              val files : List[String],
              val showHelp : Boolean
 )
-
 
 object ParScala {
   private def dumpDot(path : String, cfg : CFGraph) : Unit = {
@@ -60,7 +60,16 @@ object ParScala {
                   MainWindow.showCfg(method)
                 }
                 if (!c.dotOutput.isEmpty) {
-                  dumpDot(c.dotOutput, method.cfg)
+                  scalaz.std.option.cata(method.cfg)(
+                      cfg => dumpDot(c.dotOutput, cfg)
+                    , Console.err.println("The body of %s is not available.".format(c.method))
+                  )
+                                     
+                }
+                for (b <- method.body;
+                     cfg <- method.cfg) {
+                  println(df.ReachingDefinition(cfg).rd)
+                  MainWindow.showDot(Node.toDot(Node.mkNode(b).root) + df.ReachingDefinition.toDot(df.ReachingDefinition(cfg)))
                 }
               }
               case None =>

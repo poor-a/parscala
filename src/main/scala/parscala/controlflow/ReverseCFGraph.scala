@@ -21,7 +21,7 @@ class ReverseCFGraph(val g : CFGraph, val edges : List[(BLabel,BLabel,EdgeLabel.
     }
     def noChange[T](x : (T, Boolean)) : Boolean = !x._2
 
-    Control.until(noChange, approximate, (domInit, true))._1
+    parscala.Control.until(noChange, approximate, (domInit, true))._1
   }
 
   def immediateDominators(domin : Map[BLabel, Set[BLabel]]) : DomTree = {
@@ -59,7 +59,7 @@ class ReverseCFGraph(val g : CFGraph, val edges : List[(BLabel,BLabel,EdgeLabel.
         (l :: p, t.parent(l).get)
       }
 
-      Control.until(reachedOrTop, step, (List.empty, from))._1
+      parscala.Control.until(reachedOrTop, step, (List.empty, from))._1
     }
 
     def candidates(b : Block[Node,C,C], xs : List[CEdge]) : List[CEdge] = {

@@ -4,21 +4,24 @@ import java.awt.{BorderLayout,Dimension}
 import parscala.tree.Method
 import parscala.controlflow.CFGPrinter
 import parscala.callgraph.{CallGraph,CallGraphVisualiser}
-import parscala.dot.Dot
+import parscala.dot.{Dot, DotGraph}
 
 object MainWindow {
   def showCfg(method : Method) {
     val d : Dot = new Dot
-    d.drawGraph(CFGPrinter.formatGraph(method.cfg)) match {
-      case Right(image) => {
+    val name : String = method.symbol.fullName.toString
+    method.cfg.map(cfg => d.drawGraph(CFGPrinter.formatGraph(cfg))) match {
+      case Some(Right(image)) => {
         showWindow { w => {
-          w.setTitle("Control flow graph of %s".format(method.symbol.fullName.toString))
+          w.setTitle("Control flow graph of %s".format(name))
           w.add(image, BorderLayout.CENTER)
         }}
       }
-      case Left(err) => {
+      case Some(Left(err)) => {
         Console.err.println(err)
       }
+      case None =>
+        Console.err.println("The body of %s is not available.".format(name))
     }
   }
 
@@ -28,6 +31,20 @@ object MainWindow {
       case Right(image) => 
         showWindow { w => {
           w.setTitle("Call graph")
+          w.add(image, BorderLayout.CENTER)
+        }}
+      case Left(err) =>
+        Console.err.println(err)
+    }
+  }
+
+  def showDot(g : DotGraph) {
+    println(g.toString)
+    val d : Dot = new Dot
+    d.drawGraph(g) match {
+      case Right(image) => 
+        showWindow { w => {
+          w.setTitle("Dot graph")
           w.add(image, BorderLayout.CENTER)
         }}
       case Left(err) =>

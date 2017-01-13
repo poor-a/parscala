@@ -3,8 +3,6 @@ package tree
 
 import parscala.controlflow.CFGraph
 
-import compiler.TermSymbol
-
 case class Class(val symbol : Symbol, val methods : Set[Method], val fields : Set[Field]) {
   val name : String = symbol.name.toString
   override def toString : String = "class %s".format(name)
@@ -49,33 +47,10 @@ case class Method(val symbol : Symbol, val mAst : Option[Tree]) {
     }
   }
 
+  val nodes : Option[NodeTree] = body.map(Node.mkNode(_))
+
   val parent : Class = Class(symbol.owner, Set.empty, Set.empty)
-  lazy val cfg : CFGraph = CFGraph(this)
+  lazy val cfg : Option[CFGraph] = CFGraph(this)
 }
 
 case class Field(val ast : Tree)
-
-case class Expression(val ast : Tree) {
-  override def toString : String = s"expression $ast"
-}
-
-case class Variable (val definition : Tree) {
-  assert(Variable.isVariableDef(definition), "not a variable")
-  val info : TermSymbol = definition.symbol.asTerm
-  val name : String = info.name.toString
-
-  override def toString : String = s"variable $name"
-}
-
-object Variable {
-  def isVariableDef(ast : Tree) : Boolean = {
-    val isTerm : Boolean = ast.symbol != null && ast.symbol.isTerm
-    if (isTerm) {
-      val symbol : TermSymbol = ast.symbol.asTerm
-      symbol.isVar || symbol.isVal
-    }
-    else {
-      false
-    }
-  }
-}

@@ -1,75 +1,35 @@
 package parscala
 package controlflow
 
-import scala.language.higherKinds
-
 import scala.collection.immutable.Stream
 
-import scalaz.{State, EitherT, Monoid, Monad}
-import scalaz.EitherT.eitherTHoist
+import scalaz.{State, EitherT, Monoid, \/-}
+import scalaz.syntax.bind._
 
 import tree._
+import parscala.Control.foldM
+import parscala.{tree => tr}
 
 abstract class O
 abstract class C
 
 object CFGraph {
-  import compiler.Quasiquote
-
-  def apply(m : Method) : CFGraph =
-    mkExtCFGraph(m).freeze
+  def apply(m : Method) : Option[CFGraph] =
+    mkExtCFGraph(m).map(_.freeze)
 
   type St = (Stream[BLabel], Stream[SLabel], CFGraph)
   type CFGGen[A] = State[St, A]
   type CFGAnalyser[A] = EitherT[CFGGen, Unit, A]
 
-  def nLabel : CFGGen[NLabel] =
-    for (l <- genSLabel; b <- genBLabel)
-    yield NLabel(l, b)
+  def nLabel() : CFGGen[Label] =
+    for (b <- genBLabel)
+    yield Label(b)
 
-  def nLiteral(lit : Tree) : CFGGen[NLiteral] = 
-    for (l <- genSLabel)
-    yield NLiteral(l, lit)
+  def nCond(expr : SLabel, t : BLabel, f : BLabel) : Cond = 
+    Cond(expr, t, f)
 
-  def nVariable(variable : Tree) : CFGGen[NVariable] =
-    for (l <- genSLabel)
-    yield NVariable(l, variable)
-
-  def nValDef(rhs : Node[O,O], tr : Tree) : CFGGen[NValDef] =
-    for (l <- genSLabel)
-    yield NValDef(l, rhs, tr)
-
-  def nAssign(lhs : Node[O,O], rhs : Node[O,O], tr : Tree) : CFGGen[NAssign] =
-    for (l <- genSLabel)
-    yield NAssign(l, lhs, rhs, tr)
-
-  def nNew(constructor : Tree, args : List[List[Node[O,O]]], tr : Tree) : CFGGen[NNew] = 
-    for (l <- genSLabel)
-    yield NNew(l, constructor, args, tr)
-
-  def nApp(method : Node[O,O], args : List[List[Node[O,O]]], tr : Tree) : CFGGen[NApp] = 
-    for (l <- genSLabel)
-    yield NApp(l, method, args, tr)
-
-  def nSelect(expr : Node[O,O], sel : TermName, tr : Tree) : CFGGen[NSelect] = 
-    for (l <- genSLabel)
-    yield NSelect(l, expr, sel, tr)
-
-  def nThis(obj : Node[O,O], expr : Node[O,O], tr : Tree) : CFGGen[NThis] = 
-    for (l <- genSLabel)
-    yield NThis(l, obj, expr, tr)
-
-  def nCond(expr : Node[O,O], t : BLabel, f : BLabel, tr : Tree) : CFGGen[NCond] = 
-    for (l <- genSLabel)
-    yield NCond(l, expr, t, f, tr)
-
-  def nJump(target : BLabel) : CFGGen[NJump] = 
-    for (l <- genSLabel)
-    yield NJump(l, target)
-
-  def nReturn(expr : Node[O,O], next : BLabel, tr : Tree) : CFGGen[NReturn] =
-    for (l <- genSLabel)
-    yield NReturn(l, expr, next, tr)
+  def nJump(target : BLabel) : Jump = 
+    Jump(target)
 
   def genBLabel : CFGGen[BLabel] =
     for (l <- State.gets[St, BLabel](_._1.head);
@@ -84,77 +44,137 @@ object CFGraph {
   def modifyGraph(f : CFGraph => CFGraph) : CFGGen[Unit] = 
     State.modify[St]{ case (bGen, sGen, graph) => (bGen, sGen, f(graph)) }
 
-  def liftM[A](m : CFGGen[A]) : CFGAnalyser[A] = 
-    eitherTHoist.liftM(m)
+  def liftM[A](m : CFGGen[A]) : CFGAnalyser[A] = EitherT.eitherTHoist.liftM(m)
 
-  private def toList(t : Tree) : List[Tree] = 
-    t match {
-      case _ if t.isInstanceOf[compiler.Block] => {
-        val q"{ ..$stmts }" = t
-        stmts
-      }
-      case q"$stmt" => List(stmt)
-    }
+  def pure[A](x : A) : CFGAnalyser[A] = EitherT.eitherTMonad[CFGGen, Unit].pure(x)
 
-  def mkExtCFGraph(m : Method) : ExtensibleCFGraph = {
+  def mkExtCFGraph(m : Method) : Option[ExtensibleCFGraph] = {
     val bGen : BLabelGen = BLabel.stream
     val sGen : SLabelGen = SLabel.stream
     val (List(fst,s,d), bGen2) = ((bGen take 3).toList, bGen drop 3)
-    val (List(fst2,s2,d2,jump,d3), sGen2) = ((sGen take 5).toList, sGen drop 5)
 
-    val start = BCat(emptyBlockWithLabel(s2, s), BLast(NJump(jump, fst)))
-    val done = BCat(emptyBlockWithLabel(d2, d), BLast(NDone(d3)))
-    val graph = new CFGraph(start, done)
-    val first = emptyBlockWithLabel(fst2, fst)
+    val start = BCat(emptyBlockWithLabel(s), BLast(Jump(fst)))
+    val done = BCat(emptyBlockWithLabel(d), BLast(Done()))
+    val first = emptyBlockWithLabel(fst)
 
-    val stmts : List[Tree] = m.body match {
-      case Some(ast) => toList(ast)
-      case None => List.empty
+    m.nodes match {
+      case Some(nodes) => 
+        val graph = new CFGraph(start, done, nodes)
+        cfgStmts(first, d, nodes.root).run.run((bGen2, sGen, graph)) match {
+          case ((bGen3, sGen2, cfg), \/-(block)) => 
+            val flushed = BCat(block, BLast(Jump(d)))
+            Some(new ExtensibleCFGraph(cfg + flushed, bGen3, sGen2))
+          case ((bGen3, sGen2, cfg), _) =>
+            Some(new ExtensibleCFGraph(cfg, bGen3, sGen2))
+        }
+        
+      case None =>
+        None
     }
-
-    val (bGen3, sGen3, cfg) = cfgStmts(first, d, d, stmts, detailedStmtCfg).run.exec((bGen2, sGen2, graph))
-    new ExtensibleCFGraph(cfg, bGen3, sGen3)
   }
 
-  def emptyBlockWithLabel(s : SLabel, b : BLabel) : Block[Node, C, O] = 
-    BFirst(NLabel(s, b))
+  def emptyBlockWithLabel(b : BLabel) : Block[Node, C, O] = 
+    BFirst(Label(b))
 
   def emptyBlock : State[St, Block[Node, C, O]] = 
-    for (l <- genBLabel; s <- genSLabel) yield emptyBlockWithLabel(s, l)
+    for (l <- genBLabel) yield emptyBlockWithLabel(l)
 
-  implicit def unitMonoidInstance : Monoid[Unit] = Monoid.instance((_,_) => Unit, Unit)
+  implicit def unitMonoidInstance : Monoid[Unit] = Monoid.instance((_, _) => Unit, Unit)
     
-  def cfgStmts(b : Block[Node,C,O], nextLabel : BLabel, abruptNext : BLabel, stmts : List[Tree], g : (Tree, Block[Node,C,O]) => CFGAnalyser[(Block[Node,C,O], Node[O,O])]) : CFGAnalyser[Unit] = {
-    stmts match {
-      case (condE @ q"if ($p) $t else $f") :: xs =>
-        for (tBranch <- liftM(emptyBlock);
-             fBranch <- liftM(emptyBlock);
-             succ <- liftM(emptyBlock);
-             _ <- cfgStmts(tBranch, succ.entryLabel, abruptNext, toList(t), g);
-             _ <- cfgStmts(fBranch, succ.entryLabel, abruptNext, toList(f), g);
-             pAnalysed <- g(p, b);
-             bWithTest = pAnalysed._1;
-             test = pAnalysed._2;
-             cond <- liftM(nCond(test, tBranch.entryLabel, fBranch.entryLabel, condE));
-             flushed = BCat(bWithTest, BLast(cond));
-             _ <- liftM(modifyGraph{ _ + flushed });
-             _ <- cfgStmts(succ, nextLabel, abruptNext, xs, g))
-        yield ()
-      case (x @ q"while ($p) $loopBody") :: xs =>
-        for (succ <- liftM(emptyBlock);
-             body <- liftM(emptyBlock);
-             testPBegin <- liftM(emptyBlock);
-             pAnalysed <- g(p, testPBegin);
-             withTest = pAnalysed._1;
-             test = pAnalysed._2;
-             cond <- liftM(nCond(test, body.entryLabel, succ.entryLabel, x));
-             testP = BCat(withTest, BLast(cond));
-             jump <- liftM(nJump(testP.entryLabel));
-             flushed = BCat(b, BLast(jump));
-             _ <- liftM(modifyGraph{ _ + flushed + testP });
-             _ <- cfgStmts(body, testP.entryLabel, abruptNext, toList(loopBody), g);
-             _ <- cfgStmts(succ, nextLabel, abruptNext, xs, g))
-        yield ()
+  def cfgStmts(b : Block[Node,C,O], abruptNext : BLabel, node : tr.Node) : CFGAnalyser[Block[Node,C,O]] = {
+    println("cfgStmt: " + node)
+    def step(acc : Block[Node,C,O], e : tr.Node) : CFGAnalyser[Block[Node,C,O]] =
+      cfgStmts(acc, abruptNext, e)
+
+    def deepStep(acc : Block[Node,C,O], xs : List[tr.Node]) : CFGAnalyser[Block[Node,C,O]] =
+      foldM(step, acc, xs)
+
+    Node.nodeCata(
+        (l, _) => { // literal
+          val literal = Expr(l)
+          pure(BCat(b, BMiddle(literal)))
+        }
+      , (l, _, _) => { // identifier
+          val identifier = Expr(l)
+          pure(BCat(b, BMiddle(identifier)))
+        }
+      , (l, _, rhs, _) => // val or var def
+          for (rhsEvaled <- cfgStmts(b, abruptNext, rhs))
+          yield BCat(rhsEvaled, BMiddle(Expr(l)))
+      , (l, lhs, rhs, _) => // assignment
+          for (lhsEvaled <- cfgStmts(b, abruptNext, lhs);
+               rhsEvaled <- cfgStmts(lhsEvaled, abruptNext, rhs))
+          yield BCat(rhsEvaled, BMiddle(Expr(l)))
+      , (l, method, args, _) => // application
+          for (mEvaled <- cfgStmts(b, abruptNext, method);
+               argsEvaled <- foldM(deepStep, mEvaled, args))
+          yield BCat(argsEvaled, BMiddle(Expr(l)))
+      , (l, constr, args, _) => // new
+          for (argsEvaled <- foldM(deepStep, b, args))
+          yield BCat(argsEvaled, BMiddle(Expr(l)))
+      , (l, expr, tname, _) => // selection
+          for (exprEvaled <- cfgStmts(b, abruptNext, expr))
+          yield BCat(exprEvaled, BMiddle(Expr(l)))
+      , (l, _, _) => // qualified this
+          pure(BCat(b, BMiddle(Expr(l))))
+      , (l, components, t) => // tuple
+          for (compsEvaled <- foldM(step, b, components))
+          yield BCat(compsEvaled, BMiddle(Expr(l)))
+      , (l, p, t, _) => // if-then
+          for (tBranch <- liftM(emptyBlock);
+               succ <- liftM(emptyBlock);
+               pEvaled <- cfgStmts(b, abruptNext, p);
+               tEvaled <- cfgStmts(tBranch, abruptNext, t);
+               cond = Cond(p.label, tBranch.entryLabel, succ.entryLabel);
+               flushed = BCat(pEvaled, BLast(cond));
+               tFlushed = BCat(tEvaled, BLast(Jump(succ.entryLabel)));
+               _ <- liftM(modifyGraph{ _ + flushed + tFlushed}))
+          yield succ
+      , (l, p, t, f, _) => // if-then-else
+          for (tBranch <- liftM(emptyBlock);
+               fBranch <- liftM(emptyBlock);
+               succ <- liftM(emptyBlock);
+               pEvaled <- cfgStmts(b, abruptNext, p);
+               tEvaled <- cfgStmts(tBranch, abruptNext, t);
+               fEvaled <- cfgStmts(fBranch, abruptNext, f);
+               cond = Cond(p.label, tBranch.entryLabel, fBranch.entryLabel);
+               tFlushed = BCat(tEvaled, BLast(Jump(succ.entryLabel)));
+               fFlushed = BCat(fEvaled, BLast(Jump(succ.entryLabel)));
+               flushed = BCat(pEvaled, BLast(cond));
+               _ <- liftM(modifyGraph{ _ + flushed + tFlushed + fFlushed }))
+          yield succ
+      , (l, p, body, _) => // while loop
+          for (succ <- liftM(emptyBlock);
+               bodyEmpty <- liftM(emptyBlock);
+               testPBegin <- liftM(emptyBlock);
+               pEvaled <- cfgStmts(testPBegin, abruptNext, p);
+               bodyEvaled <- cfgStmts(bodyEmpty, abruptNext, body);
+               cond = Cond(p.label, bodyEvaled.entryLabel, succ.entryLabel);
+               testP = BCat(pEvaled, BLast(cond));
+               flushed = BCat(b, BLast(Jump(testP.entryLabel)));
+               bodyFlushed = BCat(bodyEvaled, BLast(Jump(testP.entryLabel)));
+               _ <- liftM(modifyGraph{ _ + flushed + bodyFlushed + testP }))
+          yield succ
+      , (l, enums, body, _) => pure(b) // for loop
+      , (l, enums, body, _) => pure(b) // for-yield loop
+      , (l, expr, _) => // return
+          cfgStmts(b, abruptNext, expr) >>= (exprEvaled => {
+            val flushed = BCat(exprEvaled, BLast(Jump(abruptNext)))
+            liftM (modifyGraph { _ + flushed }) >> 
+            EitherT.eitherTMonadError[CFGGen, Unit].raiseError(())
+          })
+      , (l, expr, _) => // throw
+          cfgStmts(b, abruptNext, expr) >>= (exprEvaled => {
+            val flushed = BCat(exprEvaled, BLast(Jump(abruptNext)))
+            liftM(modifyGraph { _ + flushed }) >> 
+            EitherT.eitherTMonadError[CFGGen, Unit].raiseError(())
+          })
+      , (l, exprs, _) => // block
+          foldM(step, b, exprs)
+      , (l, _) => // other expression
+          pure(BCat(b, BMiddle(Expr(l))))
+      , node)
+/*
       case (x @ q"do $loopBody while ($p)") :: xs => 
         for (succ <- liftM(emptyBlock);
              body <- liftM(emptyBlock);
@@ -167,24 +187,24 @@ object CFGraph {
              testP = BCat(withTest, BLast(cond));
              flushed = BCat(b, BLast(jump));
              _ <- liftM(modifyGraph{ _ + flushed + testP });
-             _ <- cfgStmts(body, testP.entryLabel, abruptNext, toList(loopBody), g);
-             _ <- cfgStmts(succ, nextLabel, abruptNext, xs, g))
+             _ <- cfgStmts(body, testP.entryLabel, abruptNext, expressions(loopBody), g);
+             _ <- cfgStmts(succ, abruptNext, xs, g))
         yield ()
       case q"try $expr" :: xs =>
-        cfgStmts(b, nextLabel, abruptNext, toList(expr) ++ xs, g)
+        cfgStmts(b, abruptNext, expressions(expr) ++ xs, g)
       case q"try $expr catch { case $_ }" :: xs => 
-        cfgStmts(b, nextLabel, abruptNext, toList(expr) ++ xs, g)
+        cfgStmts(b, abruptNext, expressions(expr) ++ xs, g)
       case q"try $expr finally $fin" :: xs => 
-        cfgStmts(b, nextLabel, abruptNext, toList(expr) ++ toList(fin) ++ xs, g)
+        cfgStmts(b, abruptNext, expressions(expr) ++ expressions(fin) ++ xs, g)
       case q"try $expr catch { case ..$_ } finally $fin" :: xs => 
-        cfgStmts(b, nextLabel, abruptNext, toList(expr) ++ toList(fin) ++ xs, g)
+        cfgStmts(b, abruptNext, expressions(expr) ++ expressions(fin) ++ xs, g)
       case q"$expr match { case ..$cases }" :: xs =>
         for (succ <- liftM(emptyBlock);
              exprAnalysed <- g(expr, b);
              exprEvaled = exprAnalysed._1;
              done <- liftM(State.gets[St, BLabel](_._3.done));
              _ <- cfgCases(cases, exprEvaled, succ.entryLabel, abruptNext, g);
-             _ <- cfgStmts(succ, nextLabel, abruptNext, xs, g))
+             _ <- cfgStmts(succ, abruptNext, xs, g))
         yield ()
       case (ret @ q"return $e") :: _ =>
         for ((eEvaled, eAnalysed) <- g(e, b);
@@ -201,21 +221,21 @@ object CFGraph {
         yield ()
       }
       case x :: xs if x.isInstanceOf[compiler.Block] =>
-        cfgStmts(b, nextLabel, abruptNext, toList(x) ++ xs, g)
+        cfgStmts(b, abruptNext, expressions(x) ++ xs, g)
       case x :: xs => {
         for ((xEvaled, _) <- g(x, b);
-             _ <- cfgStmts(xEvaled, nextLabel, abruptNext, xs, g))
+             _ <- cfgStmts(xEvaled, abruptNext, xs, g))
         yield ()
       }
       case List() => {
         for (jump <- liftM(genSLabel);
              flushed = BCat(b, BLast(NJump(jump, nextLabel)));
              _ <- liftM(modifyGraph{ _ + flushed }))
-        yield ()
-      }
+        yield ()}*/
+//      , node)
     }
   }
-
+/*
   def cfgCases(cases : List[compiler.CaseDef], current : Block[Node,C,O], next : BLabel, abruptNext : BLabel, g : (Tree, Block[Node,C,O]) => CFGAnalyser[(Block[Node,C,O], Node[O,O])] ) : CFGAnalyser[Unit] = {
     cases match {
       case List(c) => 
@@ -229,7 +249,7 @@ object CFGraph {
                  error = BCat(f, BLast(new NException(exceptionL, classOf[MatchError], abruptNext)));
                  flushed = BCat(current, BLast(NPattern(p, pat, t.entryLabel, f.entryLabel)));
                  _ <- liftM(modifyGraph{ _ + flushed + error });
-                 _ <- cfgStmts(t, next, abruptNext, toList(res), g))
+                 _ <- cfgStmts(t, next, abruptNext, expressions(res), g))
             yield ()
           case cq"$pat if $pred => $res" =>
             for (predEmpty <- liftM(emptyBlock);
@@ -243,7 +263,7 @@ object CFGraph {
                  cond <- liftM(nCond(predAnalysed, t.entryLabel, f.entryLabel, pred));
                  predClosed = BCat(predEvaled, BLast(cond));
                  _ <- liftM(modifyGraph{ _ + flushed + error + predClosed });
-                 _ <- cfgStmts(t, next, abruptNext, toList(res), g))
+                 _ <- cfgStmts(t, next, abruptNext, expressions(res), g))
             yield ()
         }
       case c :: cs => 
@@ -254,7 +274,7 @@ object CFGraph {
                  patMatch <- liftM(genSLabel);
                  flushed = BCat(current, BLast(NPattern(patMatch, pat, t.entryLabel, f.entryLabel)));
                  _ <- liftM(modifyGraph{ _ + flushed });
-                 _ <- cfgStmts(t, next, abruptNext, toList(res), g);
+                 _ <- cfgStmts(t, next, abruptNext, expressions(res), g);
                  _ <- cfgCases(cs, f, next, abruptNext, g))
             yield ()
           case cq"$pat if $pred => $res" =>
@@ -267,7 +287,7 @@ object CFGraph {
                  cond <- liftM(nCond(predAnalysed, t.entryLabel, f.entryLabel, pred));
                  predClosed = BCat(predEvaled, BLast(cond));
                  _ <- liftM(modifyGraph{ _ + flushed + predClosed });
-                 _ <- cfgStmts(t, next, abruptNext, toList(res), g);
+                 _ <- cfgStmts(t, next, abruptNext, expressions(res), g);
                  _ <- cfgCases(cs, f, next, abruptNext, g))
             yield ()
         }
@@ -276,44 +296,11 @@ object CFGraph {
     }
   }
 
-  def mapM[A, B, S](f : A => State[S, B], l : List[A]) : State[S, List[B]] =
-    l match {
-      case List() =>
-        State.state(List())
-      case x :: xs => 
-        for (y <- f(x);
-             ys <- mapM(f, xs))
-        yield ys
-    }
-
-  def foldM[M[_], A, B](f : (A, B) => M[A], e : A, l : List[B])(implicit evidence: Monad[M]) : M[A] = {
-    import scalaz.syntax.bind._
-    l match {
-      case List() =>
-        evidence.pure(e)
-      case x :: xs => 
-        f(e, x) >>= (e2 => foldM(f, e2, xs))
-/*        for (e2 <- f(e, x);
-             e3 <- foldM(f, e2, xs))
-        yield e3*/
-    }
-  }
-
   def detailedStmtCfg(stmt : Tree, current : Block[Node,C,O]) : CFGAnalyser[(Block[Node,C,O], Node[O,O])] = {
     println(stmt)
-        
-    def step(acc : (Block[Node,C,O], List[Node[O,O]]), e : Tree) : CFGAnalyser[(Block[Node,C,O], List[Node[O,O]])] = {
-      val (b, ns) = acc
-      for ((b2, n) <- detailedStmtCfg(e, b))
-      yield (b2, n :: ns)
-    }
+  */      
 
-    def deepStep(acc : (Block[Node,C,O], List[List[Node[O,O]]]), args : List[Tree]) : CFGAnalyser[(Block[Node,C,O], List[List[Node[O,O]]])] = {
-      val (b, nns) = acc
-      for ((b2, ns) <- foldM(step, (b, List.empty), args))
-      yield (b2, ns.reverse :: nns)
-    }
-
+/*
     tree.Control.exprCata(
       components => {
         println("  a tuple")
@@ -328,10 +315,14 @@ object CFGraph {
              `new` <- liftM(nNew(p, nodes.reverse, stmt)))
         yield (BCat(b, BMiddle(`new`)), `new`)
       },
+      (qualifier) => {
+        println("  a qualified this")
+        for (`this` <- liftM(nThis(qualifier, stmt)))
+        yield (BCat(current, BMiddle(`this`)), `this`)
+      },
       (expr, tname) => {
         println("  a selection")
         for ((exprEvaled, exprAnalysed) <- detailedStmtCfg(expr, current);
-             l <- liftM(genSLabel);
              sel <- liftM(nSelect(exprAnalysed, tname, stmt)))
         yield (BCat(exprEvaled, BMiddle(sel)), sel)
       },
@@ -343,6 +334,24 @@ object CFGraph {
              (argsEvaled, argNodes) <- foldM(deepStep, (mEvaled, List.empty), args);
              app <- liftM(nApp(nMethod, argNodes.reverse, stmt)))
         yield (BCat(argsEvaled, BMiddle(app)), app)
+      },
+      (_, _) => {
+        println(" an if-then -- impossible")
+        for (l <- liftM(genSLabel);
+             e = NExpr(l, stmt))
+        yield (BCat(current, BMiddle(e)), e)
+      },
+      (_, _, _) => {
+        println(" an if-the-else -- impossible")
+        for (l <- liftM(genSLabel);
+             e = NExpr(l, stmt))
+        yield (BCat(current, BMiddle(e)), e)
+      },
+      (_, _) => {
+        println(" a while loop -- impossible")
+        for (l <- liftM(genSLabel);
+             e = NExpr(l, stmt))
+        yield (BCat(current, BMiddle(e)), e)
       },
       symbol => {
         println("  an identifier")
@@ -361,6 +370,12 @@ object CFGraph {
              valDef <- liftM(nValDef(eAnalysed, stmt)))
         yield (BCat(eEvaled, BMiddle(valDef)), valDef)
       },
+      _ => {
+        println("  a block -- impossible")
+        for (l <- liftM(genSLabel);
+             e = NExpr(l, stmt))
+        yield (BCat(current, BMiddle(e)), e)
+      },
       (other : Tree) => {
         println("  other")
         for (l <- liftM(genSLabel);
@@ -369,31 +384,38 @@ object CFGraph {
       },
       stmt
     )
+
+    for (l <- liftM(genSLabel);
+         e = NExpr(l, stmt))
+    yield (BCat(current, BMiddle(e)), e)
   }
 }
-
-class CFGraph (val graph : Map[BLabel, Block[Node,C,C]], val start : BLabel, val done : BLabel) {
+*/
+class CFGraph (val graph : Map[BLabel, Block[Node,C,C]], val start : BLabel, val done : BLabel, val nodeTree : tr.NodeTree) {
   type BEdge = (BLabel, BLabel, EdgeLabel.TagType)
   type SEdge = (SLabel, SLabel, EdgeLabel.TagType)
 
-  def this(start : Block[Node,C,C], done : Block[Node,C,C]) =
-    this(Map(start.entryLabel -> start, done.entryLabel -> done), start.entryLabel, done.entryLabel)
+  def this(start : Block[Node,C,C], done : Block[Node,C,C], nodeTree : tr.NodeTree) =
+    this(Map(start.entryLabel -> start, done.entryLabel -> done), start.entryLabel, done.entryLabel, nodeTree)
 
   def get(v : BLabel) : Option[Block[Node,C,C]] = 
     graph.get(v)
 
   def +(b : Block[Node,C,C]) : CFGraph =
-    new CFGraph(graph + (b.entryLabel -> b), start, done)
+    new CFGraph(graph + (b.entryLabel -> b), start, done, nodeTree)
 
   def +(bs : List[Block[Node,C,C]]) : CFGraph =
     bs.foldLeft(this)(_ + _)
+
+  def successors(b : BLabel) : Option[List[(BLabel, EdgeLabel.TagType)]] = 
+    get(b).map(_.successors)
 
   def traverse[A](f : (Block[Node,C,C], A) => A, x : A) : A = {
     def go(b : Block[Node,C,C], x : A, visited : Set[Block[Node,C,C]]) : (A, Set[Block[Node,C,C]]) = {
       if (visited(b))
         (x, visited)
       else {
-        b.successors.foldLeft((f(b, x), visited + b)){(acc,succ) => 
+        b.successors.foldLeft((f(b, x), visited + b)){(acc, succ) =>
           val (l, _) = succ
           get(l) match {
             case Some(block) => go(block, acc._1, acc._2)
@@ -420,7 +442,13 @@ class CFGraph (val graph : Map[BLabel, Block[Node,C,C]], val start : BLabel, val
   }
 
   def sLabels : List[SLabel] = {
-    def collect(b : Block[Node,_,_], xs : List[SLabel]) : List[SLabel] = b.sLabels ++ xs    
+    def collect(b : Block[Node,_,_], xs : List[SLabel]) : List[SLabel] = Block.sLabels(b) ++ xs    
     traverse(collect, List.empty)
   }
+
+  def bLabels : List[BLabel] =
+    flow flatMap { case (s, t, _) => List(s, t) }
+
+  def apply(l : SLabel) : Option[tr.Node] =
+    nodeTree.nodes.get(l)
 }

@@ -11,7 +11,7 @@ object CallGraphVisualiser {
   }
 
   private def formatEdge(e : Edge) : DotEdge =
-    DotEdge(formatMethod(e.caller), formatMethod(e.callee), List.empty)
+    DotEdge(formatMethod(e.caller), formatMethod(e.callee))
 
   def format(g : CallGraph) : DotGraph = {
     val methods : Set[Method] = g.calls.foldLeft(Set.empty[Method]){(acc, call) => acc + call.caller + call.callee}

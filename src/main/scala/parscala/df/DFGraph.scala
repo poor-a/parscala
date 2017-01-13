@@ -40,28 +40,20 @@ object DFGraph {
 
   def stmtMiddleDF(n : Node[O,O], cfg : CFGraph) : DFGen[Unit] = {
     n match {
-      case NExpr(_, e) =>
-        ???
-      case NAssign(_, _, _, _) =>
+      case Expr(e) =>
         ???
     }
   }
 
   def stmtLastDF(n : Node[O,C], cfg : CFGraph) : DFGen[Unit] = {
     n match {
-      case NCond(_, e, _, _, _) => 
+      case Cond(e, _, _) => 
         ???
-      case NBranch(_, _, _) =>
+      case Branch(_, _) =>
         State.state(())
-      case NReturn(_, e, _, _) =>
-        ???
-      case NThrow(_, e, _, _) =>
-        ???
-      case NException(_, _, _) =>
-        ???
-      case NJump(_, _) =>
+      case Jump(_) =>
         State.state(())
-      case NDone(_) =>
+      case Done() =>
         State.state(())
     }
   }

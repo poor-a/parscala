@@ -9,10 +9,12 @@ package object parscala {
   type Tree = compiler.Tree
   type Name = compiler.Name
   type TermName = compiler.TermName
+  type TypeName = compiler.TypeName
   type Symbol = compiler.Symbol
   type Modifiers = compiler.Modifiers
   type CompilationUnit = compiler.CompilationUnit
 
   type BLabelGen = Stream[BLabel]
   type SLabelGen = Stream[SLabel]
+  type LabelMap[A] = Map[SLabel, A]
 }

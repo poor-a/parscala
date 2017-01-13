@@ -10,8 +10,7 @@ class ExtensibleCFGraph(graph : CFGraph, val bGen : BLabelGen, val sGen : SLabel
 
    def emptyBlock : (Block[Node, C, O], BLabelGen, SLabelGen) = {
      val (bl, bGen2) = mkBLabel
-     val (sl, sGen2) = mkSLabel
-     (BFirst(NLabel(sl, bl)), bGen2, sGen2)
+     (BFirst(Label(bl)), bGen2, sGen)
    }
 
   val (start, done) : (BLabel, BLabel) = (graph.start, graph.done)
@@ -23,7 +22,7 @@ class ExtensibleCFGraph(graph : CFGraph, val bGen : BLabelGen, val sGen : SLabel
     blocks.foldLeft(this)(_ + _)
 
   def update(l : BLabel, f : Block[Node,C,C] => Block[Node,C,C]) =
-    graph.get(l) map {b => new ExtensibleCFGraph(new CFGraph(graph.graph.updated(l, f(b)), graph.start, graph.done), bGen, sGen)} getOrElse this
+    graph.get(l) map {b => new ExtensibleCFGraph(new CFGraph(graph.graph.updated(l, f(b)), graph.start, graph.done, graph.nodeTree), bGen, sGen)} getOrElse this
 
   def freeze : CFGraph = 
     graph
@@ -36,10 +35,9 @@ class ExtensibleCFGraph(graph : CFGraph, val bGen : BLabelGen, val sGen : SLabel
 
   def insertEntry : ExtensibleCFGraph = {
     val (e, bGen2) = (bGen.head, bGen.tail)
-    val (List(l, lBranch), sGen2) = ((sGen take 2).toList, sGen drop 2)
-    val entry : Block[Node,C,C] = BCat(BFirst(NLabel(l, e)), BLast(NBranch(lBranch, start, done)))
-    val extended : CFGraph = new CFGraph((graph + entry).graph, entry.entryLabel, done)
-    new ExtensibleCFGraph(extended, bGen2, sGen2)
+    val entry : Block[Node,C,C] = BCat(BFirst(Label(e)), BLast(Branch(start, done)))
+    val extended : CFGraph = new CFGraph((graph + entry).graph, entry.entryLabel, done, graph.nodeTree)
+    new ExtensibleCFGraph(extended, bGen2, sGen)
   }
 
   def controlPrecedessors(l : BLabel, cEdges : CGraph) : List[(BLabel, EdgeTag)] =
@@ -118,9 +116,8 @@ class ExtensibleCFGraph(graph : CFGraph, val bGen : BLabelGen, val sGen : SLabel
 
   def controlDependency : (ControlDependency, ExtensibleCFGraph) = {
     val (e, bGen2, sGen2) = emptyBlock
-    val (branch, sGen3) = (sGen2.head, sGen2.tail)
-    val entry : Block[Node,C,C] = BCat(e, BLast(NBranch(branch, start, done)))
-    val extended : CFGraph = new CFGraph((graph + entry).graph, entry.entryLabel, done)
+    val entry : Block[Node,C,C] = BCat(e, BLast(Branch(start, done)))
+    val extended : CFGraph = new CFGraph((graph + entry).graph, entry.entryLabel, done, graph.nodeTree)
     val revCFG : ReverseCFGraph = extended.reverse
     val domTree : DomTree = revCFG.immediateDominators(revCFG.dominators)
     val controlEdges : CGraph = revCFG.controlDependency
@@ -131,6 +128,6 @@ class ExtensibleCFGraph(graph : CFGraph, val bGen : BLabelGen, val sGen : SLabel
     val cEdges2 : CGraph = factor(controlEdges, regions, cEdges, domTree)
     val (cEdges3, bGen4) = merge(cEdges2, bGen3)
 
-    (new ControlDependency(extended, e.entryLabel, cEdges3), new ExtensibleCFGraph(extended, bGen4, sGen3))
+    (new ControlDependency(extended, e.entryLabel, cEdges3), new ExtensibleCFGraph(extended, bGen4, sGen2))
   }
 }

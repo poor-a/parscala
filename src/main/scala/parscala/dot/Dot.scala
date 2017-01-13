@@ -37,6 +37,10 @@ class DotAttr(val key : String, val value : String) {
     "%s=%s".format(key, value)
 }
 
+object RankDir extends Enumeration {
+  val TB, BT, LR, RL = Value
+}
+
 object DotAttr {
   def shape(s : String) : DotAttr =
     new DotAttr("shape", s)
@@ -46,9 +50,15 @@ object DotAttr {
 
   def labelWithPorts(l : String) : DotAttr = 
     new DotAttr("label", "\"%s\"".format(l))
+
+  def rankDir(dir : RankDir.Value) = 
+    new DotAttr("rankdir", dir.toString)
 }
 
 class DotEdge(val source : DotNode, val target : DotNode, val sPort : Option[String], val attrs : List[DotAttr]) {
+  def !!(a : DotAttr) : DotEdge = 
+    new DotEdge(source, target, sPort, a :: attrs)
+
   override def toString : String = {
     val addPort = (port : String) =>
       "%s%s -> %s %s;".format(source.name, port, target.name, attrs.mkString("[", ",", "]"))
@@ -64,18 +74,21 @@ class DotEdge(val source : DotNode, val target : DotNode, val sPort : Option[Str
 }
 
 object DotEdge {
-  def apply(source : DotNode, target : DotNode, attr : List[DotAttr]) : DotEdge =
-    new DotEdge(source, target, None, attr)
+  def apply(source : DotNode, target : DotNode) : DotEdge =
+    new DotEdge(source, target, None, List.empty)
 }
 
-class DotGraph(val name : String, val blocks : TraversableOnce[DotNode], val edges : TraversableOnce[DotEdge]) {
+class DotGraph(val name : String, val blocks : Traversable[DotNode], val edges : Traversable[DotEdge], val attrs : List[DotAttr]) {
+  def +(g : DotGraph) : DotGraph =
+    new DotGraph(name, blocks ++ g.blocks, edges ++ g.edges, attrs ++ g.attrs)
+
   override def toString : String = 
-    "digraph %s {\n%s\n%s\n}".format(name, blocks.mkString("\n"), edges.mkString("\n"))
+    "digraph %s {\n%s\n%s\n%s\n}".format(name, attrs.mkString("\n"), blocks.mkString("\n"), edges.mkString("\n"))
 }
 
 object DotGraph {
-  def apply(name : String, blocks : TraversableOnce[DotNode], edges : TraversableOnce[DotEdge]) : DotGraph =
-    new DotGraph(name, blocks, edges)
+  def apply(name : String, blocks : Traversable[DotNode], edges : Traversable[DotEdge]) : DotGraph =
+    new DotGraph(name, blocks, edges, List.empty)
 }
 
 object Dot {
