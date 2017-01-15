@@ -328,11 +328,13 @@ object Node {
               add(as, List(lEdge, rEdge))
             }))
         , (l, m, argss, t) => // application
-            mapM(mapM(formatNode, _ : List[Node]), argss) >>= (nodess => {
+            mapM(mapM(formatNode, _ : List[Node]), argss) >>= (nodess =>
+            formatNode(m) >>= ( method => {
               val app = record(l, "Application", t.toString())
+              val edgeToMethod = edge(app, method, "method")
               deepEnum(app, nodess, "arg(%s, %s)".format(_, _)) >>
-              add(app, List())
-            })
+              add(app, List(edgeToMethod))
+            }))
         , (l, cls, argss, t) => // new
             mapM(mapM(formatNode, _ : List[Node]), argss) >>= (nodess => {
               val newE = record(l, "New", t.toString())

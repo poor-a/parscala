@@ -149,7 +149,6 @@ object ReachingDefinition {
         case Some((targetBlock, first, last, beforeLast, beforeFirst)) => 
           val afterLast = transfer(last, beforeLast)
           if (!(afterLast subsetOf beforeFirst)) {
-            println("update " + target + "!")
             val beforeFirstUpdated : RD = beforeFirst ++ afterLast
             val analUpdated : RDMap = updateBlockRD(updateNodeRD)(targetBlock, analysis.updated(first, beforeFirstUpdated))
             val edgesToUpdate : List[cfg.BEdge] = targetBlock.successors map { case (l, tag) => (target, l, tag) }
@@ -170,18 +169,16 @@ object ReachingDefinition {
     val analysisEmpty : RDMap = sLabels.zip(List.fill(sLabels.size)(initRD)).toMap
     val analysisInit : RDMap = cfg.traverse(updateBlockRD(initNodeRD), analysisEmpty)
 
-    println("labels: " + sLabels + " " + cfg.start + " " + cfg.done)
-
     val (_, analysis) = parscala.Control.until(empty, step, (workingList, analysisInit))
-    new ReachingDefinition(analysis)
+    new ReachingDefinition(analysis, cfg)
   }
 
   def toDot(rd : ReachingDefinition) : dot.DotGraph = {
     val edges : List[dot.DotEdge] = rd.rd.foldLeft(List.empty[dot.DotEdge]) { (acc, kv) => {
-        val (variable, reachingAssignments) = kv
+        val (expression, reachingAssignments) = kv
         reachingAssignments.foldLeft(acc) { (acc2, reachingAssignment) => {
             val (_, assignment) = reachingAssignment
-            val edge : dot.DotEdge = dot.DotEdge(dot.DotNode(assignment.toString), dot.DotNode(variable.toString)) !! dot.DotAttr.label("reach")
+            val edge : dot.DotEdge = dot.DotEdge(dot.DotNode(assignment.toString), dot.DotNode(expression.toString)) !! dot.DotAttr.label("reach")
             edge :: acc2
           }
         }
@@ -196,6 +193,8 @@ object ReachingDefinition {
  * a given point of the program.
  *
  * See Flemming Nielson, Hanne Riis Nielson, Chris Hankin:
- * 'Principles of Program Analysis' section 1.2
+ * 'Principles of Program Analysis' section 2.1
  */
-class ReachingDefinition(val rd : Map[SLabel, Set[(Symbol, SLabel)]])
+class ReachingDefinition(val rd : Map[SLabel, Set[(Symbol, SLabel)]], val cfg : cf.CFGraph) {
+  def get(l : SLabel) : Option[Set[(Symbol, SLabel)]] = rd.get(l)
+}

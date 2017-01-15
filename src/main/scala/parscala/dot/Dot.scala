@@ -9,6 +9,7 @@ import java.awt.image.BufferedImage
 import java.util.concurrent.TimeUnit
 
 import scala.io.{Source,Codec}
+import scala.collection.immutable.Traversable
 
 class DotNode(val name : String, val attrs : List[DotAttr]) {
   def !!(a : DotAttr) : DotNode = 
@@ -41,6 +42,10 @@ object RankDir extends Enumeration {
   val TB, BT, LR, RL = Value
 }
 
+object Color extends Enumeration {
+  val Purple = Value
+}
+
 object DotAttr {
   def shape(s : String) : DotAttr =
     new DotAttr("shape", s)
@@ -53,11 +58,20 @@ object DotAttr {
 
   def rankDir(dir : RankDir.Value) = 
     new DotAttr("rankdir", dir.toString)
+
+  def color(c : Color.Value) = 
+    new DotAttr("color", c.toString.toLowerCase)
+
+  def fontColor(c : Color.Value) = 
+    new DotAttr("fontcolor", c.toString.toLowerCase)
 }
 
 class DotEdge(val source : DotNode, val target : DotNode, val sPort : Option[String], val attrs : List[DotAttr]) {
   def !!(a : DotAttr) : DotEdge = 
     new DotEdge(source, target, sPort, a :: attrs)
+
+  def !!(as : List[DotAttr]) : DotEdge = 
+    new DotEdge(source, target, sPort, as ++ attrs)
 
   override def toString : String = {
     val addPort = (port : String) =>
@@ -80,7 +94,11 @@ object DotEdge {
 
 class DotGraph(val name : String, val blocks : Traversable[DotNode], val edges : Traversable[DotEdge], val attrs : List[DotAttr]) {
   def +(g : DotGraph) : DotGraph =
-    new DotGraph(name, blocks ++ g.blocks, edges ++ g.edges, attrs ++ g.attrs)
+    new DotGraph(name, g.blocks ++ blocks, g.edges ++ edges, g.attrs ++ attrs)
+
+  def addEdges(es : Traversable[DotEdge]) : DotGraph = {
+    new DotGraph(name, blocks, es ++ edges, attrs)
+  }
 
   override def toString : String = 
     "digraph %s {\n%s\n%s\n%s\n}".format(name, attrs.mkString("\n"), blocks.mkString("\n"), edges.mkString("\n"))

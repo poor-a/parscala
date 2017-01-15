@@ -68,8 +68,7 @@ object ParScala {
                 }
                 for (b <- method.body;
                      cfg <- method.cfg) {
-                  println(df.ReachingDefinition(cfg).rd)
-                  MainWindow.showDot(Node.toDot(Node.mkNode(b).root) + df.ReachingDefinition.toDot(df.ReachingDefinition(cfg)))
+                  MainWindow.showDot(Node.toDot(Node.mkNode(b).root).addEdges(df.UseDefinition.fromReachingDefinition(df.ReachingDefinition(cfg)).toDot))
                 }
               }
               case None =>

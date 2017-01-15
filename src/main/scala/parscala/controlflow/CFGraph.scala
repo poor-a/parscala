@@ -82,7 +82,6 @@ object CFGraph {
   implicit def unitMonoidInstance : Monoid[Unit] = Monoid.instance((_, _) => Unit, Unit)
     
   def cfgStmts(b : Block[Node,C,O], abruptNext : BLabel, node : tr.Node) : CFGAnalyser[Block[Node,C,O]] = {
-    println("cfgStmt: " + node)
     def step(acc : Block[Node,C,O], e : tr.Node) : CFGAnalyser[Block[Node,C,O]] =
       cfgStmts(acc, abruptNext, e)
 
