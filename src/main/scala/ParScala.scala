@@ -1,9 +1,9 @@
 import java.io.{File,PrintWriter}
-import java.nio.file.{Paths,Files,Path,StandardOpenOption}
+import java.nio.file._
 
 import parscala._
 import parscala.tree._
-import parscala.controlflow.{CFGraph, CFGPrinter}
+import parscala.controlflow.CFGPrinter
 import parscala.df
 
 case class Config(val method : String,
@@ -15,12 +15,17 @@ case class Config(val method : String,
 )
 
 object ParScala {
-  private def dumpDot(path : String, cfg : CFGraph) : Unit = {
+  private def dumpDot(path : String, g : dot.DotGraph) : Unit = {
     val p : Path = Paths.get(path)
-    val out = new PrintWriter(Files.newBufferedWriter(p, StandardOpenOption.CREATE_NEW))
-    out.print(CFGPrinter.formatGraph(cfg))
-    out.flush()
-    out.close()
+    try {
+      val out = new PrintWriter(Files.newBufferedWriter(p, StandardOpenOption.CREATE_NEW))
+      out.print(g)
+      out.flush()
+      out.close()
+    } catch {
+        case e : FileAlreadyExistsException =>
+          println("The file \"" + p + "\" already exists!")
+    }
   }
 
   private def expandPath(path : String) : String = 
@@ -61,14 +66,13 @@ object ParScala {
                 }
                 if (!c.dotOutput.isEmpty) {
                   scalaz.std.option.cata(method.cfg)(
-                      cfg => dumpDot(c.dotOutput, cfg)
+                      cfg => dumpDot(c.dotOutput, CFGPrinter.formatGraph(cfg))
                     , Console.err.println("The body of %s is not available.".format(c.method))
                   )
                                      
                 }
                 for (b <- method.body;
                      cfg <- method.cfg) {
-                  MainWindow.showDot(Node.toDot(Node.mkNode(b).root).addEdges(df.UseDefinition.fromReachingDefinition(df.ReachingDefinition(cfg)).toDot))
                 }
               }
               case None =>

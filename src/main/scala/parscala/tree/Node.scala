@@ -328,8 +328,8 @@ object Node {
               add(as, List(lEdge, rEdge))
             }))
         , (l, m, argss, t) => // application
-            mapM(mapM(formatNode, _ : List[Node]), argss) >>= (nodess =>
-            formatNode(m) >>= ( method => {
+            formatNode(m) >>= ( method => 
+            mapM(mapM(formatNode, _ : List[Node]), argss) >>= (nodess => {
               val app = record(l, "Application", t.toString())
               val edgeToMethod = edge(app, method, "method")
               deepEnum(app, nodess, "arg(%s, %s)".format(_, _)) >>
@@ -359,7 +359,7 @@ object Node {
         , (l, pred, thenE, t) => // if-then
             formatNode(pred) >>= (p =>
             formatNode(thenE) >>= (th => {
-              val ifE = record(l, "If-then", t.toString())
+              val ifE = record(l, "If-then", "")
               add(ifE, List(edge(ifE, p, "predicate"),
                             edge(ifE, th, "then")))
             }))
@@ -367,7 +367,7 @@ object Node {
             formatNode(pred) >>= (p =>
             formatNode(thenE) >>= (th =>
             formatNode(elseE) >>= (el => {
-              val ifE = record(l, "If-then", t.toString())
+              val ifE = record(l, "If-then-else", "")
               add(ifE, List(edge(ifE, p, "predicate"),
                             edge(ifE, th, "then"),
                             edge(ifE, el, "else")))
