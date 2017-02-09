@@ -18,6 +18,8 @@ object Control {
    * @param app handles the applied method and its actual parameter lists
    * @param ass handles the left and right side of an assignment
    * @param idDef handles the modifiers, identifier and right side of an identifier definition (val or var)
+   * @param returnUnit handles return statements without expressions
+   * @param returnExpr handles return statements with expressions
    * @return the common type A
    */
   def exprCata[A](lit: Tree => A,
@@ -34,6 +36,8 @@ object Control {
                   forYieldE : (List[Tree], Tree) => A,
                   ass : (Tree, Tree) => A,
                   idDef : (Modifiers, Symbol, Tree) => A,
+                  returnUnit : () => A,
+                  returnExpr : (Tree) => A,
                   block : (List[Tree]) => A,
                   other : Tree => A,
                   t : Tree) : A = {
@@ -55,6 +59,8 @@ object Control {
       case q"$lexpr = $rexpr" => ass(lexpr, rexpr)
       case q"$mods val $id = $expr" => idDef(mods, t.symbol, expr)
       case q"$mods var $id = $expr" => idDef(mods, t.symbol, expr)
+      case q"return" => returnUnit()
+      case q"return $expr" => returnExpr(expr)
 //      case fq"$pat <- $expr" => gen(pat, expr)
 //      case fq"if $pred" => guard(pred)
 //      case fq"$pat = $expr" => forValDef(pat, expr)

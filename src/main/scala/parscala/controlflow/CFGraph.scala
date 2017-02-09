@@ -48,6 +48,9 @@ object CFGraph {
 
   def pure[A](x : A) : CFGAnalyser[A] = EitherT.eitherTMonad[CFGGen, Unit].pure(x)
 
+  def handleError[A](m : CFGAnalyser[A])(handler : Unit => CFGAnalyser[A]) : CFGAnalyser[A] =
+    EitherT.eitherTMonadError[CFGGen, Unit].handleError(m)(handler)
+
   def mkExtCFGraph(m : Method) : Option[ExtensibleCFGraph] = {
     val bGen : BLabelGen = BLabel.stream
     val sGen : SLabelGen = SLabel.stream
@@ -123,49 +126,78 @@ object CFGraph {
           for (tBranch <- liftM(emptyBlock);
                succ <- liftM(emptyBlock);
                pEvaled <- cfgStmts(b, abruptNext, p);
-               tEvaled <- cfgStmts(tBranch, abruptNext, t);
                cond = Cond(p.label, tBranch.entryLabel, succ.entryLabel);
-               flushed = BCat(pEvaled, BLast(cond));
-               tFlushed = BCat(tEvaled, BLast(Jump(succ.entryLabel)));
-               _ <- liftM(modifyGraph{ _ + flushed + tFlushed}))
+               closed = BCat(pEvaled, BLast(cond));
+               _ <- liftM(modifyGraph{ _ + closed });
+               _ <- handleError {
+                   for (tEvaled <- cfgStmts(tBranch, abruptNext, t);
+                        tFlushed = BCat(tEvaled, BLast(Jump(succ.entryLabel)));
+                        _ <- liftM(modifyGraph{ _ + tFlushed }))
+                   yield ()
+                 } {
+                   _ => pure(())
+                 })
           yield succ
       , (l, p, t, f, _) => // if-then-else
           for (tBranch <- liftM(emptyBlock);
                fBranch <- liftM(emptyBlock);
                succ <- liftM(emptyBlock);
                pEvaled <- cfgStmts(b, abruptNext, p);
-               tEvaled <- cfgStmts(tBranch, abruptNext, t);
-               fEvaled <- cfgStmts(fBranch, abruptNext, f);
                cond = Cond(p.label, tBranch.entryLabel, fBranch.entryLabel);
-               tFlushed = BCat(tEvaled, BLast(Jump(succ.entryLabel)));
-               fFlushed = BCat(fEvaled, BLast(Jump(succ.entryLabel)));
-               flushed = BCat(pEvaled, BLast(cond));
-               _ <- liftM(modifyGraph{ _ + flushed + tFlushed + fFlushed }))
+               closed = BCat(pEvaled, BLast(cond));
+               _ <- liftM(modifyGraph{ _ + closed });
+               _ <- handleError {
+                   for (tEvaled <- cfgStmts(tBranch, abruptNext, t);
+                        tFlushed = BCat(tEvaled, BLast(Jump(succ.entryLabel)));
+                        _ <- liftM(modifyGraph { _ + tFlushed }))
+                   yield ()
+                 } {
+                   _ => pure(())
+                 };
+               _ <- handleError {
+                   for (fEvaled <- cfgStmts(fBranch, abruptNext, f);
+                        fFlushed = BCat(fEvaled, BLast(Jump(succ.entryLabel)));
+                        _ <- liftM(modifyGraph{ _ + fFlushed }))
+                   yield ()
+                 } {
+                   _ => pure(())
+                 })
           yield succ
       , (l, p, body, _) => // while loop
           for (succ <- liftM(emptyBlock);
                bodyEmpty <- liftM(emptyBlock);
                testPBegin <- liftM(emptyBlock);
                pEvaled <- cfgStmts(testPBegin, abruptNext, p);
-               bodyEvaled <- cfgStmts(bodyEmpty, abruptNext, body);
-               cond = Cond(p.label, bodyEvaled.entryLabel, succ.entryLabel);
-               testP = BCat(pEvaled, BLast(cond));
-               flushed = BCat(b, BLast(Jump(testP.entryLabel)));
-               bodyFlushed = BCat(bodyEvaled, BLast(Jump(testP.entryLabel)));
-               _ <- liftM(modifyGraph{ _ + flushed + bodyFlushed + testP }))
+               cond = Cond(p.label, bodyEmpty.entryLabel, succ.entryLabel);
+               pClosed = BCat(pEvaled, BLast(cond));
+               precClosed = BCat(b, BLast(Jump(pClosed.entryLabel)));
+               _ <- liftM(modifyGraph{ _ + precClosed + pClosed });
+               _ <- handleError {
+                   for (bodyEvaled <- cfgStmts(bodyEmpty, abruptNext, body);
+                        bodyFlushed = BCat(bodyEvaled, BLast(Jump(pClosed.entryLabel)));
+                        _ <- liftM(modifyGraph{ _ + bodyFlushed }))
+                   yield ()
+                 } {
+                   _ => pure(())
+                 })
           yield succ
       , (l, enums, body, _) => pure(b) // for loop
       , (l, enums, body, _) => pure(b) // for-yield loop
-      , (l, expr, _) => // return
+      , (l, _) => { // return 
+          val precClosed = BCat(b, BLast(Jump(abruptNext)))
+          liftM (modifyGraph { _ + precClosed }) >> 
+          EitherT.eitherTMonadError[CFGGen, Unit].raiseError(())
+        }
+      , (l, expr, _) => // return with expr
           cfgStmts(b, abruptNext, expr) >>= (exprEvaled => {
-            val flushed = BCat(exprEvaled, BLast(Jump(abruptNext)))
-            liftM (modifyGraph { _ + flushed }) >> 
+            val precClosed = BCat(exprEvaled, BLast(Jump(abruptNext)))
+            liftM (modifyGraph { _ + precClosed }) >> 
             EitherT.eitherTMonadError[CFGGen, Unit].raiseError(())
           })
       , (l, expr, _) => // throw
           cfgStmts(b, abruptNext, expr) >>= (exprEvaled => {
-            val flushed = BCat(exprEvaled, BLast(Jump(abruptNext)))
-            liftM(modifyGraph { _ + flushed }) >> 
+            val precClosed = BCat(exprEvaled, BLast(Jump(abruptNext)))
+            liftM(modifyGraph { _ + precClosed }) >> 
             EitherT.eitherTMonadError[CFGGen, Unit].raiseError(())
           })
       , (l, exprs, _) => // block

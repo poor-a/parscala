@@ -47,13 +47,14 @@ object UseDefinition {
             , const4 // while loop
             , const4 // for loop
             , const4 // for-yield loop
-            , const3 // return
+            , const2 // return
+            , const3 // return with expr
             , const3 // throw
             , const3 // block
             , const2 // expression
             , node)
     }
-    new UseDefinition(rd.rd map{ case (k, v) => (k, useDefinitions(k, v))})
+    new UseDefinition(rd.rd map{ case (k, v) => (k, useDefinitions(k, v)) })
   }
 }
 

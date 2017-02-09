@@ -71,9 +71,6 @@ object ParScala {
                   )
                                      
                 }
-                for (b <- method.body;
-                     cfg <- method.cfg) {
-                }
               }
               case None =>
                 println("Method %s is not found.".format(c.method))

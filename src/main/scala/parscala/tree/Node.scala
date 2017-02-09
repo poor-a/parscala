@@ -84,6 +84,11 @@ case class ForYield(val l : SLabel, val enums : List[Node], val body : Node, val
   def tree : Tree = tr
 }
 
+case class ReturnUnit(val l : SLabel, val tr : Tree) extends Node {
+  def label : SLabel = l
+  def tree : Tree = tr
+}
+
 case class Return(val l : SLabel, val e : Node, val tr : Tree) extends Node {
   def label : SLabel = l
   def tree : Tree = tr
@@ -119,6 +124,7 @@ object Node {
                   nWhile : (SLabel, Node, Node, Tree) => A,
                   nFor : (SLabel, List[Node], Node, Tree) => A,
                   nForYield : (SLabel, List[Node], Node, Tree) => A,
+                  nReturnUnit : (SLabel, Tree) => A,
                   nReturn : (SLabel, Node, Tree) => A,
                   nThrow : (SLabel, Node, Tree) => A,
                   nBlock : (SLabel, List[Node], Tree) => A,
@@ -139,6 +145,7 @@ object Node {
       case While(sl, pred, body, tr) => nWhile(sl, pred, body, tr)
       case For(sl, enums, body, tr) => nFor(sl, enums, body, tr)
       case ForYield(sl, enums, body, tr) => nForYield(sl, enums, body, tr)
+      case ReturnUnit(sl, t) => nReturnUnit(sl, t)
       case Return(sl, expr, t) => nReturn(sl, expr, t)
       case Throw(sl, expr, t) => nThrow(sl, expr, t)
       case Block(sl, exprs, t) => nBlock(sl, exprs, t)
@@ -196,11 +203,17 @@ object Node {
   def nTuple(comps : List[Node], tuple : Tree) : NodeGen[Node] = 
     label(Tuple(_, comps, tuple))
 
+  def nReturnUnit(tr : Tree) : NodeGen[Node] =
+    label(ReturnUnit(_, tr))
+
   def nReturn(expr : Node, tr : Tree) : NodeGen[Node] =
     label(Return(_, expr, tr))
 
   def nBlock(exprs : List[Node], tr : Tree) : NodeGen[Node] =
     label(Block(_, exprs, tr))
+
+  def nExpr(tr : Tree) : NodeGen[Node] =
+    label(Expr(_, tr))
 
   def genSLabel : NodeGen[SLabel] =
     for (l <- State.gets[St, SLabel](_._1.head);
@@ -267,10 +280,15 @@ object Node {
       , (_, lhs, rhs) => // var or val def
           genNode(rhs) >>= (rNode =>
           nValDef(lhs, rNode, t))
+      , () => // return
+          nReturnUnit(t)
+      , expr => // return with expr
+          genNode(expr) >>= (node =>
+          nReturn(node, t))
       , stmts => // expression block
           foldM(step, List.empty, stmts) >>= (nodes => nBlock(nodes.reverse, t))
       , other => // other expression
-          genSLabel >>= (l => State.state[St, Node](Expr(l, other)))
+          nExpr(other)
       , t)
   }
 
@@ -393,7 +411,11 @@ object Node {
               enum(forE, nodes, "enum(%s)".format(_)) >>
               add(forE, List(edge(forE, b, "yield")))
             }))
-        , (l, expr, t) => // return
+        , (l, t) => { // return
+            val returnE = record(l, "Return", "")
+            add(returnE, List())
+          }
+        , (l, expr, t) => // return with expr
             formatNode(expr) >>= (e => {
               val returnE = record(l, "Return", "")
               add(returnE, List(edge(returnE, e, "return")))
