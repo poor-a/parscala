@@ -7,7 +7,7 @@ class Cli {
      .longOpt("method")
      .desc("select a method, e.g. com.foo.bar")
      .hasArg()
-     .required()
+     .required(false)
      .build()
 
   private[this] val showCfg : cli.Option = 
@@ -42,6 +42,14 @@ class Cli {
      .required()
      .build()
 
+  private[this] val classpath : cli.Option = 
+    cli.Option.builder("cp")
+     .longOpt("classpath")
+     .desc("classpath for the Scala compiler")
+     .argName("classpath")
+     .hasArg()
+     .build()
+
   val help : cli.Option =
     cli.Option.builder("h")
      .longOpt("help")
@@ -49,7 +57,7 @@ class Cli {
      .build()  
 
   private val options : cli.Options = {
-    val options = List(method, showCfg, showCalls, dotOutput, files, help)
+    val options = List(method, showCfg, showCalls, dotOutput, files, classpath, help)
     options.foldLeft(new cli.Options){(acc, o) => acc.addOption(o)}
   }
 
@@ -66,14 +74,15 @@ class Cli {
     val parser : cli.CommandLineParser = new cli.DefaultParser
     try {
       val result = parser.parse(options, args)
-      Right(new Config(result.getOptionValue(method.getOpt, ""),
+      Right(new Config(Option(result.getOptionValue(method.getOpt)),
                        result.hasOption(showCfg.getOpt),
                        result.hasOption(showCalls.getOpt),
-                       result.getOptionValue(dotOutput.getOpt, ""),
+                       Option(result.getOptionValue(dotOutput.getOpt)),
                        result.getOptionValues(files.getOpt) match {
                          case null => List()
                          case xs => xs.toList
                        },
+                       Option(result.getOptionValue(classpath.getOpt)),
                        result.hasOption(help.getOpt)))
     } catch {
       case ex : cli.MissingArgumentException =>
