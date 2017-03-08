@@ -32,10 +32,10 @@ object UseDefinition {
           val const4 : (Any, Any, Any, Any) => Set[Assignment] = (_, _, _, _) => Set.empty
           val const5 : (Any, Any, Any, Any, Any) => Set[Assignment] = (_, _, _, _, _) => Set.empty
           tr.Node.nodeCata(
-              const2 // literal
+              const3 // literal
             , (sl, symbol, _) => // identifier
                 reachingDefs filter { case (sym, assignment) => symbol == sym }
-            , const4 // valdef
+            , const4 // pattern definition
             , const4 // assignment
             , const4 // application
             , const4 // new

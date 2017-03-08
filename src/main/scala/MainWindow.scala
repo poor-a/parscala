@@ -38,18 +38,21 @@ object MainWindow {
     }
   }
 
-  def showDot(g : DotGraph) {
-    println(g.toString)
+  def showDotWithTitle(g : DotGraph, title : String) {
     val d : Dot = new Dot
     d.drawGraph(g) match {
       case Right(image) => 
         showWindow { w => {
-          w.setTitle("Dot graph")
+          w.setTitle(title)
           w.add(image, BorderLayout.CENTER)
         }}
       case Left(err) =>
         Console.err.println(err)
     }
+  }
+
+  def showDot(g : DotGraph) {
+    showDotWithTitle(g, "Dot graph")
   }
 
   private def showWindow(setUp : JFrame => Unit) {

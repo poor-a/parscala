@@ -92,7 +92,7 @@ object CFGraph {
       foldM(step, acc, xs)
 
     Node.nodeCata(
-        (l, _) => { // literal
+        (l, _, _) => { // literal
           val literal = Expr(l)
           pure(BCat(b, BMiddle(literal)))
         }
@@ -100,7 +100,7 @@ object CFGraph {
           val identifier = Expr(l)
           pure(BCat(b, BMiddle(identifier)))
         }
-      , (l, _, rhs, _) => // val or var def
+      , (l, _, rhs, _) => // pattern definition
           for (rhsEvaled <- cfgStmts(b, abruptNext, rhs))
           yield BCat(rhsEvaled, BMiddle(Expr(l)))
       , (l, lhs, rhs, _) => // assignment

@@ -24,6 +24,13 @@ class Cli {
      .required(false)
      .build()
 
+  private[this] val showDataflow : cli.Option = 
+    cli.Option.builder("df")
+     .longOpt("show-dataflow")
+     .desc("show the data flow graph in a window")
+     .required(false)
+     .build()
+
   private[this] val dotOutput : cli.Option = 
     cli.Option.builder("o")
      .desc("dump the control flow graph into a dot file")
@@ -36,10 +43,18 @@ class Cli {
     cli.Option.builder("f")
      .longOpt("files")
      .desc("source files to analyse")
-     .argName("files")
+     .argName("file1 file2 ...")
      .hasArgs()
      .numberOfArgs(cli.Option.UNLIMITED_VALUES)
-     .required()
+     .build()
+
+  private[this] val dirs : cli.Option = 
+    cli.Option.builder("d")
+     .longOpt("dir")
+     .desc("directories of Scala files to analyse")
+     .argName("dir1 dir2 ...")
+     .hasArgs()
+     .numberOfArgs(cli.Option.UNLIMITED_VALUES)
      .build()
 
   private[this] val classpath : cli.Option = 
@@ -57,7 +72,7 @@ class Cli {
      .build()  
 
   private val options : cli.Options = {
-    val options = List(method, showCfg, showCalls, dotOutput, files, classpath, help)
+    val options = List(method, showCfg, showCalls, showDataflow, dotOutput, files, dirs, classpath, help)
     options.foldLeft(new cli.Options){(acc, o) => acc.addOption(o)}
   }
 
@@ -77,10 +92,15 @@ class Cli {
       Right(new Config(Option(result.getOptionValue(method.getOpt)),
                        result.hasOption(showCfg.getOpt),
                        result.hasOption(showCalls.getOpt),
+                       result.hasOption(showDataflow.getOpt),
                        Option(result.getOptionValue(dotOutput.getOpt)),
                        result.getOptionValues(files.getOpt) match {
                          case null => List()
                          case xs => xs.toList
+                       },
+                       result.getOptionValues(dirs.getOpt) match {
+                         case null => List()
+                         case ds => ds.toList
                        },
                        Option(result.getOptionValue(classpath.getOpt)),
                        result.hasOption(help.getOpt)))

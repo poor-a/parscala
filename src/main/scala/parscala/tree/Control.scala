@@ -22,7 +22,7 @@ object Control {
    * @param returnExpr handles return statements with expressions
    * @return the common type A
    */
-  def exprCata[A](lit: Tree => A,
+  def exprCata[A](lit : (Lit, Tree) => A,
                   id : (Symbol) => A,
                   tuple : List[Tree] => A,
                   newE : (List[Tree], List[Tree], List[Tree]) => A,
@@ -44,7 +44,8 @@ object Control {
     import compiler.Quasiquote
 
     t match {
-      case _ if t.isInstanceOf[compiler.Literal] => lit(t)
+      case q"${n : Int}" => lit(IntLit(n), t)
+      case q"${s : String}" => lit(StringLit(s), t)
       case _ if t.isInstanceOf[compiler.Ident] => id(t.symbol)
       case q"(..$components)" if components.size >= 2 => tuple(components)
       case q"new { ..$earlydefns } with ..$parents { $self => ..$stats }" => newE(earlydefns, parents, stats)

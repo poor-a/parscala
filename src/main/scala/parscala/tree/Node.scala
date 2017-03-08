@@ -14,9 +14,9 @@ sealed abstract class Node {
   def tree : Tree
 }
 
-case class Literal(val l : SLabel, lit : Tree) extends Node {
+case class Literal(val l : SLabel, lit : Lit, val t : Tree) extends Node {
   def label : SLabel = l
-  def tree : Tree = lit
+  def tree : Tree = t
 }
 
 case class Ident(val l : SLabel, val s : Symbol, val variable : Tree) extends Node {
@@ -24,9 +24,9 @@ case class Ident(val l : SLabel, val s : Symbol, val variable : Tree) extends No
   def tree : Tree = variable
 }
 
-case class ValDef(val l : SLabel, val lhs : Symbol, val rhs : Node, val valdef : Tree) extends Node {
+case class PatDef(val l : SLabel, val lhs : Pat, val rhs : Node, val t : Tree) extends Node {
   def label : SLabel = l
-  def tree : Tree = valdef
+  def tree : Tree = t
 }
 
 case class Assign(val l : SLabel, val lhs : Node, val rhs : Node, val tr : Tree) extends Node {
@@ -110,9 +110,9 @@ case class Expr(val l : SLabel, val expr : Tree) extends Node {
 }
 
 object Node {
-  def nodeCata[A](nLiteral : (SLabel, Tree) => A,
+  def nodeCata[A](nLiteral : (SLabel, Lit, Tree) => A,
                   nIdent : (SLabel, Symbol, Tree) => A,
-                  nValDef : (SLabel, Symbol, Node, Tree) => A,
+                  nPatDef : (SLabel, Pat, Node, Tree) => A,
                   nAssign : (SLabel, Node, Node, Tree) => A,
                   nApp : (SLabel, Node, List[List[Node]], Tree) => A,
                   nNew : (SLabel, Tree, List[List[Node]], Tree) => A,
@@ -131,9 +131,9 @@ object Node {
                   nExpr : (SLabel, Tree) => A,
                   n : Node) : A =
     n match {
-      case Literal(sl, t) => nLiteral(sl, t)
+      case Literal(sl, lit, t) => nLiteral(sl, lit, t)
       case Ident(sl, sym, t) => nIdent(sl, sym, t)
-      case ValDef(sl, sym, rhs, t) => nValDef(sl, sym, rhs, t)
+      case PatDef(sl, pat, rhs, t) => nPatDef(sl, pat, rhs, t)
       case Assign(sl, lhs, rhs, t) => nAssign(sl, lhs, rhs, t)
       case App(sl, f, args, t) => nApp(sl, f, args, t)
       case New(sl, ctr, args, t) => nNew(sl, ctr, args, t)
@@ -152,23 +152,38 @@ object Node {
       case Expr(sl, expr) => nExpr(sl, expr)
     }
 
-  type St = (SLabelGen, LabelMap[Node])
+  type St = (PLabelGen, SLabelGen, LabelMap[Node])
   type NodeGen[A] = State[St, A]
+
+  def genSLabel : NodeGen[SLabel] =
+    for (l <- State.gets[St, SLabel](_._2.head);
+         _ <- State.modify[St]{ case (pgen, sgen, map) => (pgen, sgen.tail, map) })
+    yield l
+
+  def genPLabel : NodeGen[PLabel] =
+    for (l <- State.gets[St, PLabel](_._1.head);
+         _ <- State.modify[St]{ case (pgen, sgen, map) => (pgen.tail, sgen, map) })
+    yield l
 
   def label(f : SLabel => Node) : NodeGen[Node] = 
     for (l <- genSLabel;
          n = f(l);
-         _ <- State.modify[St]{case (sgen, map) => (sgen, map.updated(l, n))})
+         _ <- State.modify[St]{case (pgen, sgen, map) => (pgen, sgen, map.updated(l, n))})
     yield n
 
-  def nLiteral(lit : Tree) : NodeGen[Node] = 
-    label(Literal(_, lit))
+  def labelPat(f : PLabel => Pat) : NodeGen[Pat] = 
+    for (l <- genPLabel;
+         p = f(l))
+    yield p
+
+  def nLiteral(lit : Lit, t : Tree) : NodeGen[Node] = 
+    label(Literal(_, lit, t))
 
   def nIdent(symbol : Symbol, ident : Tree) : NodeGen[Node] =
     label(Ident(_, symbol, ident))
 
-  def nValDef(lhs : Symbol, rhs : Node, tr : Tree) : NodeGen[Node] =
-    label(ValDef(_, lhs, rhs, tr))
+  def nPatDef(lhs : Pat, rhs : Node, tr : Tree) : NodeGen[Node] =
+    label(PatDef(_, lhs, rhs, tr))
 
   def nAssign(lhs : Node, rhs : Node, tr : Tree) : NodeGen[Node] =
     label(Assign(_, lhs, rhs, tr))
@@ -214,11 +229,6 @@ object Node {
 
   def nExpr(tr : Tree) : NodeGen[Node] =
     label(Expr(_, tr))
-
-  def genSLabel : NodeGen[SLabel] =
-    for (l <- State.gets[St, SLabel](_._1.head);
-         _ <- State.modify[St]{ case (sgen, map) => (sgen.tail, map) })
-    yield l
   
   def genNode(t : Tree) : NodeGen[Node] = {
     import scalaz.syntax.bind._
@@ -233,7 +243,7 @@ object Node {
       yield ns.reverse :: nns
 
     Control.exprCata(
-        nLiteral(_) // literal
+        nLiteral(_, _) // literal
       , ident => // identifier reference
           nIdent(ident, t)
       , comps =>  // tuple
@@ -279,7 +289,8 @@ object Node {
           nAssign(lNode, rNode, t)))
       , (_, lhs, rhs) => // var or val def
           genNode(rhs) >>= (rNode =>
-          nValDef(lhs, rNode, t))
+          labelPat(IdentPat(_, lhs)) >>= (pat =>
+          nPatDef(pat, rNode, t)))
       , () => // return
           nReturnUnit(t)
       , expr => // return with expr
@@ -293,7 +304,7 @@ object Node {
   }
 
   def mkNode(t : Tree) : NodeTree = {
-    val ((_, map), node) = genNode(t).run((SLabel.stream, Map()))
+    val ((_, _, map), node) = genNode(t).run((PLabel.stream, SLabel.stream, Map()))
     NodeTree(node, map)
   }
 
@@ -328,14 +339,14 @@ object Node {
 
     def formatNode(n : Node) : DotGen[DotNode] = 
       nodeCata(
-          (l, lit) => // literal
-            add(record(l, "Literal", lit.toString), List())
+          (l, lit, t) => // literal
+            add(record(l, "Literal", t.toString), List())
         , (l, _, t) => // identifier reference
             add(record(l, "Identifier", t.toString), List())
-        , (l, _, rhs, t) => // var of val definition
+        , (l, pat, rhs, t) => // pattern definition
             formatNode(rhs) >>= (right => {
-              val valDef = record(l, "Val/var definition", t.toString)
-              add(valDef, List(edge(valDef, right, "value")))
+            val patDef = record(l, "Pattern definition", "")
+            add(patDef, List(edge(patDef, right, "value")))
             })
         , (l, lhs, rhs, t) => // assignment
             formatNode(lhs) >>= (left => 

@@ -1,17 +1,23 @@
-import java.io.{File,PrintWriter}
-import java.nio.file._
-
 import parscala._
+import parscala.file.DirectoryTraverser
 import parscala.tree._
 import parscala.controlflow.CFGPrinter
-import parscala.df
+import parscala.df.ReachingDefinition
+
+import scala.collection.JavaConverters
+
+import java.util.stream.{Stream, Collectors}
+import java.io.{File,PrintWriter}
+import java.nio.file._
 
 case class Config(
   val method : Option[String],
   val showCfg : Boolean,
   val showCallGraph : Boolean,
+  val showDataflowGraph : Boolean,
   val dotOutput : Option[String],
   val files : List[String],
+  val directories : List[String],
   val classpath : Option[String],
   val showHelp : Boolean
 )
@@ -47,11 +53,13 @@ object ParScala {
         if (c.showHelp)
           cli.printHelp()
         else {
-          println("args exist?")
-          val xs : List[(String, Boolean)] = c.files zip c.files.map{new File(_).exists()}
-          xs foreach {x => println("%s - %s".format(x._1, x._2))}
-          if (xs.forall(_._2)) {
-            val g : ProgramGraph = parscala.ParScala.analyse(c.files, c.classpath)
+          val existingFiles : List[String] = c.files filter {new File(_).exists()}
+          val scalaSourceFilesInDirs : Stream[String] = c.directories.foldLeft(Stream.empty[String])((files, dir) => Stream.concat(DirectoryTraverser.getScalaSources(dir), files))
+          val scalaSourceFiles = (JavaConverters.asScalaBuffer(scalaSourceFilesInDirs.collect(Collectors.toList[String])).toList) ++ existingFiles
+          if (c.files.isEmpty && c.directories.isEmpty)
+            Console.err.println("No Scala source is given.")
+          if (!scalaSourceFiles.isEmpty) {
+            val g : ProgramGraph = parscala.ParScala.analyse(scalaSourceFiles, c.classpath)
             if (c.showCallGraph) {
               MainWindow.showCallGraph(g.callGraph._1)
             }
@@ -67,6 +75,15 @@ object ParScala {
                       if (c.showCfg) {
                         MainWindow.showCfg(method)
                       }
+                      if (c.showDataflowGraph) {
+                        scalaz.std.option.cata(method.cfg)(
+                            cfg => {
+                              val reachingDef : ReachingDefinition = ReachingDefinition(cfg)
+                              MainWindow.showDotWithTitle(ReachingDefinition.toDot(reachingDef), "Data flow graph of %s".format(method.name))
+                            }
+                          , Console.err.println("The body of %s is not available, could not generate the data flow graph.".format(c.method))
+                          )
+                      }
                       if (!c.dotOutput.isEmpty) {
                         scalaz.std.option.cata(method.cfg)(
                             cfg => dumpDot(c.dotOutput.get, CFGPrinter.formatGraph(cfg))
@@ -80,7 +97,7 @@ object ParScala {
                 }
               , ()
               )
-          }
+          } 
         }
       }
     }

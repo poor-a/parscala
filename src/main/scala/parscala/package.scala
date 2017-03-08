@@ -16,5 +16,6 @@ package object parscala {
 
   type BLabelGen = Stream[BLabel]
   type SLabelGen = Stream[SLabel]
+  type PLabelGen = Stream[PLabel]
   type LabelMap[A] = Map[SLabel, A]
 }
