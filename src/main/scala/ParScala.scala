@@ -1,8 +1,9 @@
 import parscala._
 import parscala.file.DirectoryTraverser
 import parscala.tree._
-import parscala.controlflow.CFGPrinter
-import parscala.df.ReachingDefinition
+import parscala.controlflow.{CFGraph, CFGPrinter}
+import parscala.df.UseDefinition
+import parscala.dot.DotGraph
 
 import scala.collection.JavaConverters
 
@@ -68,34 +69,37 @@ object ParScala {
             val methods : Set[Method] = g.methods
             println(s"methods: ${methods.mkString(", ")}")
             scalaz.std.option.cata(c.method)(
-                m => {
-                  val oMethod : Option[Method] = methods.find(_.symbol.fullName == c.method)
+                mName => {
+                  val oMethod : Option[Method] = methods.find(_.name == mName)
                   oMethod match {
                     case Some(method) => {
                       if (c.showCfg) {
                         MainWindow.showCfg(method)
                       }
                       if (c.showDataflowGraph) {
-                        scalaz.std.option.cata(method.cfg)(
-                            cfg => {
-                              val reachingDef : ReachingDefinition = ReachingDefinition(cfg)
-                              MainWindow.showDotWithTitle(ReachingDefinition.toDot(reachingDef), "Data flow graph of %s".format(method.name))
-                            }
-                          , Console.err.println("The body of %s is not available, could not generate the data flow graph.".format(c.method))
+                        val bodyAndCfg : Option[(Tree, CFGraph)] = for (body <- method.body; cfg <- method.cfg) yield (body, cfg)
+                        scalaz.std.option.cata(bodyAndCfg)(
+                          {  case (body, cfg) =>
+                              val ast : NodeTree = Node.mkNode(body)
+                              val usedef : UseDefinition = UseDefinition.fromCFGraph(cfg)
+                              val dataflow : DotGraph = Node.toDot(ast.root).addEdges(usedef.toDotEdges)
+                              MainWindow.showDotWithTitle(dataflow, "Data flow graph of %s".format(method.name))
+                          }
+                          , Console.err.println("The body of %s is not available, could not generate the data flow graph.".format(method.name))
                           )
                       }
                       if (!c.dotOutput.isEmpty) {
                         scalaz.std.option.cata(method.cfg)(
                             cfg => dumpDot(c.dotOutput.get, CFGPrinter.formatGraph(cfg))
-                          , Console.err.println("The body of %s is not available.".format(c.method))
+                          , Console.err.println("The body of %s is not available.".format(method.name))
                         )
                       }
                     }
                     case None =>
-                      println("Method %s is not found.".format(c.method))
+                      println("Method %s is not found.".format(mName))
                   }
                 }
-              , ()
+              , Console.err.println("No method is specified. Try using -m")
               )
           } 
         }

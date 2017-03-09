@@ -32,7 +32,8 @@ case class Package(val symbol : Symbol, val classes : Set[Class]) {
 }
 
 case class Method(val symbol : Symbol, val mAst : Option[Tree]) {
-  val name : String = symbol.name.toString
+  val shortName : String = symbol.name.toString
+  val name : String = symbol.fullName.toString
 
   override def toString : String = "method %s".format(name)
 

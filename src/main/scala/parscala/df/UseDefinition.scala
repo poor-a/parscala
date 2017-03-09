@@ -13,9 +13,9 @@ object UseDefinition {
   type Assignment = (Symbol, SLabel)
 
   /**
-   * Associates use of variables with the assignments reaching that
-   * use. When the a program point is not a variable reference, it is
-   * associated with an empty set.
+   * Associates use of a variable with the assignments reaching that
+   * use. A program point that is not a variable reference associated
+   * with an empty set.
    */ 
   private type UD = Map[SLabel, Set[Assignment]]
 
@@ -66,7 +66,7 @@ object UseDefinition {
  * 'Principles of Program Analysis', Section 2.1
  */
 class UseDefinition private (useDefinitions : UseDefinition.UD) {
-  def toDot : Traversable[dot.DotEdge] =
+  def toDotEdges : Traversable[dot.DotEdge] =
     useDefinitions.to[Stream].flatMap{ case (variable, definitions) =>
       definitions.to[Stream].map{ case (_, assignment) => 
         dot.DotEdge(dot.DotNode(assignment.toString), dot.DotNode(variable.toString)) !! List(dot.DotAttr.label("flow"), dot.DotAttr.color(dot.Color.Purple), dot.DotAttr.fontColor(dot.Color.Purple))
