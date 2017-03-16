@@ -451,4 +451,22 @@ object Node {
     val (nodes, edges) = formatNode(n).exec((List(), List()))
     DotGraph("", nodes.reverse, edges)
   }
+/*
+  def resugar(root : Node, transformer : Node => NodeGen[Node]) : NodeGen[Node] = {
+    for (transformRes <- transformer(root))
+    yield transformRes match {
+      }
+  }
+*/
+  
 }
+
+sealed abstract class TransformResult[A]
+
+case class Skip[A]() extends TransformResult[A]
+case class Changed[A](result : A) extends TransformResult[A]
+
+
+case class Continue[A]() extends TransformResult[A]
+case class TransformSkip[A](result : A) extends TransformResult[A]
+case class TransformContinue[A](result : A) extends TransformResult[A]

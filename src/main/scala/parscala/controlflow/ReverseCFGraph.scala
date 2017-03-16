@@ -77,4 +77,6 @@ class ReverseCFGraph(val g : CFGraph, val edges : List[(BLabel,BLabel,EdgeLabel.
       walkUp(b, to, idom).map{l => (a, l, tag)}
     }
   }
+
+  def flow : List[g.BEdge] = edges
 }

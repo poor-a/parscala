@@ -3,7 +3,6 @@ package df
 
 import parscala.{controlflow => cf}
 import parscala.{tree => tr}
-import parscala.dot
 
 import scalaz.std.option
 
@@ -12,7 +11,7 @@ object ReachingDefinition {
     // Reaching definition: variables associated with point of assignment in the program
     type RD = Set[(Symbol, SLabel)]
 
-    // Reaching definitionas that reaches the entry of each expression
+    // Assignments reaching the entry of each expression
     type RDMap = Map[SLabel, RD]
 
     def transfer(l : SLabel, rd : RD) : RD =
@@ -70,7 +69,7 @@ object ReachingDefinition {
             , node)
     }
 
-    def updateNodeRD(n : cf.Node[_,_], acc : (RD, RDMap)) : (RD, RDMap) = {
+    def updateNodeRD(acc : (RD, RDMap), n : cf.Node[_,_]) : (RD, RDMap) = {
       val (precRD, analysis) = acc
       val const0 : () => (RD, RDMap) = () => acc
       val const : Any => (RD, RDMap) = Function.const(acc)
@@ -100,7 +99,7 @@ object ReachingDefinition {
       )
     }
 
-    def initNodeRD(n : cf.Node[_,_], acc : (RD, RDMap)) : (RD, RDMap) = {
+    def initNodeRD(acc : (RD, RDMap), n : cf.Node[_,_]) : (RD, RDMap) = {
       val (precRD, analysis) = acc
       val const0 : () => (RD, RDMap) = () => acc
       val const : Any => (RD, RDMap) = Function.const(acc)
@@ -127,7 +126,7 @@ object ReachingDefinition {
       )
     }
 
-    def updateBlockRD(updateNode : (cf.Node[_,_], (RD, RDMap)) => (RD, RDMap))(b : cf.Block[cf.Node, cf.C, cf.C], analysis : RDMap) : RDMap = {
+    def updateBlockRD(updateNode : ((RD, RDMap), cf.Node[_,_]) => (RD, RDMap))(b : cf.Block[cf.Node, cf.C, cf.C], analysis : RDMap) : RDMap = {
       val firstRD = for (first <- cf.Block.sLabels(b).headOption;
                          rd <- analysis.get(first))
                     yield rd
