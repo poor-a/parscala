@@ -303,7 +303,7 @@ object Node {
       , t)
   }
 
-  def mkNode(t : Tree) : NodeTree = {
+  def fromTree(t : Tree) : NodeTree = {
     val ((_, _, map), node) = genNode(t).run((PLabel.stream, SLabel.stream, Map()))
     NodeTree(node, map)
   }

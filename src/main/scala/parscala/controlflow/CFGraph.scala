@@ -6,7 +6,6 @@ import scala.collection.immutable.Stream
 import scalaz.{State, EitherT, Monoid, \/-}
 import scalaz.syntax.bind._
 
-import tree._
 import parscala.Control.foldM
 import parscala.{tree => tr}
 
@@ -14,8 +13,8 @@ abstract class O
 abstract class C
 
 object CFGraph {
-  def apply(m : Method) : Option[CFGraph] =
-    mkExtCFGraph(m).map(_.freeze)
+  def fromExpression(n : tr.NodeTree) : CFGraph =
+    mkExtCFGraph(n).freeze
 
   type St = (Stream[BLabel], Stream[SLabel], CFGraph)
   type CFGGen[A] = State[St, A]
@@ -51,7 +50,7 @@ object CFGraph {
   def handleError[A](m : CFGAnalyser[A])(handler : Unit => CFGAnalyser[A]) : CFGAnalyser[A] =
     EitherT.eitherTMonadError[CFGGen, Unit].handleError(m)(handler)
 
-  def mkExtCFGraph(m : Method) : Option[ExtensibleCFGraph] = {
+  def mkExtCFGraph(expression : tr.NodeTree) : ExtensibleCFGraph = {
     val bGen : BLabelGen = BLabel.stream
     val sGen : SLabelGen = SLabel.stream
     val (List(fst,s,d), bGen2) = ((bGen take 3).toList, bGen drop 3)
@@ -60,19 +59,13 @@ object CFGraph {
     val done = BCat(emptyBlockWithLabel(d), BLast(Done()))
     val first = emptyBlockWithLabel(fst)
 
-    m.nodes match {
-      case Some(nodes) => 
-        val graph = new CFGraph(start, done, nodes)
-        cfgStmts(first, d, nodes.root).run.run((bGen2, sGen, graph)) match {
-          case ((bGen3, sGen2, cfg), \/-(block)) => 
-            val flushed = BCat(block, BLast(Jump(d)))
-            Some(new ExtensibleCFGraph(cfg + flushed, bGen3, sGen2))
-          case ((bGen3, sGen2, cfg), _) =>
-            Some(new ExtensibleCFGraph(cfg, bGen3, sGen2))
-        }
-        
-      case None =>
-        None
+    val graph = new CFGraph(start, done, expression)
+    cfgStmts(first, d, expression.root).run.run((bGen2, sGen, graph)) match {
+      case ((bGen3, sGen2, cfg), \/-(block)) => 
+        val flushed = BCat(block, BLast(Jump(d)))
+        new ExtensibleCFGraph(cfg + flushed, bGen3, sGen2)
+      case ((bGen3, sGen2, cfg), _) =>
+        new ExtensibleCFGraph(cfg, bGen3, sGen2)
     }
   }
 
@@ -91,7 +84,7 @@ object CFGraph {
     def deepStep(acc : Block[Node,C,O], xs : List[tr.Node]) : CFGAnalyser[Block[Node,C,O]] =
       foldM(step, acc, xs)
 
-    Node.nodeCata(
+    tr.Node.nodeCata(
         (l, _, _) => { // literal
           val literal = Expr(l)
           pure(BCat(b, BMiddle(literal)))

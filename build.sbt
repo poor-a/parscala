@@ -9,7 +9,9 @@ libraryDependencies ++= Seq("org.scala-lang" % "scala-compiler" % "2.12.1",
                             "commons-cli" % "commons-cli" % "1.3.1",
                             "org.scalactic" %% "scalactic" % "3.0.0",
                             "org.scalatest" %% "scalatest" % "3.0.0" % "test",
-                            "org.scalaz" %% "scalaz-core" % "7.2.8")
+                            "org.scalaz" %% "scalaz-core" % "7.2.8",
+                            "org.neo4j.driver" % "neo4j-java-driver" % "1.1.2"
+                            )
 
 scalacOptions ++= Seq("-Xlint",
                       "-feature",

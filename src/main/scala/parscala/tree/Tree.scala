@@ -48,10 +48,10 @@ case class Method(val symbol : Symbol, val mAst : Option[Tree]) {
     }
   }
 
-  val nodes : Option[NodeTree] = body.map(Node.mkNode(_))
+  val nodes : Option[NodeTree] = body.map(Node.fromTree(_))
 
   val parent : Class = Class(symbol.owner, Set.empty, Set.empty)
-  lazy val cfg : Option[CFGraph] = CFGraph(this)
+  lazy val cfg : Option[CFGraph] = nodes map CFGraph.fromExpression
 }
 
 case class Field(val ast : Tree)

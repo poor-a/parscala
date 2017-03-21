@@ -1,66 +1,54 @@
 import org.scalatest.FunSuite
 
 import parscala._
-import parscala.tree.Expression
-
-import scala.collection.immutable.Stream
+import parscala.controlflow._
+import parscala.{tree => tr}
 
 class ControlDependencySuite extends FunSuite {
-  val entry : Label = -1
-  val start : Label = 0
-  val done : Label = 8
+  val labels : Array[BLabel] = BLabel.stream.take(10).toArray
 
-  val cfg : CFGraph = {
-    val e : Expression = {
-      import parscala.compiler.Quasiquote
-      new Expression(q"1 + 2")
-    }
+  val entry : BLabel = labels(0)
+  val start : BLabel = labels(1)
+  val done : BLabel = labels(9)
 
-    def empty0(s : Int) : Block[Node,C,C] = BCat(BFirst(NLabel(s)), BLast(NReturn()))
-    def empty(s : Int, n : Int) : Block[Node,C,C] = BCat(BFirst(NLabel(s)), BLast(NJump(n)))
-    def empty2(s : Int, n1 : Int, n2 : Int) = BCat(BFirst(NLabel(s)), BLast(NCond(e, n1, n2)))
-
-    val nodes : List[Block[Node,C,C]] = List(empty(start, 1), empty2(1,2,3), empty2(2,4,5), empty2(3,5,7), empty(4,6), empty(5,6), empty(6,7),empty(7,8))
-    new CFGraph(empty2(entry, start, done), empty0(done)) + nodes
+  val e : tr.NodeTree = {
+    import parscala.compiler.Quasiquote
+    tr.Node.fromTree(q"1 < 2")
   }
 
-  val ecfg : ExtensibleCFGraph = {
-    val e : Expression = {
-      import parscala.compiler.Quasiquote
-      new Expression(q"1 + 2")
-    }
+  def empty0(s : BLabel) : Block[Node,C,C] = BCat(BFirst(Label(s)), BLast(Jump(done)))
+  def empty(s : BLabel, n : BLabel) : Block[Node,C,C] = BCat(BFirst(Label(s)), BLast(Jump(n)))
+  def empty2(s : BLabel, n1 : BLabel, n2 : BLabel) : Block[Node,C,C] = BCat(BFirst(Label(s)), BLast(Cond(e.root.label, n1, n2)))
 
-    def empty0(s : Int) : Block[Node,C,C] = BCat(BFirst(NLabel(s)), BLast(NReturn()))
-    def empty(s : Int, n : Int) : Block[Node,C,C] = BCat(BFirst(NLabel(s)), BLast(NJump(n)))
-    def empty2(s : Int, n1 : Int, n2 : Int) = BCat(BFirst(NLabel(s)), BLast(NCond(e, n1, n2)))
+  val nodes : List[Block[Node,C,C]] = List(empty(start, labels(2)), empty2(labels(2),labels(3),labels(4)), empty2(labels(3),labels(5),labels(6)), empty2(labels(4),labels(6),labels(8)), empty(labels(5),labels(7)), empty(labels(6),labels(7)), empty(labels(7),labels(8)),empty(labels(8),done))
 
-    val nodes : List[Block[Node,C,C]] = List(empty(start, 1), empty2(1,2,3), empty2(2,4,5), empty2(3,5,7), empty(4,6), empty(5,6), empty(6,7),empty(7,8))
-    new ExtensibleCFGraph(new CFGraph(empty(start, 1), empty0(done)) + nodes, Stream.from(done + 1))
-  }
+  val cfg : CFGraph = new CFGraph(empty2(entry, start, done), empty0(done), e) + nodes
 
-  test("the precedessor of entry is done and start in the reverse cfg") {
+  val ecfg : ExtensibleCFGraph = new ExtensibleCFGraph(new CFGraph(empty(start, labels(2)), empty0(done), e) + nodes, BLabel.stream.drop(10), SLabel.stream)
+
+  test("the precedessors of entry are done and start in the reverse cfg") {
     assertResult(List(start,done))(cfg.reverse.pred(entry))
   }
 
   test("dominators of a test CFG are correct") {
-    val doms : Map[Label, Set[Label]] = Map(
+    val doms : Map[BLabel, Set[BLabel]] = Map(
         done -> Set(done)
       , entry -> Set(entry, done)
-      , 7 -> Set(7, done)
-      , 6 -> Set(6, 7, done)
-      , 3 -> Set(3, 7, done)
-      , 1 -> Set(1, 7, done)
-      , 4 -> Set(4, 6, 7, done)
-      , 5 -> Set(5, 6, 7, done)
-      , 2 -> Set(2, 6, 7, done)
-      , start -> Set(start, 1, 7, done))
+      , labels(8) -> Set(labels(8), done)
+      , labels(7) -> Set(labels(7), labels(8), done)
+      , labels(4) -> Set(labels(4), labels(8), done)
+      , labels(2) -> Set(labels(2), labels(8), done)
+      , labels(5) -> Set(labels(5), labels(7), labels(8), done)
+      , labels(6) -> Set(labels(6), labels(7), labels(8), done)
+      , labels(3) -> Set(labels(3), labels(7), labels(8), done)
+      , start -> Set(start, labels(2), labels(8), done))
   
     assertResult(doms)(cfg.reverse.dominators)
   }
 
   test("intermediate dominators of a test CFG are correct")  {
     val rev : ReverseCFGraph = cfg.reverse
-    val idoms : DomTree = new DomTree(Map(entry -> Some(done), start -> Some(1), 1 -> Some(7), 2 -> Some(6), 3 -> Some(7), 4 -> Some(6), 5 -> Some(6), 6 -> Some(7), 7 -> Some(done), 8 -> None))
+    val idoms : DomTree = new DomTree(Map(entry -> Some(done), start -> Some(labels(2)), labels(2) -> Some(labels(8)), labels(3) -> Some(labels(7)), labels(4) -> Some(labels(8)), labels(5) -> Some(labels(7)), labels(6) -> Some(labels(7)), labels(7) -> Some(labels(8)), labels(8) -> Some(done), done -> None))
 
     assertResult(idoms)(rev.immediateDominators(rev.dominators))
   }

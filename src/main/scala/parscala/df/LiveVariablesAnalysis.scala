@@ -156,6 +156,6 @@ object LiveVariablesAnalysis {
  * See Flemming Nielson, Hanne Riis Nielson, Chris Hankin:
  * 'Principles of Program Analysis' section 2.1
  */
-class LiveVariablesAnalysis private (lv : LiveVariablesAnalysis.LVMap, cfg : cf.CFGraph) {
-  def get(l : SLabel) : Option[Set[LiveVariablesAnalysis.LV]] = lv.get(l)
+class LiveVariablesAnalysis private (val lv : LiveVariablesAnalysis.LVMap, cfg : cf.CFGraph) {
+  def get : SLabel => Option[Set[LiveVariablesAnalysis.LV]] = lv.get
 }

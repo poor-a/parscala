@@ -80,7 +80,7 @@ object ParScala {
                         val bodyAndCfg : Option[(Tree, CFGraph)] = for (body <- method.body; cfg <- method.cfg) yield (body, cfg)
                         scalaz.std.option.cata(bodyAndCfg)(
                           {  case (body, cfg) =>
-                              val ast : NodeTree = Node.mkNode(body)
+                              val ast : NodeTree = Node.fromTree(body)
                               val usedef : UseDefinition = UseDefinition.fromCFGraph(cfg)
                               val dataflow : DotGraph = Node.toDot(ast.root).addEdges(usedef.toDotEdges)
                               MainWindow.showDotWithTitle(dataflow, "Data flow graph of %s".format(method.name))
