@@ -8,15 +8,12 @@ import parscala.df.LiveVariablesAnalysis
 
 class LivenessVariablesSuite extends FunSuite {
   import parscala.compiler
-  import compiler.Quasiquote
 
   val run : compiler.Run = new compiler.Run()
   compiler.phase = run.typerPhase
 
-  val tree : compiler.Tree = parscala.ParScala.astOfExpr("2")
-
   val ast : tr.NodeTree = tr.Node.fromTree(
-    q"""
+    parscala.ParScala.astOfExpr("""
       var x = 5
       var y = 1
       var w = 2
@@ -31,8 +28,9 @@ class LivenessVariablesSuite extends FunSuite {
         a = a + 2
     """
     )
+  )
 
-  val Block(_, List(xdef, ydef, wdef, zdef, adef, loop, ifExpr), _) = ast.root
+  val Block(_, ls@List(xdef, ydef, wdef, zdef, adef, loop, ifExpr), _) = ast.root
   val While(_, pred, Block(_, List(xass, yass, wass), _), _) = loop
   val If(_, ifPred, aass, _) = ifExpr
 
@@ -56,8 +54,7 @@ class LivenessVariablesSuite extends FunSuite {
     , aass.label   -> Set(a)
   )
 
-  println(x)
-  println(live)
+  println(ls map (_.label))
 
   val lva : LiveVariablesAnalysis = LiveVariablesAnalysis.fromCFGraph(CFGraph.fromExpression(ast))
 

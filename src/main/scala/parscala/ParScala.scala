@@ -1,8 +1,5 @@
 package parscala
 
-import scala.reflect.macros.whitebox.Context
-import scala.language.experimental.macros
-
 object ParScala {
   def analyse(pathes : List[String], classPath : Option[String]) : ProgramGraph = {
     scalaz.std.option.cata(classPath)(
@@ -14,15 +11,22 @@ object ParScala {
     run.units.map{u : CompilationUnit => ProgramGraph(u)}.foldLeft(ProgramGraph.empty)((x : ProgramGraph, y : ProgramGraph) => x <+> y)
   }
 
-  def astOfExpr(expr : String) : Tree = macro astMacro
+  def astOfExpr(expr : String) : Tree = {
+    import compiler.Quasiquote
 
-  def astMacro(c : Context)(expr : c.Expr[String]) : Tree = {
-    import parscala.compiler.Quasiquote
-//    val s : String = c.eval(expr)
-//    val tr : c.Tree = c.parse("def f = 2")
-//    val t : c.Tree = c.typecheck(q"package p { object o { def f = $tr } }")
-//    c.typecheck(tr)
-//    tr
-    q"asd"
+    val freshGen = compiler.currentFreshNameCreator
+    val packageName : TermName = compiler.freshTermName("p")(freshGen)
+    val objectName : TermName = compiler.freshTermName("o")(freshGen)
+    val funName : TermName = compiler.freshTermName("f")(freshGen)
+    val source : String = "package %s { object %s { def %s = { %s } } }".format( packageName
+                                                                               , objectName
+                                                                               , funName
+                                                                               , expr
+                                                                               )
+    val dummyUnit : CompilationUnit = compiler.newCompilationUnit(source)
+    val r : compiler.Run = new compiler.Run
+    r.compileUnits(List(dummyUnit), r.parserPhase)
+    val q"package $_ { object $_ { def $_(...$_) = $body } }" = dummyUnit.body
+    body
   }
 }
