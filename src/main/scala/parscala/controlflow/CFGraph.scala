@@ -96,9 +96,8 @@ object CFGraph {
       , (l, _, rhs, _) => // pattern definition
           for (rhsEvaled <- cfgStmts(b, abruptNext, rhs))
           yield BCat(rhsEvaled, BMiddle(Expr(l)))
-      , (l, lhs, rhs, _) => // assignment
-          for (lhsEvaled <- cfgStmts(b, abruptNext, lhs);
-               rhsEvaled <- cfgStmts(lhsEvaled, abruptNext, rhs))
+      , (l, _, rhs, _) => // assignment
+          for (rhsEvaled <- cfgStmts(b, abruptNext, rhs))
           yield BCat(rhsEvaled, BMiddle(Expr(l)))
       , (l, method, args, _) => // application
           for (mEvaled <- cfgStmts(b, abruptNext, method);
@@ -431,8 +430,11 @@ class CFGraph (val graph : Map[BLabel, Block[Node,C,C]], val start : BLabel, val
   def +(bs : List[Block[Node,C,C]]) : CFGraph =
     bs.foldLeft(this)(_ + _)
 
-  def successors(b : BLabel) : Option[List[(BLabel, EdgeLabel.TagType)]] = 
-    get(b).map(_.successors)
+  def successors(b : BLabel) : List[(BLabel, EdgeLabel.TagType)] = 
+    get(b).map(_.successors).getOrElse(List())
+
+  def precedessors(b : BLabel) : List[(BLabel, EdgeLabel.TagType)] = 
+    flow.filter{ case (_, trg, _) => b == trg }.map{ case (prec, _, tag) => (prec, tag) }
 
   def traverse[A](f : (Block[Node,C,C], A) => A, x : A) : A = {
     def go(b : Block[Node,C,C], x : A, visited : Set[Block[Node,C,C]]) : (A, Set[Block[Node,C,C]]) = {
@@ -452,8 +454,10 @@ class CFGraph (val graph : Map[BLabel, Block[Node,C,C]], val start : BLabel, val
     get(start) map {go(_, x, Set.empty)._1} getOrElse x
   }
 
+  def reverseBEdge : BEdge => BEdge = { case (l1, l2, tag) => (l2, l1, tag) }
+
   def reverse() : ReverseCFGraph = {
-    val reverseFlow : List[BEdge] = flow map { case (l1, l2, tag) => (l2, l1, tag) }
+    val reverseFlow : List[BEdge] = flow map reverseBEdge
     new ReverseCFGraph(this, reverseFlow)
   }
 

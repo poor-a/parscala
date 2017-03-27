@@ -31,7 +31,7 @@ class LivenessVariablesSuite extends FunSuite {
   )
 
   val Block(_, ls@List(xdef, ydef, wdef, zdef, adef, loop, ifExpr), _) = ast.root
-  val While(_, pred, Block(_, List(xass, yass, wass), _), _) = loop
+  val While(_, pred, Block(_, as@List(xass, yass, wass), _), _) = loop
   val If(_, ifPred, aass, _) = ifExpr
 
   val PatDef(_, IdentPat(_, x), _, _) = xdef
@@ -40,24 +40,23 @@ class LivenessVariablesSuite extends FunSuite {
   val PatDef(_, IdentPat(_, z), _, _) = zdef
   val PatDef(_, IdentPat(_, a), _, _) = adef
 
-  val live : Map[SLabel, Set[LiveVariablesAnalysis.LV]] = Map(
-      xdef.label   -> Set.empty[LiveVariablesAnalysis.LV]
-    , ydef.label   -> Set(x)
-    , wdef.label   -> Set(x, y)
-    , zdef.label   -> Set(x, y)
-    , adef.label   -> Set(x, y)
-    , pred.label   -> Set(x, y, a)
-    , xass.label   -> Set(x, y, a)
-    , yass.label   -> Set(x, y, a)
-    , wass.label   -> Set(x, y, a)
-    , ifPred.label -> Set(y, a)
-    , aass.label   -> Set(a)
+  val live : Map[(SLabel, String), Set[LiveVariablesAnalysis.LV]] = Map(
+      (xdef.label, "xdef")     -> Set(x)
+    , (ydef.label, "ydef")     -> Set(x, y)
+    , (wdef.label, "wdef")     -> Set(x, y)
+    , (zdef.label, "zdef")     -> Set(x, y)
+    , (adef.label, "adef")     -> Set(x, y, a)
+    , (pred.label, "pred")     -> Set(x, y, a)
+    , (xass.label, "xass")     -> Set(x, y, a)
+    , (yass.label, "yass")     -> Set(x, y, a)
+    , (wass.label, "wass")     -> Set(x, y, a)
+    , (ifPred.label, "ifPred") -> Set(a)
+    , (aass.label, "aass")     -> Set()
   )
 
-  println(ls map (_.label))
+  val cfg : CFGraph = CFGraph.fromExpression(ast)
+  val lva : LiveVariablesAnalysis = LiveVariablesAnalysis.fromCFGraph(cfg)
 
-  val lva : LiveVariablesAnalysis = LiveVariablesAnalysis.fromCFGraph(CFGraph.fromExpression(ast))
-
-  for ((k, v) <- live)
-    assertResult(Some(v), k)(lva.get(k))
+  for (((k, name), v) <- live)
+    assertResult(Some(v), name)(lva.get(k))
 }

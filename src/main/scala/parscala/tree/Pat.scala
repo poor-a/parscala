@@ -35,9 +35,13 @@ object Pat {
     }
 
   def identifiers(p : Pat) : List[Symbol] = 
-    patCata((_, _) => List()
-          , (_, sym) => List(sym)
-          , (_, sym, pat) => sym :: identifiers(pat)
-          , _ => List()
+    patCata((_, _) =>        // literal
+              List()      
+          , (_, sym) =>      // identifier
+              List(sym)
+          , (_, sym, pat) => // as-pattern
+              sym :: identifiers(pat)
+          , _ =>             // underscore
+              List()
           , p)
 }

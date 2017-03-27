@@ -3,7 +3,6 @@ package df
 
 import parscala.{controlflow => cf}
 import parscala.{tree => tr}
-import parscala.dot
 
 import scalaz.std.option
 
@@ -28,8 +27,9 @@ object LiveVariablesAnalysis {
               const3 // literal
             , (_, symbol, _) => // identifier
                 live + symbol
-            , (_, pat, _, _) => // pattern definition
+            , (_, pat, _, _) => { // pattern definition
                 live -- tr.Pat.identifiers(pat)
+            }
             , (_, lhs, _, _) => // assignment
                 tr.Node.nodeCata(
                     const3 // literal
@@ -101,16 +101,8 @@ object LiveVariablesAnalysis {
       )
     }
 
-    def updateBlockLV(updateNode : (cf.Node[_,_], (Set[LV], LVMap)) => (Set[LV], LVMap))(b : cf.Block[cf.Node, cf.C, cf.C], analysis : LVMap) : LVMap = {
-      val firstLV : Option[Set[LV]] = for (
-          first <- cf.Block.sLabels(b).headOption;
-          rd <- analysis.get(first))
-        yield rd
-      option.cata(firstLV)(
-          live => b.foldRight[(Set[LV], LVMap)](updateNode, updateNode, updateNode, (live, analysis))._2
-        , analysis
-        )
-    }
+    def updateBlockLV(updateNode : (cf.Node[_,_], (Set[LV], LVMap)) => (Set[LV], LVMap))(b : cf.Block[cf.Node, cf.C, cf.C], succEntryLV : Set[LV], analysis : LVMap) : LVMap =
+      b.foldRight[(Set[LV], LVMap)](updateNode, updateNode, updateNode, (succEntryLV, analysis))._2
 
     def step(x : (List[cfg.BEdge], LVMap)) : (List[cfg.BEdge], LVMap) = {
       val (w, analysis) = x
@@ -125,10 +117,9 @@ object LiveVariablesAnalysis {
       st match {
         case Some((targetBlock, tLast, sFirst, tExitLV, sExitLV)) =>
           val sEntryLV : Set[LV] = transfer(sFirst, sExitLV)
-          if (!(sEntryLV subsetOf tExitLV)) {
-            val tExitLVUpdated : Set[LV] = sEntryLV ++ tExitLV
-            val analUpdated : LVMap = updateBlockLV(updateNodeLV)(targetBlock, analysis.updated(tLast, tExitLVUpdated))
-            val edgesToUpdate : List[cfg.BEdge] = targetBlock.successors map { case (l, tag) => (target, l, tag) }
+        if (!(sEntryLV subsetOf tExitLV)) {
+            val analUpdated : LVMap = updateBlockLV(updateNodeLV)(targetBlock, sEntryLV, analysis)
+            val edgesToUpdate : List[cfg.BEdge] = cfg.precedessors(target) map { case (l, tag) => (target, l, tag) }
             (edgesToUpdate ++ es, analUpdated)
           } 
           else

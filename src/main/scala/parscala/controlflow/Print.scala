@@ -103,7 +103,7 @@ object CFGPrinter {
 
   def formatNode(n : Node[_,_], i : Int, nodes : LabelMap[tr.Node]) : String = {
     n match {
-      case Label(_) => "Block " + i.toString
+      case Label(l) => "Block " + l.toString
       case Pattern(pat, _, _) => Dot.dotEscape(pat.toString)
       case Cond(expr, _, _) => " | {<%s> T | <%s> F}".format(pTrue, pFalse)
       case Expr(expr) => "%3s: %s".format(expr, scalaz.std.option.cata(nodes.get(expr))(node => Dot.dotEscape(node.tree.toString()), "##Err##"))
