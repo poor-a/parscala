@@ -13,6 +13,7 @@ package object parscala {
   type Symbol = compiler.Symbol
   type Modifiers = compiler.Modifiers
   type CompilationUnit = compiler.CompilationUnit
+  type SourceFile = scala.reflect.internal.util.SourceFile
 
   type BLabelGen = Stream[BLabel]
   type SLabelGen = Stream[SLabel]
