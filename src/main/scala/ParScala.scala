@@ -2,8 +2,7 @@ import parscala._
 import parscala.file.DirectoryTraverser
 import parscala.tree._
 import parscala.controlflow.{CFGraph, CFGPrinter}
-import parscala.df.UseDefinition
-import parscala.dot.DotGraph
+import parscala.df.{UseDefinition, DFGraph}
 
 import scala.collection.JavaConverters
 
@@ -32,7 +31,7 @@ object ParScala {
       out.flush()
       out.close()
     } catch {
-        case e : FileAlreadyExistsException =>
+        case _ : FileAlreadyExistsException =>
           println("The file \"" + p + "\" already exists!")
     }
   }
@@ -80,10 +79,11 @@ object ParScala {
                         val bodyAndCfg : Option[(Tree, CFGraph)] = for (body <- method.body; cfg <- method.cfg) yield (body, cfg)
                         scalaz.std.option.cata(bodyAndCfg)(
                           {  case (body, cfg) =>
-                              val ast : NodeTree = Node.fromTree(body)
-                              val usedef : UseDefinition = UseDefinition.fromCFGraph(cfg)
-                              val dataflow : DotGraph = Node.toDot(ast.root).addEdges(usedef.toDotEdges)
-                              MainWindow.showDotWithTitle(dataflow, "Data flow graph of %s".format(method.name))
+                               val ast : NodeTree = Node.fromTree(body)
+                               val usedef : UseDefinition = UseDefinition.fromCFGraph(cfg)
+                               val dataflow : DFGraph = DFGraph(ast, usedef)
+                               MainWindow.showDotWithTitle(Node.toDot(ast.root).addEdges(dataflow.toDotEdges), 
+                                                           "Data flow graph of %s".format(method.name))
                           }
                           , Console.err.println("The body of %s is not available, could not generate the data flow graph.".format(method.name))
                           )

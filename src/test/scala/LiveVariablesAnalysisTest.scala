@@ -12,25 +12,24 @@ class LivenessVariablesSuite extends FunSuite {
   val run : compiler.Run = new compiler.Run()
   compiler.phase = run.typerPhase
 
-  val ast : tr.NodeTree = tr.Node.fromTree(
-    parscala.ParScala.astOfExpr("""
-      var x = 5
-      var y = 1
-      var w = 2
-      var z = 0
-      var a = 4
-      while (x > 0) {
-        y = y * x
-        x = x - 1
-        w = 1
-      }
-      if (y > 1)
-        a = a + 2
-    """
-    )
+  val Some(ast) : Option[compiler.Tree] = parscala.ParScala.astOfExpr("""
+    var x = 5
+    var y = 1
+    var w = 2
+    var z = 0
+    var a = 4
+    while (x > 0) {
+      y = y * x
+      x = x - 1
+      w = 1
+    }
+    if (y > 1)
+      a = a + 2
+  """
   )
+  val programtree : tr.NodeTree = tr.Node.fromTree(ast)
 
-  val Block(_, ls@List(xdef, ydef, wdef, zdef, adef, loop, ifExpr), _) = ast.root
+  val Block(_, ls@List(xdef, ydef, wdef, zdef, adef, loop, ifExpr), _) = programtree.root
   val While(_, pred, Block(_, as@List(xass, yass, wass), _), _) = loop
   val If(_, ifPred, aass, _) = ifExpr
 
@@ -54,7 +53,7 @@ class LivenessVariablesSuite extends FunSuite {
     , (aass.label, "aass")     -> Set()
   )
 
-  val cfg : CFGraph = CFGraph.fromExpression(ast)
+  val cfg : CFGraph = CFGraph.fromExpression(programtree)
   val lva : LiveVariablesAnalysis = LiveVariablesAnalysis.fromCFGraph(cfg)
 
   for (((k, name), v) <- live)

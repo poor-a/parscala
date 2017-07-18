@@ -345,7 +345,7 @@ object Node {
             add(record(l, "Identifier", t.toString), List())
         , (l, pat, rhs, t) => // pattern definition
             formatNode(rhs) >>= (right => {
-            val patDef = record(l, "Pattern definition", "")
+            val patDef = record(l, "Pattern definition", pat.toString)
             add(patDef, List(edge(patDef, right, "value")))
             })
         , (l, lhs, rhs, t) => // assignment

@@ -65,7 +65,7 @@ object CallGraphBuilder {
  def getCalls(method : Method) : CallGraph = {
     def addSym(acc : (List[Edge], List[Unresolved]), s : Symbol) : (List[Edge], List[Unresolved]) = {
       val (res, unres) = acc
-      if (s == method.symbol && !(res exists (_.callee == s)))
+      if (s == method.symbol && !(res exists (_.callee.symbol == s)))
         (Edge(method, method) :: res, unres)
       else
         if (!(unres exists (_._1 == s)))

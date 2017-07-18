@@ -11,7 +11,7 @@ class Cli {
      .build()
 
   private[this] val showCfg : cli.Option = 
-    cli.Option.builder("g")
+    cli.Option.builder("cfg")
      .longOpt("show-cfg")
      .desc("show the control flow graph in a window")
      .required(false)

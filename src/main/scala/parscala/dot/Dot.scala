@@ -31,6 +31,9 @@ object DotNode {
   
   def apply(id : String) : DotNode =
     new DotNode("node_%s".format(dotLegaliseId(id)), List.empty)
+
+  def apply(id : SLabel) : DotNode = 
+    new DotNode("node_%s".format(dotLegaliseId(id.toString)), List.empty)
 }
 
 class DotAttr(val key : String, val value : String) {
@@ -43,7 +46,7 @@ object RankDir extends Enumeration {
 }
 
 object Color extends Enumeration {
-  val Purple = Value
+  val Purple, Red = Value
 }
 
 object DotAttr {
@@ -154,7 +157,7 @@ class Dot {
       }
     } 
     catch {
-      case e : IOException =>
+      case _ : IOException =>
         Left("Could not find dot. Perhaps it is not installed?")
     } 
   }

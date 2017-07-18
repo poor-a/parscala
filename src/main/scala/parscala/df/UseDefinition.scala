@@ -14,7 +14,7 @@ object UseDefinition {
 
   /**
    * Associates use of a variable with the assignments reaching that
-   * use. A program point that is not a variable reference associated
+   * use. A program point that is not a variable reference is associated
    * with an empty set.
    */ 
   private type UD = Map[SLabel, Set[Assignment]]

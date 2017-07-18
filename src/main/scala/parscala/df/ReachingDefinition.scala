@@ -32,7 +32,7 @@ object ReachingDefinition {
                 tr.Node.nodeCata(
                     const3 // literal
                   , (_, symbol, _) => // identifier
-                      rd.filter {x : (Symbol, SLabel) => x._1 != symbol }.+((symbol, sl))
+                      rd.filter { x : (Symbol, SLabel) => x._1 != symbol }.+((symbol, sl))
                   , const4 // pattern definition
                   , const4 // assignment
                   , const4 // application
@@ -173,20 +173,6 @@ object ReachingDefinition {
     val (_, analysis) = parscala.Control.until(empty, step, (workingList, analysisInit))
     new ReachingDefinition(analysis, cfg)
   }
-
-  def toDot(rd : ReachingDefinition) : dot.DotGraph = {
-    val edges : List[dot.DotEdge] = rd.rd.foldLeft(List.empty[dot.DotEdge]) { (acc, kv) => {
-        val (expression, reachingAssignments) = kv
-        reachingAssignments.foldLeft(acc) { (acc2, reachingAssignment) => {
-            val (_, assignment) = reachingAssignment
-            val edge : dot.DotEdge = dot.DotEdge(dot.DotNode(assignment.toString), dot.DotNode(expression.toString)) !! dot.DotAttr.label("reach")
-            edge :: acc2
-          }
-        }
-      }
-    }
-  dot.DotGraph("Reaching definitions", List.empty, edges)
-  }
 }
 
 /**
@@ -198,4 +184,14 @@ object ReachingDefinition {
  */
 class ReachingDefinition(val rd : Map[SLabel, Set[(Symbol, SLabel)]], val cfg : cf.CFGraph) {
   def get(l : SLabel) : Option[Set[(Symbol, SLabel)]] = rd.get(l)
+
+  def toDotEdges : List[dot.DotEdge] =
+    rd.foldLeft(List.empty[dot.DotEdge]) { (acc, kv) =>
+      val (expression, reachingAssignments) = kv
+      reachingAssignments.foldLeft(acc) { (acc2, reachingAssignment) => 
+        val (_, assignment) = reachingAssignment
+        val edge : dot.DotEdge = dot.DotEdge(dot.DotNode(assignment.toString), dot.DotNode(expression.toString)) !! dot.DotAttr.label("reach") !! dot.DotAttr.color(dot.Color.Red) !! dot.DotAttr.fontColor(dot.Color.Red)
+        edge :: acc2
+      }
+    }
 }
