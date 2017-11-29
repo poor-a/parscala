@@ -1,8 +1,9 @@
 import parscala._
-import parscala.file.DirectoryTraverser
-import parscala.tree._
+import parscala.callgraph.CallGraphBuilder
 import parscala.controlflow.{CFGraph, CFGPrinter}
 import parscala.df.{UseDefinition, DFGraph}
+import parscala.file.DirectoryTraverser
+import parscala.tree.{Node, Method, Class}
 
 import scala.collection.JavaConverters
 
@@ -10,7 +11,7 @@ import java.util.stream.{Stream, Collectors}
 import java.io.{File,PrintWriter}
 import java.nio.file._
 
-case class Config(
+case class Config (
   val method : Option[String],
   val showCfg : Boolean,
   val showCallGraph : Boolean,
@@ -53,54 +54,65 @@ object ParScala {
         if (c.showHelp)
           cli.printHelp()
         else {
-          val existingFiles : List[String] = c.files filter {new File(_).exists()}
-          val scalaSourceFilesInDirs : Stream[String] = c.directories.foldLeft(Stream.empty[String])((files, dir) => Stream.concat(DirectoryTraverser.getScalaSources(dir), files))
-          val scalaSourceFiles = (JavaConverters.asScalaBuffer(scalaSourceFilesInDirs.collect(Collectors.toList[String])).toList) ++ existingFiles
           if (c.files.isEmpty && c.directories.isEmpty)
             Console.err.println("No Scala source is given.")
-          if (!scalaSourceFiles.isEmpty) {
-            val g : ProgramGraph = parscala.ParScala.analyse(scalaSourceFiles, c.classpath)
-            if (c.showCallGraph) {
-              MainWindow.showCallGraph(g.callGraph._1)
-            }
-            val classes : Set[Class] = g.packages flatMap (_.classes)
-            println(s"classes (${classes.size}): ${classes.mkString(", ")}")
-            val methods : Set[Method] = g.methods
-            println(s"methods: ${methods.mkString(", ")}")
-            scalaz.std.option.cata(c.method)(
-                mName => {
-                  val oMethod : Option[Method] = methods.find(_.name == mName)
-                  oMethod match {
-                    case Some(method) => {
-                      if (c.showCfg) {
-                        MainWindow.showCfg(method)
-                      }
-                      if (c.showDataflowGraph) {
-                        val bodyAndCfg : Option[(Tree, CFGraph)] = for (body <- method.body; cfg <- method.cfg) yield (body, cfg)
-                        scalaz.std.option.cata(bodyAndCfg)(
-                          {  case (body, cfg) =>
-                               val ast : NodeTree = Node.fromTree(body)
-                               val usedef : UseDefinition = UseDefinition.fromCFGraph(cfg)
-                               val dataflow : DFGraph = DFGraph(ast, usedef)
-                               MainWindow.showDotWithTitle(Node.toDot(ast.root).addEdges(dataflow.toDotEdges), 
-                                                           "Data flow graph of %s".format(method.name))
+          else {
+            val existingFiles : List[String] = c.files filter {new File(_).exists()}
+            val scalaSourceFilesInDirs : Stream[String] = c.directories.foldLeft(Stream.empty[String])((files, dir) => Stream.concat(DirectoryTraverser.getScalaSources(dir), files))
+            val scalaSourceFiles = (JavaConverters.asScalaBuffer(scalaSourceFilesInDirs.collect(Collectors.toList[String])).toList) ++ existingFiles
+            if (scalaSourceFiles.isEmpty) {
+              Console.err.println("No Scala files are found.")
+            } else {
+              val pgraph : ProgramGraph = parscala.ParScala.analyse(scalaSourceFiles, c.classpath)
+              println("decls: " + pgraph.declarations)
+              if (c.showCallGraph) {
+                MainWindow.showCallGraph(CallGraphBuilder.fullCallGraph(pgraph))
+              }
+              val classes : List[Class] = pgraph.packages flatMap (_.classes)
+              println(s"classes (${classes.size}): ${classes.mkString(", ")}")
+              val methods : List[Method] = classes flatMap (_.methods)
+              println(s"methods: ${methods.mkString(", ")}")
+              scalaz.std.option.cata(c.method)(
+                  mName => {
+                    val oMethod : Option[Method] = methods.find(_.symbol.fullName == mName)
+                    oMethod match {
+                      case Some(method) => {
+                        println("found method")
+                        if (c.showCfg || c.showDataflowGraph || !c.dotOutput.isEmpty) {
+                          val bodyAndCfg : Option[(Node, CFGraph)] = for (body <- method.body) yield (body, CFGraph.fromExpression(body, pgraph))
+                          scalaz.std.option.cata(bodyAndCfg)(
+                          { case (body, cfg) => {
+                              if (c.showCfg)
+                                MainWindow.showDotWithTitle(CFGPrinter.formatGraph(cfg), "Control flow graph of %s".format(method.name))
+                              if (c.showDataflowGraph) {
+                                   val usedef : UseDefinition = UseDefinition.fromCFGraph(cfg)
+                                   val dataflow : DFGraph = DFGraph(body, usedef)
+                                   MainWindow.showDotWithTitle(Node.toDot(body).addEdges(dataflow.toDotEdges), 
+                                                               "Data flow graph of %s".format(method.name))
+                              }
+                              if (!c.dotOutput.isEmpty)
+                                dumpDot(c.dotOutput.get, CFGPrinter.formatGraph(cfg))
+                            }
                           }
-                          , Console.err.println("The body of %s is not available, could not generate the data flow graph.".format(method.name))
+                          , { val what : String = 
+                                if (c.showCfg || !c.dotOutput.isEmpty)
+                                  "The body of %s is not available, could not generate the control flow graph.".format(method.name)
+                                else if (c.showDataflowGraph)
+                                  "The body of %s is not available, could not generate the data flow graph.".format(method.name)
+                                else
+                                  "The body of %s is not available."
+                              Console.err.println(what)
+                            }
                           )
+                        }
                       }
-                      if (!c.dotOutput.isEmpty) {
-                        scalaz.std.option.cata(method.cfg)(
-                            cfg => dumpDot(c.dotOutput.get, CFGPrinter.formatGraph(cfg))
-                          , Console.err.println("The body of %s is not available.".format(method.name))
-                        )
-                      }
+                      case None =>
+                        println("Method %s is not found.".format(mName))
                     }
-                    case None =>
-                      println("Method %s is not found.".format(mName))
                   }
-                }
-              , Console.err.println("No method is specified. Try using -m")
-              )
+                , Console.err.println("No method is specified. Try using -m")
+                )
+            }
           } 
         }
       }

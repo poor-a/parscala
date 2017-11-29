@@ -18,21 +18,24 @@ class UseDefinitionSuite extends FunSuite {
   """
   )
 
-  val programtree : tr.NodeTree = tr.Node.fromTree(ast)
+  tr.Node.fromTree(ast) match {
+    case (pgraph, Some(programtree)) => 
+      val Block(_, List(xdef, res), _) = programtree.root
 
-  val Block(_, ls@List(xdef, res), _) = programtree.root
+      val PatDef(_, IdentPat(_, x), _, _) = xdef
+      val App(_, Select(_, xref, _, _), _, _, _) = res
 
-  val PatDef(_, IdentPat(_, x), _, _) = xdef
-  val App(_, Select(_, xref, _, _), _, _) = res
+      val usedefs : Map[(SLabel, String), Set[UseDefinition.Assignment]] = Map(
+          (xdef.label, "xdef")     -> Set()
+        , (xref.label, "xref")     -> Set((x, xdef.label))
+      )
 
-  val usedefs : Map[(SLabel, String), Set[UseDefinition.Assignment]] = Map(
-      (xdef.label, "xdef")     -> Set()
-    , (xref.label, "xref")     -> Set((x, xdef.label))
-  )
+      val cfg : CFGraph = CFGraph.fromExpression(programtree.root, pgraph)
+      val ud : UseDefinition = UseDefinition.fromCFGraph(cfg)
 
-  val cfg : CFGraph = CFGraph.fromExpression(programtree)
-  val ud : UseDefinition = UseDefinition.fromCFGraph(cfg)
-
-  for (((k, name), v) <- usedefs)
-    assertResult(v, name)(ud(k))
+      for (((k, name), v) <- usedefs)
+        assertResult(v, name)(ud(k))
+    case _ =>
+      fail("Could not create a NodeTree")
+  }
 }

@@ -37,7 +37,7 @@ object LiveVariablesAnalysis {
                       live - symbol
                   , const4 // pattern definition
                   , const4 // assignment
-                  , const4 // application
+                  , const5 // application
                   , const4 // new
                   , const4 // selection
                   , const3 // this
@@ -51,9 +51,10 @@ object LiveVariablesAnalysis {
                   , const3 // return with expr
                   , const3 // throw
                   , const3 // block
+                  , const4 // lambda expression
                   , const2 // expr
                   , lhs)
-            , const4 // application
+            , const5 // application
             , const4 // new
             , const4 // selection
             , const3 // this
@@ -67,62 +68,76 @@ object LiveVariablesAnalysis {
             , const3 // return with expr
             , const3 // throw
             , const3 // block
+            , const4 // lambda expression
             , const2 // expression
             , node)
     }
 
-    def updateNodeLV(n : cf.Node[_,_], acc : (Set[LV], LVMap)) : (Set[LV], LVMap) = {
-      val (succEntryLV, analysis) = acc
-      val const0 : () => (Set[LV], LVMap) = () => acc
-      val const : Any => (Set[LV], LVMap) = Function.const(acc)
-      val const2 : (Any, Any) => (Set[LV], LVMap) = (_, _) => acc
-      val const3 : (Any, Any, Any) => (Set[LV], LVMap) = (_, _, _) => acc
+    def updateIfObsolete(l : SLabel, exitLV : Set[LV], succEntryLV : Set[LV], analysis : LVMap) : (Set[LV],LVMap) = 
+      if (!(succEntryLV subsetOf exitLV)) {
+        val exitLVUpdated : Set[LV] = exitLV ++ succEntryLV
+        val entryLVUpdated : Set[LV] = transfer(l, exitLVUpdated)
+        (entryLVUpdated, analysis.updated(l, exitLVUpdated))
+      } else
+        (exitLV, analysis)
 
-      cf.Control.nodeCata(
+    def updateNodeLV(n : cf.Node[_,_], acc : (Set[LV], LVMap)) : (Set[LV], LVMap) = {
+      val const : Any => (Set[LV], LVMap) = Function.const(acc)
+      val const2 : (Any, Any) => (Set[LV], LVMap) = Function.const2(acc)
+      val const3 : (Any, Any, Any) => (Set[LV], LVMap) = Function.const3(acc)
+
+      val (succEntryLV, analysis) = acc
+      cf.Node.cata(
           const  // label
         , const3 // pattern
-        , l =>   // expression
-            option.cata(analysis.get(l))(
+        , expr =>  // expression
+            option.cata(analysis.get(expr))(
                 exitLV =>
-                  if (!(succEntryLV subsetOf exitLV)) {
-                    val exitLVUpdated : Set[LV] = exitLV ++ succEntryLV
-                    val entryLVUpdated : Set[LV] = transfer(l, exitLVUpdated)
-                    (entryLVUpdated, analysis.updated(l, exitLVUpdated))
-                  }
-                  else
-                    (exitLV, analysis)
-              , acc
+                  updateIfObsolete(expr, exitLV, succEntryLV, analysis)
+              , {
+                  val entryLV : Set[LV] = transfer(expr, succEntryLV)
+                  (entryLV, analysis.updated(expr, succEntryLV))
+                }
               )
+        , (expr, _, _) => // application
+            option.cata(analysis.get(expr))(
+                exitLV =>
+                  updateIfObsolete(expr, exitLV, succEntryLV, analysis)
+              , {
+                  val entryLV : Set[LV] = transfer(expr, succEntryLV)
+                  (entryLV, analysis.updated(expr, succEntryLV))
+                }
+              )
+        , const3 // return
         , const3 // cond
         , const2 // branch
         , const  // jump
-        , const0 // done
+        , const  // done
         , n
-      )
+        )
     }
 
     def updateBlockLV(updateNode : (cf.Node[_,_], (Set[LV], LVMap)) => (Set[LV], LVMap))(b : cf.Block[cf.Node, cf.C, cf.C], succEntryLV : Set[LV], analysis : LVMap) : LVMap =
       b.foldRight[(Set[LV], LVMap)](updateNode, updateNode, updateNode, (succEntryLV, analysis))._2
 
     def step(x : (List[cfg.BEdge], LVMap)) : (List[cfg.BEdge], LVMap) = {
-      val (w, analysis) = x
-      val (source, target, _) :: es = w
+      val ((source, target, _) :: es, analysis) = x
       val st = for (s <- cfg.get(source);
                     t <- cfg.get(target);
                     tLast <- cf.Block.sLabels(t).lastOption;
                     sFirst <- cf.Block.sLabels(s).headOption;
                     tLastExitLV <- analysis.get(tLast);
-                    sFirstExitLV <- analysis.get(sFirst))
+                    sFirstExitLV <- analysis.get(sFirst)
+                   )
                yield (t, tLast, sFirst, tLastExitLV, sFirstExitLV)
       st match {
         case Some((targetBlock, tLast, sFirst, tExitLV, sExitLV)) =>
           val sEntryLV : Set[LV] = transfer(sFirst, sExitLV)
-        if (!(sEntryLV subsetOf tExitLV)) {
+          if (!(sEntryLV subsetOf tExitLV)) {
             val analUpdated : LVMap = updateBlockLV(updateNodeLV)(targetBlock, sEntryLV, analysis)
             val edgesToUpdate : List[cfg.BEdge] = cfg.precedessors(target) map { case (l, tag) => (target, l, tag) }
             (edgesToUpdate ++ es, analUpdated)
-          } 
-          else
+          } else
             (es, analysis)
         case None => 
           (es, analysis)
@@ -132,6 +147,7 @@ object LiveVariablesAnalysis {
     def empty(x : (List[cfg.BEdge], LVMap)) : Boolean = x._1.isEmpty
 
     val workingList : List[cfg.BEdge] = cfg.reverse.flow
+
     val sLabels : List[SLabel] = cfg.sLabels
     val initRD : Set[LV] = Set.empty
     val analysisInit : LVMap = sLabels.zip(List.fill(sLabels.size)(initRD)).toMap

@@ -5,7 +5,7 @@ sealed abstract class Pat {
   def label : PLabel
 }
 
-case class LiteralPat(val l : PLabel, lit : Lit) extends Pat {
+case class LiteralPat(val l : PLabel, value : Lit) extends Pat {
   override def label : PLabel = l
 }
 
@@ -21,17 +21,24 @@ case class UnderscorePat(val l : PLabel) extends Pat {
   override def label : PLabel = l
 }
 
+case class OtherPat(val l : PLabel) extends Pat {
+  override def label : PLabel = l
+}
+
 object Pat {
   def patCata[A]( lit : (PLabel, Lit) => A
                 , id : (PLabel, Symbol) => A
                 , as : (PLabel, Symbol, Pat) => A
                 , underscore : PLabel => A
-                , p : Pat) : A = 
+                , other : PLabel => A
+                , p : Pat
+                ) : A = 
     p match {
-      case LiteralPat(label, l) => lit(label, l)
+      case LiteralPat(label, value) => lit(label, value)
       case IdentPat(label, sym) => id(label, sym)
       case AsPat(label, sym, pat) => as(label, sym, pat)
       case UnderscorePat(label) => underscore(label)
+      case OtherPat(label) => other(label)
     }
 
   def identifiers(p : Pat) : List[Symbol] = 
@@ -42,6 +49,8 @@ object Pat {
           , (_, sym, pat) => // as-pattern
               sym :: identifiers(pat)
           , _ =>             // underscore
+              List()
+          , _ =>             // other
               List()
           , p)
 }

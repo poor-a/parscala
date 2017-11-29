@@ -5,12 +5,12 @@ import parscala.dot._
 import parscala.{tree => tr}
 
 object CFGPrinter {
-  def topoSort(graph : CFGraph) : List[BLabel] = {
+  private def topoSort(graph : CFGraph) : List[BLabel] = {
     def sort(from : BLabel, marked : Set[BLabel], sorted : List[BLabel]) : (Set[BLabel],List[BLabel]) = {
       if (marked(from)) {
           (marked, sorted)
       } else {
-        if (from == graph.done) {
+        if (from == graph.done.entryLabel) {
           (marked + from, from :: sorted)
         } else {
           graph.get(from) map (_.successors) match {
@@ -26,104 +26,109 @@ object CFGPrinter {
       }
     }
 
-    sort(graph.start, Set(), List())._2.reverse
+    sort(graph.start.entryLabel, Set(), List())._2.reverse
   }
 
-  def formatLabels(graph : CFGraph, labels : List[(BLabel,Int)]) : (List[DotNode], List[DotEdge]) = {
-    def formatLabel(x : (BLabel, Int)) : Option[(DotNode, List[DotEdge])] = {
-      val (l, n) = x
-      l match {
-        case graph.start => {
+  private def formatLabels(graph : CFGraph, labels : List[BLabel]) : (List[DotNode], List[DotEdge]) = {
+    def formatLabel(l : BLabel) : Option[(DotNode, List[DotEdge])] = {
+      if (l == graph.start.entryLabel)
           graph.get(l) match {
             case Some(b) => {
-              val succs : List[BLabel] = b.successors.map(_._1)
-              val edges : List[DotEdge] = for (succ <- succs; 
-                                               mId = labels.find(_._1 == succ); 
-                                               if (!mId.isEmpty);
-                                               targetId = mId.get._2)
-                                         yield edge(node(n), node(targetId))
-              Some((DotNode(n.toString) !! DotAttr.label("Start"), edges))
+              val edges : List[DotEdge] = for ((succ, _) <- b.successors)
+                                         yield edge(node(l), node(succ))
+              Some((DotNode(l.toString) !! DotAttr.label("Start"), edges))
             }
             case None =>
               None
           }
-        }
-        case graph.done => {
+      else if (l == graph.done.entryLabel)
           if (!graph.get(l).isEmpty)
-            Some((DotNode(n.toString) !! DotAttr.label("Done"), List.empty))
+            Some((DotNode(l.toString) !! DotAttr.label("Done"), List.empty))
           else
             None
-        }
-        case _ => {
+      else {
           def contents(block : Block[Node,_,_]) : List[String] = block match {
-            case BFirst(node) => List(formatNode(node, n, graph.nodeTree.nodes))
-            case BMiddle(node) => List(formatNode(node, n, graph.nodeTree.nodes))
-            case BLast(node) => List(formatNode(node, n, graph.nodeTree.nodes))
+            case BFirst(node) => List(formatNode(node, graph.pgraph.expressions))
+            case BMiddle(node) => List(formatNode(node, graph.pgraph.expressions))
+            case BLast(node) => List(formatNode(node, graph.pgraph.expressions))
             case BCat(node1, node2) => contents(node1) ++ contents(node2)
-          }
-          def edges(block : Block[Node,_,C]) : List[DotEdge] = block match {
-            case BLast(node) => formatEdges(node, n, labels)
-            case BCat(node1, node2) => edges(node2)
-            case _ => List()
           }
           
           graph.get(l) match {
             case Some(b : Block[Node,C,C]) => {
               val header :: stmts = contents(b)
-              val prettyStmts : String = stmts.mkString("\\l")
-              val content : String = "{ %s | %s }".format(header, prettyStmts)
+              val content : String = "{ %s | %s }".format(header, stmts.mkString("\\l"))
 
-              Some((DotNode(n.toString) !! DotAttr.shape("record") !! DotAttr.labelWithPorts(content), edges(b)))
+              Some((DotNode(l.toString) !! DotAttr.shape("record") !! DotAttr.labelWithPorts(content), formatEdges(b)))
             }
             case None => None
           }
         }
       }
-    }
 
-    labels.foldLeft(List[DotNode](), List[DotEdge]()) {(acc, x) =>
+    labels.foldLeft((List[DotNode](), List[DotEdge]())) {(acc, x) =>
       val (nodes, edges) = acc
       formatLabel(x) map (x => (x._1 :: nodes, x._2 ++ edges)) getOrElse acc
     }
   }
 
-  def formatEdges(n : Node[O,C], id : Int, labels : List[(BLabel,Int)]) : List[DotEdge] = {
-    def getId(label : BLabel) : Option[Int] = labels.find(_._1 == label).map(_._2)
-
-    for ((Some(targetId), label) <- n.successors map { x => (getId(x._1), x._2) })
-    yield label match {
-            case EdgeLabel.T => 
-              edgeP(node(id), pTrue, node(targetId))
-            case EdgeLabel.F =>
-              edgeP(node(id), pFalse, node(targetId))
-            case EdgeLabel.NoLabel =>
-              edge(node(id), node(targetId))
-          }
-  }
-
-  def formatNode(n : Node[_,_], i : Int, nodes : LabelMap[tr.Node]) : String = {
-    n match {
-      case Label(l) => "Block " + l.toString
-      case Pattern(pat, _, _) => Dot.dotEscape(pat.toString)
-      case Cond(expr, _, _) => " | {<%s> T | <%s> F}".format(pTrue, pFalse)
-      case Expr(expr) => "%3s: %s".format(expr, scalaz.std.option.cata(nodes.get(expr))(node => Dot.dotEscape(node.tree.toString()), "##Err##"))
-      case Branch(_, _) => ""
-      case Jump(_) => ""
-      case Done() => ""
+  private def formatEdges(block : Block[Node, C, C]) : List[DotEdge] = {
+    val l : BLabel = block.entryLabel
+    for (succ <- block.successors)
+    yield {
+      val (label, edgeLabel) = succ
+      EdgeLabel.cata(
+          edgeP(node(l), pTrue, node(label))   // T
+        , edgeP(node(l), pFalse, node(label))  // F
+        , edge(node(l), node(label))           // NoLabel
+        , edgeLabel
+      )
     }
   }
 
+  private def formatNode(n : Node[_,_], nodes : ExprMap[tr.Node]) : String = {
+    def showExpr(expr : SLabel) : String = 
+      "%3s: %s".format(expr, scalaz.std.option.cata(nodes.get(expr))(node => Dot.dotEscape(node.tree.toString()), "##Err##"))
+
+    def blockHeader(l : BLabel) : String =
+      "Block " + l.toString
+
+    Node.cata(
+        blockHeader // label
+      , (pat, _, _) => // pattern
+          Dot.dotEscape(pat.toString)
+      , showExpr // expr
+      , (expr, _, _) => // call
+          showExpr(expr)
+      , (l, _, _) => // return
+          blockHeader(l) + " (return)"
+      , (_, _, _) => // cond
+          " | {<%s> T | <%s> F}".format(pTrue, pFalse)
+      , (_, _) => // branch
+          ""
+      , (_) => // jump
+          ""
+      , (_) => // done
+          ""
+      , n
+      )
+  }
+
+  /**
+   * Creates the dot representation of a control flow graph,
+   * so that it can be drawn on the screen.
+   */
   def formatGraph(graph : CFGraph) : DotGraph = {
     val labels : List[BLabel] = topoSort(graph)
-    val (nodes, edges) = formatLabels(graph, labels zip (1 to labels.length))
+    val (nodes, edges) = formatLabels(graph, labels)
     DotGraph("CFG", nodes, edges)
   }
 
   private val pTrue : String = "p0"
   private val pFalse : String = "p1"
 
-  private def node(n : Int) : DotNode = 
-    DotNode(n.toString)
+  private def node(l : BLabel) : DotNode = 
+    DotNode(l.toString)
   private def edge(source : DotNode, target : DotNode) : DotEdge = 
     DotEdge(source, target)
   private def edgeP(source : DotNode, port : String, target : DotNode) : DotEdge = 

@@ -64,14 +64,24 @@ object DFGraph {
   type Edge = ((SLabel, SLabel), DEdgeLabel)
 
  /**
-  * Constructs a dataflow graph from an abstract syntax tree
-  * and use-definition information.
+  * Constructs a dataflow graph from a `NodeTree`
+  * (extended abstract syntax tree) and use-definition information.
   *
   * @see [[UseDefinition]]
   * @see [[tree.NodeTree]]
   */
   def apply(tree : NodeTree, ud : UseDefinition) : DFGraph =
     new DFGraph(traverse(tree.root, ud).toList)
+
+ /**
+  * Constructs a dataflow graph from an abstract syntax tree
+  * and use-definition information.
+  *
+  * @see [[UseDefinition]]
+  * @see [[tree.NodeTree]]
+  */
+  def apply(ast : Node, ud : UseDefinition) : DFGraph =
+    new DFGraph(traverse(ast, ud).toList)
 
   private def traverse(root : Node, ud : UseDefinition) : Set[Edge] = {
     def const2[A](x : A) : (Any, Any) => A = (_, _) => x
@@ -84,11 +94,11 @@ object DFGraph {
           traverse(rhs, ud) + ((rhs.label -> label, F()))
       , (label, _, rhs, _) => // assignment
           traverse(rhs, ud) + ((rhs.label -> label, F()))
-      , (label, method, argss, _) => { // application
+      , (label, fun, argss, funRef, _) => { // application
           val edges : Set[Edge] = 
             argss.flatMap(args => args.map( arg => traverse(arg, ud) + ((arg.label -> label, D())) ))
-            .foldLeft(Set.empty[Edge])(_ union (_)) + ((method.label -> label, D())) union traverse(method, ud)
-          method match {
+            .foldLeft(Set.empty[Edge])(_ union (_)) + ((fun.label -> label, D())) union traverse(fun, ud)
+          fun match {
             case tr.Select(_, expr, _, _) => edges + ((expr.label -> label, D()))
             case _                        => edges
           }
@@ -119,6 +129,9 @@ object DFGraph {
           val edges : Set[Edge] = exprs.foldLeft(Set.empty[Edge]){ (acc, expr) => acc union traverse(expr, ud) }
           if (exprs.isEmpty) edges
           else edges + ((exprs.last.label -> label, F()))
+        }
+      , (label, _, body, _) => { // lambda function
+          traverse(body, ud)
         }
       , (label, _) => // other expression
           Set.empty[Edge]

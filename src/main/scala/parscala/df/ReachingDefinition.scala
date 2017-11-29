@@ -35,7 +35,7 @@ object ReachingDefinition {
                       rd.filter { x : (Symbol, SLabel) => x._1 != symbol }.+((symbol, sl))
                   , const4 // pattern definition
                   , const4 // assignment
-                  , const4 // application
+                  , const5 // application
                   , const4 // new
                   , const4 // selection
                   , const3 // this
@@ -49,9 +49,10 @@ object ReachingDefinition {
                   , const3 // return with expr
                   , const3 // throw
                   , const3 // block
+                  , const4 // lambda expression
                   , const2 // expr
                   , lhs)
-            , const4 // application
+            , const5 // application
             , const4 // new
             , const4 // selection
             , const3 // this
@@ -65,63 +66,88 @@ object ReachingDefinition {
             , const3 // return with expr
             , const3 // throw
             , const3 // block
+            , const4 // lambda expression
             , const2 // expression
-            , node)
+            , node
+            )
+    }
+
+    def updateExprRd(expr : SLabel, rd : RD, precRD : RD, analysis : RDMap) : (RD, RDMap) = {
+        val before : RD = rd ++ precRD
+        val after : RD = transfer(expr, before)
+        (after, analysis.updated(expr, before))
     }
 
     def updateNodeRD(acc : (RD, RDMap), n : cf.Node[_,_]) : (RD, RDMap) = {
       val (precRD, analysis) = acc
-      val const0 : () => (RD, RDMap) = () => acc
       val const : Any => (RD, RDMap) = Function.const(acc)
       val const2 : (Any, Any) => (RD, RDMap) = (_, _) => acc
       val const3 : (Any, Any, Any) => (RD, RDMap) = (_, _, _) => acc
 
-      cf.Control.nodeCata(
+      cf.Node.cata(
           const  // label
         , const3 // pattern
-        , l =>   // expression
-            option.cata(analysis.get(l))(
-                rd =>
-                  if (!(precRD subsetOf rd)) {
-                    val before : RD = rd ++ precRD
-                    val after : RD = transfer(l, before)
-                    (after, analysis.updated(l, before))
-                  }
-                  else
-                    (rd, analysis)
+        , expr =>   // expression
+            option.cata(analysis.get(expr))(
+                rd => if (!(precRD subsetOf rd))
+                        updateExprRd(expr, rd, precRD, analysis)
+                      else
+                        (rd, analysis)
               , acc
               )
+        , (expr, _, _) => // application
+            option.cata(analysis.get(expr))(
+                rd => if (!(precRD subsetOf rd))
+                        updateExprRd(expr, rd, precRD, analysis)
+                      else
+                        (rd, analysis)
+              , acc
+              )
+        , (_, _, call) => { // return
+            val cf.Call(expr, _, _) = call
+            option.cata(analysis.get(expr))(
+                rd => (rd, analysis)
+              , acc
+              )
+          }
         , const3 // cond
         , const2 // branch
         , const  // jump
-        , const0 // done
+        , const  // done
         , n
       )
     }
 
     def initNodeRD(acc : (RD, RDMap), n : cf.Node[_,_]) : (RD, RDMap) = {
       val (precRD, analysis) = acc
-      val const0 : () => (RD, RDMap) = () => acc
       val const : Any => (RD, RDMap) = Function.const(acc)
       val const2 : (Any, Any) => (RD, RDMap) = (_, _) => acc
       val const3 : (Any, Any, Any) => (RD, RDMap) = (_, _, _) => acc
 
-      cf.Control.nodeCata(
+      cf.Node.cata(
           const  // label
         , const3 // pattern
-        , l =>   // expression
-            option.cata(analysis.get(l))(
-                rd => {
-                    val before : RD = rd ++ precRD
-                    val after : RD = transfer(l, before)
-                    (after, analysis.updated(l, before))
-                }
+        , expr =>   // expression
+            option.cata(analysis.get(expr))(
+                rd => updateExprRd(expr, rd, precRD, analysis)
               , acc
               )
+        , (expr, _, _) => // application
+            option.cata(analysis.get(expr))(
+                rd => updateExprRd(expr, rd, precRD, analysis)
+              , acc
+              )
+        , (_, _, call) => { // return
+            val cf.Call(expr, _, _) = call
+            option.cata(analysis.get(expr))(
+                rd => (rd, analysis)
+              , acc
+              )
+          }
         , const3 // cond
         , const2 // branch
         , const  // jump
-        , const0 // done
+        , const  // done
         , n
       )
     }

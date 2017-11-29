@@ -14,6 +14,7 @@ package object parscala {
   val compiler : Global = new Global(settings)
 
   type Tree = compiler.Tree
+  type Constant = compiler.Constant
   type Name = compiler.Name
   type TermName = compiler.TermName
   type TypeName = compiler.TypeName
@@ -25,5 +26,8 @@ package object parscala {
   type BLabelGen = Stream[BLabel]
   type SLabelGen = Stream[SLabel]
   type PLabelGen = Stream[PLabel]
-  type LabelMap[A] = Map[SLabel, A]
+  type DLabelGen = Stream[DLabel]
+  type ExprMap[A] = Map[SLabel, A]
+  type DeclMap[A] = Map[DLabel, A]
+  type SymMap[A] = Map[Symbol, A]
 }

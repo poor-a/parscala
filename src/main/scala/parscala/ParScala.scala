@@ -1,5 +1,9 @@
 package parscala
 
+import parscala.{tree => tr}
+
+import scalaz.Monad
+
 object ParScala {
   def analyse(pathes : List[String], classPath : Option[String]) : ProgramGraph = {
     scalaz.std.option.cata(classPath)(
@@ -8,7 +12,10 @@ object ParScala {
       )
     val run = new compiler.Run()
     run.compile(pathes)
-    run.units.map{u : CompilationUnit => ProgramGraph(u)}.foldLeft(ProgramGraph.empty)((x : ProgramGraph, y : ProgramGraph) => x <+> y)
+    val m : Monad[tr.Node.NodeGen] = tr.Node.nodeGenMonadInstance
+    val (st, _) : (tr.Node.St, List[tr.Decl]) = tr.Node.run(m.sequence(run.units.toList.map{u : CompilationUnit => tr.Node.genDecl(u.body)})
+                                                                      (Scalaz.listTraverseInst))
+    new ProgramGraph(st.decls, st.exprs, st.symbols, st.packages)
   }
 
   def astOfExprWithSource(expr : String) : Option[(Tree, SourceFile)] = {
@@ -24,7 +31,7 @@ object ParScala {
                                                                                    , expr
                                                                                    )
     val source : SourceFile = compiler.newSourceFile(code)
-    val r : compiler.Run = new compiler.Run
+    val r : compiler.Run = new compiler.Run // todo: reset reporter
     r.compileSources(List(source))
     val units : Iterator[CompilationUnit] = r.units
     if (units.nonEmpty) {

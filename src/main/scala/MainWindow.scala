@@ -1,27 +1,21 @@
 import javax.swing.{JFrame,WindowConstants,SwingUtilities}
 import java.awt.{BorderLayout,Dimension}
 
-import parscala.tree.Method
-import parscala.controlflow.CFGPrinter
+import parscala.controlflow.{CFGraph, CFGPrinter}
 import parscala.callgraph.{CallGraph,CallGraphVisualiser}
 import parscala.dot.{Dot, DotGraph}
 
 object MainWindow {
-  def showCfg(method : Method) {
+  def showCfg(name : String, cfg : CFGraph) {
     val d : Dot = new Dot
-    val name : String = method.symbol.fullName.toString
-    method.cfg.map(cfg => d.drawGraph(CFGPrinter.formatGraph(cfg))) match {
-      case Some(Right(image)) => {
+    d.drawGraph(CFGPrinter.formatGraph(cfg)) match {
+      case Right(image) =>
         showWindow { w => {
           w.setTitle("Control flow graph of %s".format(name))
           w.add(image, BorderLayout.CENTER)
         }}
-      }
-      case Some(Left(err)) => {
+      case Left(err) =>
         Console.err.println(err)
-      }
-      case None =>
-        Console.err.println("The body of %s is not available.".format(name))
     }
   }
 

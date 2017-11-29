@@ -1,13 +1,13 @@
 package parscala
 package tree
 
-import scalaz.State
-import scalaz.syntax.bind._
+import scalaz.{State, Monad, MonadState, IndexedStateT}
+import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 
 import parscala.Control.{foldM, foldM_, mapM}
-import dot._
+import dot.{Dot, DotAttr, DotGraph, DotNode, DotEdge}
 
-case class NodeTree (val root : Node, val nodes : LabelMap[Node])
+class NodeTree (val root : Node, val nodes : ExprMap[Node])
 
 sealed abstract class Node {
   def label : SLabel
@@ -34,7 +34,7 @@ case class Assign(val l : SLabel, val lhs : Node, val rhs : Node, val tr : Tree)
   def tree : Tree = tr
 }
 
-case class App(val l : SLabel, val method : Node, val args : List[List[Node]], val tr : Tree) extends Node {
+case class App(val l : SLabel, val method : Node, val args : List[List[Node]], val funRef : DLabel, val tr : Tree) extends Node {
   def label : SLabel = l
   def tree : Tree = tr
 }
@@ -104,6 +104,11 @@ case class Block(val l : SLabel, val exprs : List[Node], val b : Tree) extends N
   def tree : Tree = b
 }
 
+case class Lambda(val l : SLabel, val args : List[Node], val body : Node, val tr : Tree) extends Node {
+  def label : SLabel = l
+  def tree : Tree = tr
+}
+
 case class Expr(val l : SLabel, val expr : Tree) extends Node {
   def label : SLabel = l
   def tree : Tree = expr
@@ -114,7 +119,7 @@ object Node {
                   nIdent : (SLabel, Symbol, Tree) => A,
                   nPatDef : (SLabel, Pat, Node, Tree) => A,
                   nAssign : (SLabel, Node, Node, Tree) => A,
-                  nApp : (SLabel, Node, List[List[Node]], Tree) => A,
+                  nApp : (SLabel, Node, List[List[Node]], DLabel, Tree) => A,
                   nNew : (SLabel, Tree, List[List[Node]], Tree) => A,
                   nSelect : (SLabel, Node, TermName, Tree) => A,
                   nThis : (SLabel, TypeName, Tree) => A,
@@ -128,6 +133,7 @@ object Node {
                   nReturn : (SLabel, Node, Tree) => A,
                   nThrow : (SLabel, Node, Tree) => A,
                   nBlock : (SLabel, List[Node], Tree) => A,
+                  nLambda : (SLabel, List[Node], Node, Tree) => A,
                   nExpr : (SLabel, Tree) => A,
                   n : Node) : A =
     n match {
@@ -135,7 +141,7 @@ object Node {
       case Ident(sl, sym, t) => nIdent(sl, sym, t)
       case PatDef(sl, pat, rhs, t) => nPatDef(sl, pat, rhs, t)
       case Assign(sl, lhs, rhs, t) => nAssign(sl, lhs, rhs, t)
-      case App(sl, f, args, t) => nApp(sl, f, args, t)
+      case App(sl, f, args, funRef, t) => nApp(sl, f, args, funRef, t)
       case New(sl, ctr, args, t) => nNew(sl, ctr, args, t)
       case Select(sl, qual, name, t) => nSelect(sl, qual, name, t)
       case This(sl, qual, t) => nThis(sl, qual, t)
@@ -149,87 +155,118 @@ object Node {
       case Return(sl, expr, t) => nReturn(sl, expr, t)
       case Throw(sl, expr, t) => nThrow(sl, expr, t)
       case Block(sl, exprs, t) => nBlock(sl, exprs, t)
+      case Lambda(sl, args, body, tr) => nLambda(sl, args, body, tr)
       case Expr(sl, expr) => nExpr(sl, expr)
     }
 
-  type St = (PLabelGen, SLabelGen, LabelMap[Node])
+  case class St
+    ( pGen : PLabelGen
+    , sGen : SLabelGen 
+    , dGen : DLabelGen
+    , exprs : ExprMap[Node]
+    , symbols : Map[Symbol, DLabel]
+    , decls : DeclMap[Decl]
+    , packages : List[Package]
+    )
   type NodeGen[A] = State[St, A]
+  private val stateInstance : MonadState[NodeGen, St] = IndexedStateT.stateMonad[St]
+  val nodeGenMonadInstance : Monad[NodeGen] = stateInstance
 
-  def genSLabel : NodeGen[SLabel] =
-    for (l <- State.gets[St, SLabel](_._2.head);
-         _ <- State.modify[St]{ case (pgen, sgen, map) => (pgen, sgen.tail, map) })
-    yield l
+  private def modifySt[A](f : St => (A, St)) : NodeGen[A] =
+    for (s <- stateInstance.get;
+         (x, sNew) = f(s);
+         _ <- stateInstance.put(sNew))
+    yield x
 
-  def genPLabel : NodeGen[PLabel] =
-    for (l <- State.gets[St, PLabel](_._1.head);
-         _ <- State.modify[St]{ case (pgen, sgen, map) => (pgen.tail, sgen, map) })
-    yield l
+  private def getDLabel (s : Symbol) : NodeGen[Option[DLabel]] =
+    State.gets[St, Option[DLabel]](_.symbols.get(s))
 
-  def label(f : SLabel => Node) : NodeGen[Node] = 
+  private def genSLabel : NodeGen[SLabel] =
+    modifySt{ s => (s.sGen.head, s.copy(sGen = s.sGen.tail)) }
+
+  private def genPLabel : NodeGen[PLabel] =
+    modifySt{ s => (s.pGen.head, s.copy(pGen = s.pGen.tail)) }
+
+  private def genDLabel (sym : Symbol) : NodeGen[DLabel] =
+    modifySt{ s => (s.dGen.head, s.copy(dGen = s.dGen.tail, symbols = s.symbols + ((sym, s.dGen.head)))) }
+
+  private def label(f : SLabel => Node) : NodeGen[Node] = 
     for (l <- genSLabel;
          n = f(l);
-         _ <- State.modify[St]{case (pgen, sgen, map) => (pgen, sgen, map.updated(l, n))})
+         _ <- modifySt{ s => ((), s.copy(exprs = s.exprs.updated(l, n))) })
     yield n
 
-  def labelPat(f : PLabel => Pat) : NodeGen[Pat] = 
+  private def labelPat(f : PLabel => Pat) : NodeGen[Pat] = 
     for (l <- genPLabel;
          p = f(l))
     yield p
 
-  def nLiteral(lit : Lit, t : Tree) : NodeGen[Node] = 
+  private def nLiteral(lit : Lit, t : Tree) : NodeGen[Node] = 
     label(Literal(_, lit, t))
 
-  def nIdent(symbol : Symbol, ident : Tree) : NodeGen[Node] =
+  private def nIdent(symbol : Symbol, ident : Tree) : NodeGen[Node] =
     label(Ident(_, symbol, ident))
 
-  def nPatDef(lhs : Pat, rhs : Node, tr : Tree) : NodeGen[Node] =
+  private def nPatDef(lhs : Pat, rhs : Node, tr : Tree) : NodeGen[Node] =
     label(PatDef(_, lhs, rhs, tr))
 
-  def nAssign(lhs : Node, rhs : Node, tr : Tree) : NodeGen[Node] =
+  private def nAssign(lhs : Node, rhs : Node, tr : Tree) : NodeGen[Node] =
     label(Assign(_, lhs, rhs, tr))
 
-  def nNew(constructor : Tree, args : List[List[Node]], tr : Tree) : NodeGen[Node] = 
+  private def nNew(constructor : Tree, args : List[List[Node]], tr : Tree) : NodeGen[Node] = 
     label(New(_, constructor, args, tr))
 
-  def nApp(method : Node, args : List[List[Node]], tr : Tree) : NodeGen[Node] = 
-    label(App(_, method, args, tr))
+  private def nApp(fun : Node, args : List[List[Node]], funRef : DLabel, tr : Tree) : NodeGen[Node] = 
+    label(App(_, fun, args, funRef, tr))
 
-  def nIf(pred : Node, thenE : Node, tr : Tree) : NodeGen[Node] = 
+  private def nIf(pred : Node, thenE : Node, tr : Tree) : NodeGen[Node] = 
     label(If(_, pred, thenE, tr))
 
-  def nIfElse(pred : Node, thenE : Node, elseE : Node, tr : Tree) : NodeGen[Node] = 
+  private def nIfElse(pred : Node, thenE : Node, elseE : Node, tr : Tree) : NodeGen[Node] = 
     label(IfElse(_, pred, thenE, elseE, tr))
 
-  def nWhile(pred : Node, body : Node, tr : Tree) : NodeGen[Node] = 
+  private def nWhile(pred : Node, body : Node, tr : Tree) : NodeGen[Node] = 
     label(While(_, pred, body, tr))
 
-  def nFor(enums : List[Node], body : Node, tr : Tree) : NodeGen[Node] = 
+  private def nFor(enums : List[Node], body : Node, tr : Tree) : NodeGen[Node] = 
     label(For(_, enums, body, tr))
 
-  def nForYield(enums : List[Node], body : Node, tr : Tree) : NodeGen[Node] = 
+  private def nForYield(enums : List[Node], body : Node, tr : Tree) : NodeGen[Node] = 
     label(ForYield(_, enums, body, tr))
 
-  def nSelect(expr : Node, sel : TermName, tr : Tree) : NodeGen[Node] = 
+  private def nSelect(expr : Node, sel : TermName, tr : Tree) : NodeGen[Node] = 
     label(Select(_, expr, sel, tr))
 
-  def nThis(qualifier : TypeName, tr : Tree) : NodeGen[Node] = 
+  private def nThis(qualifier : TypeName, tr : Tree) : NodeGen[Node] = 
     label(This(_, qualifier, tr))
 
-  def nTuple(comps : List[Node], tuple : Tree) : NodeGen[Node] = 
+  private def nTuple(comps : List[Node], tuple : Tree) : NodeGen[Node] = 
     label(Tuple(_, comps, tuple))
 
-  def nReturnUnit(tr : Tree) : NodeGen[Node] =
+  private def nReturnUnit(tr : Tree) : NodeGen[Node] =
     label(ReturnUnit(_, tr))
 
-  def nReturn(expr : Node, tr : Tree) : NodeGen[Node] =
+  private def nReturn(expr : Node, tr : Tree) : NodeGen[Node] =
     label(Return(_, expr, tr))
 
-  def nBlock(exprs : List[Node], tr : Tree) : NodeGen[Node] =
+  private def nBlock(exprs : List[Node], tr : Tree) : NodeGen[Node] =
     label(Block(_, exprs, tr))
 
-  def nExpr(tr : Tree) : NodeGen[Node] =
+  private def nExpr(tr : Tree) : NodeGen[Node] =
     label(Expr(_, tr))
+
+  private def addUnknownMethod(s : Symbol) : NodeGen[DLabel] =
+    for (l <- genDLabel(s);
+         m = Method(l, s, s.fullName, List(), None);
+         _ <- modifySt { st => ((), st.copy(decls = st.decls + (l -> m))) })
+    yield l
   
+  private def collectMethod(t : Tree) : NodeGen[Unit] =
+    if (t.symbol != null && t.symbol.isMethod)
+      nodeGenMonadInstance.void(addUnknownMethod(t.symbol))
+    else
+      nodeGenMonadInstance.pure(())
+
   def genNode(t : Tree) : NodeGen[Node] = {
     import scalaz.syntax.bind._
     import compiler.Quasiquote
@@ -245,6 +282,7 @@ object Node {
     Control.exprCata(
         nLiteral(_, _) // literal
       , ident => // identifier reference
+          collectMethod(t) >>
           nIdent(ident, t)
       , comps =>  // tuple
           foldM(step, List.empty, comps) >>= (nodes =>
@@ -256,12 +294,20 @@ object Node {
         }
       , nThis(_, t) // this
       , (expr, termName) => // selection
-          genNode(expr) >>= (e => nSelect(e, termName, t))
-      , (method, argss) => { // application
-          genNode(method) >>= (m => 
+          collectMethod(t) >>
+          genNode(expr) >>= (e => 
+          nSelect(e, termName, t))
+      , (method, argss) => // application
+          genNode(method) >>= (m =>
           foldM(deepStep, List.empty, argss) >>= (nodes =>
-          nApp(m, nodes, t)))
-        }
+          getDLabel(method.symbol) >>= {
+            case Some(funRef) =>
+              nApp(m, nodes, funRef, t)
+            case None =>
+              genDLabel(method.symbol) >>= (funRef =>
+              nApp(m, nodes, funRef, t)
+              )
+          }))
       , (pred, thenE) => // if-then
           genNode(pred) >>= (p => 
           genNode(thenE) >>= (th =>
@@ -303,9 +349,116 @@ object Node {
       , t)
   }
 
-  def fromTree(t : Tree) : NodeTree = {
-    val ((_, _, map), node) = genNode(t).run((PLabel.stream, SLabel.stream, Map()))
-    NodeTree(node, map)
+  private def withDLabel(genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[Decl]) : NodeGen[Decl] =
+    for (l <- genLabel;
+         decl <- f(l);
+         _ <- modifySt { st => ((), st.copy(decls = st.decls + (l -> decl))) })
+    yield decl
+
+  def genDecl(t : Tree) : NodeGen[Decl] =
+    Control.declCata(
+        (name, sym, mRhs) => // variable
+          withDLabel(genDLabel(sym))(l => {
+          val m : NodeGen[Option[Node]] = scalaz.std.option.cata(mRhs)(
+              rhs => stateInstance.map(genNode(rhs))(Some(_))
+            , stateInstance.pure(None)
+            )
+          m >>= (mExpr =>
+          stateInstance.pure(Var(l, sym, name, mExpr))
+          )})
+      , (name, sym, mRhs) => // value
+          withDLabel(genDLabel(sym))(l => {
+          val m : NodeGen[Option[Node]] = scalaz.std.option.cata(mRhs)(
+              rhs => stateInstance.map(genNode(rhs))(Some(_))
+            , stateInstance.pure(None)
+            )
+          m >>= (mAst => 
+          stateInstance.pure(Val(l, sym, name, mAst))
+          )})
+      , (name, sym, argss, mBody) => // method
+          withDLabel(genDLabel(sym))(l =>
+          mapM(mapM(genPat, _ : List[Tree]), argss) >>= (pats => {
+          val m : NodeGen[Option[Node]] = scalaz.std.option.cata(mBody)(
+              body => stateInstance.map(genNode(body))(Some(_))
+            , stateInstance.pure(None)
+            )
+          m >>= (mAst => 
+          stateInstance.pure(Method(l, sym, name, pats, mAst))
+          )}))
+      , (name, sym, decls) => // class
+          withDLabel(genDLabel(sym))(l =>
+          mapM(genDecl, decls) >>= (ds =>
+          stateInstance.pure(Class(l, sym, name, ds))
+          ))
+      , (name, sym, decls) => // object
+          withDLabel(genDLabel(sym))(l =>
+          mapM(genDecl, decls) >>= (ds =>
+          stateInstance.pure(Object(l,sym, name, ds))
+          ))
+      , (name, sym, decls) => // package object
+          withDLabel(genDLabel(sym))(l =>
+          mapM(genDecl, decls) >>= (ds =>
+          stateInstance.pure(PackageObject(l,sym, name, ds))
+          ))
+      , (name, sym, decls) => // package
+          withDLabel(genDLabel(sym))(l =>
+          mapM(genDecl, decls) >>= (ds => {
+          val p : Package = Package(l,sym, name, ds)
+          modifySt{ s => ((), s.copy(packages = p :: s.packages)) } >>= (_ =>
+          stateInstance.pure(p)
+          )}))
+      , t
+      )
+
+  private def genPat(t : Tree) : NodeGen[Pat] = 
+    Control.patCata(
+        (c) => { // literal
+          val lit : Lit = Control.litCata(
+              IntLit
+            , BooleanLit
+            , CharLit
+            , StringLit
+            , FloatLit
+            , DoubleLit
+            , SymbolLit
+            , OtherLit
+            , c
+            )
+          genPLabel >>= (l =>
+          stateInstance.pure(LiteralPat(l, lit))
+          )
+        }
+      , (name, pat) => // binding
+          genPat(pat) >>= (p =>
+          genPLabel >>= (l =>
+          stateInstance.pure(AsPat(l, t.symbol, p))
+          ))
+      , () => // underscore
+          genPLabel >>= (l =>
+          stateInstance.pure(UnderscorePat(l))
+          )
+      , _ => // other pattern
+          genPLabel >>= (l =>
+          stateInstance.pure(OtherPat(l))
+          )
+      , t
+      )
+
+  def fromTree(t : Tree) : (ProgramGraph, Option[NodeTree]) = {
+    val (st, nodes) : (St, Option[NodeTree]) = 
+      if (t.isTerm) {
+        val (st, node) = run(genNode(t))
+        (st, Some(new NodeTree(node, st.exprs)))
+      } else {
+        val (st, _) = run(genDecl(t))
+        (st, None)
+      }
+    (new ProgramGraph(st.decls, st.exprs, st.symbols, st.packages), nodes)
+    }
+
+  def run[A](m : NodeGen[A]) : (St, A) = {
+    val startSt : St = St(PLabel.stream, SLabel.stream, DLabel.stream, Map(), Map(), Map(), List())
+    m.run(startSt)
   }
 
   def toDot(n : Node) : DotGraph = {
@@ -356,7 +509,7 @@ object Node {
               val rEdge = edge(as, right, "right")
               add(as, List(lEdge, rEdge))
             }))
-        , (l, m, argss, t) => // application
+        , (l, m, argss, _, t) => // application
             formatNode(m) >>= ( method => 
             mapM(mapM(formatNode, _ : List[Node]), argss) >>= (nodess => {
               val app = record(l, "Application", t.toString())
@@ -441,6 +594,14 @@ object Node {
               val b = record(l, "Block", "")
               enum(b, nodes, "expr(%s)".format(_)) >>
               add(b, List())
+            })
+        , (l, args, body, _) => // lambda function
+            mapM(formatNode, args) >>= (nodes => {
+              formatNode(body) >>= (b => {
+                val lambda = record(l, "Lambda", "")
+                enum(lambda, nodes, "arg(%s)".format(_)) >>
+                add(lambda, List(edge(lambda, b, "body")))
+              })
             })
         , (l, expr) => { // other expression
             val e = record(l, "Expression", expr.toString())

@@ -4,36 +4,112 @@ package controlflow
 sealed abstract class Node[E,X] extends NonLocal[E,X]
 
 case class Label(val label : BLabel) extends Node[C,O] {
-  def entryLabel(implicit evidence : C =:= C) = label
-  def successors(implicit evidence : O =:= C) : List[(BLabel, EdgeLabel.TagType)] = ???
+  override def entryLabel(implicit evidence : C =:= C) = label
+  override def successors(implicit evidence : O =:= C) : List[(BLabel, EdgeLabel.TagType)] = ???
 }
 
-case class Pattern(val pat : SLabel, val succ : BLabel, val fail : BLabel) extends Node[O,C] {
-  def entryLabel(implicit evidence : O =:= C) : BLabel = ???
-  def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List((succ, EdgeLabel.T),(fail, EdgeLabel.F))
+case class Pattern(val pat : PLabel, val succ : BLabel, val fail : BLabel) extends Node[O,C] {
+  override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
+  override def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List((succ, EdgeLabel.T),(fail, EdgeLabel.F))
 }
 
 case class Expr(val expr : SLabel) extends Node[O,O] {
-  def entryLabel(implicit evidence : O =:= C) : BLabel = ???
-  def successors(implicit evidence : O =:= C) : List[(BLabel, EdgeLabel.TagType)] = ???
+  override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
+  override def successors(implicit evidence : O =:= C) : List[(BLabel, EdgeLabel.TagType)] = ???
 }
 
+/**
+ * Represents a call of the method `m`.
+ *
+ * @param expr The method application expression in the program.
+ * @param m The method to be invoked.
+ */
+case class Call(val expr : SLabel, val m : BLabel, val returnPoint : BLabel) extends Node[O,C] {
+  override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
+  override def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List((m, EdgeLabel.NoLabel))
+}
+
+/**
+ * Represents a return point. The execution continues from here after
+ * the execution of the called method.
+ */
+case class Return(l : BLabel, from : BLabel, call : Call) extends Node[C,O] {
+  override def entryLabel(implicit evidence : C =:= C) : BLabel = l
+  override def successors(implicit evidence : O =:= C) : List[(BLabel, EdgeLabel.TagType)] = ???
+}
+
+/**
+ * Branching based on a known condition `expr`. When `expr` evaluates
+ * to `true`, we take the `t` branch, otherwise the `f` branch.
+ */
 case class Cond(val expr : SLabel, val t : BLabel, val f : BLabel) extends Node[O,C] {
-  def entryLabel(implicit evidence : O =:= C) : BLabel = ???
-  def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List((t, EdgeLabel.T), (f, EdgeLabel.F))
+  override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
+  override def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List((t, EdgeLabel.T), (f, EdgeLabel.F))
 }
 
 case class Branch(val s1 : BLabel, val s2 : BLabel) extends Node[O,C] {
-  def entryLabel(implicit evidence : O =:= C) : BLabel = ???
-  def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List((s1, EdgeLabel.T), (s2, EdgeLabel.F))
+  override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
+  override def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List((s1, EdgeLabel.T), (s2, EdgeLabel.F))
 }
 
 case class Jump(val target : BLabel) extends Node[O,C] {
-  def entryLabel(implicit evidence : O =:= C) : BLabel = ???
-  def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List((target, EdgeLabel.NoLabel))
+  override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
+  override def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List((target, EdgeLabel.NoLabel))
 }
 
-case class Done() extends Node[O,C] {
-  def entryLabel(implicit evidence : O =:= C) : BLabel = ???
-  def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List()
+/**
+ * Represents the end of execution of a method.
+ */
+case class Done(succ : List[BLabel]) extends Node[O,C] {
+  override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
+  override def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = succ.zip(List.fill(succ.length)(EdgeLabel.NoLabel))
+
+  def addSucc(s : BLabel) : Done =
+    Done(s :: succ)
+}
+
+object Node {
+  def cata[A](label_ : (BLabel) => A,
+              pattern_ : (PLabel, BLabel, BLabel) => A,
+              expr_ : (SLabel) => A,
+              call_ : (SLabel, BLabel, BLabel) => A,
+              return_ : (BLabel, BLabel, Call) => A,
+              cond_ : (SLabel, BLabel, BLabel) => A,
+              branch_ : (BLabel, BLabel) => A,
+              jump_ : (BLabel) => A,
+              done_ : (List[BLabel]) => A,
+              n : Node[_,_]) : A =
+    n match {
+      case Label(bl) => label_(bl)
+      case Pattern(sl, success, failure) => pattern_(sl, success, failure)
+      case Expr(sl) => expr_(sl)
+      case Call(expr, method, returnPoint) => call_(expr, method, returnPoint)
+      case Return(l, from, call) => return_(l, from, call)
+      case Cond(sl, t, f) => cond_(sl, t, f)
+      case Branch(succ1, succ2) => branch_(succ1, succ2)
+      case Jump(target) => jump_(target)
+      case Done(succs) => done_(succs)
+    }
+
+  def OOCata[A](nExpr : (SLabel) => A,
+                n : Node[O,O]) : A = 
+    n match {
+      case Expr(sl) => nExpr(sl)
+    }
+
+  def OCCata[A](pattern_ : (PLabel, BLabel, BLabel) => A,
+                call_ : (SLabel, BLabel, BLabel) => A,
+                cond_ : (SLabel, BLabel, BLabel) => A,
+                branch_ : (BLabel, BLabel) => A,
+                jump_ : (BLabel) => A,
+                done_ : (List[BLabel]) => A,
+                n : Node[O,C]) : A = 
+    n match {
+      case Pattern(sl, success, failure) => pattern_(sl, success, failure)
+      case Call(expr, method, returnPoint) => call_(expr, method, returnPoint)
+      case Cond(sl, t, f) => cond_(sl, t, f)
+      case Branch(succ1, succ2) => branch_(succ1, succ2)
+      case Jump(target) => jump_(target)
+      case Done(succs) => done_(succs)
+    }
 }

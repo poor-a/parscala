@@ -37,7 +37,7 @@ object UseDefinition {
                 reachingDefs filter { case (sym, assignment) => symbol == sym }
             , const4 // pattern definition
             , const4 // assignment
-            , const4 // application
+            , const5 // application
             , const4 // new
             , const4 // selection
             , const3 // this
@@ -51,6 +51,7 @@ object UseDefinition {
             , const3 // return with expr
             , const3 // throw
             , const3 // block
+            , const4 // lambda function
             , const2 // expression
             , node)
     }

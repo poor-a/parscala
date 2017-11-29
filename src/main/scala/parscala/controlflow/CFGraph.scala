@@ -1,201 +1,309 @@
 package parscala
 package controlflow
 
-import scala.collection.immutable.Stream
+import scala.language.higherKinds
 
-import scalaz.{State, EitherT, Monoid, \/-}
-import scalaz.syntax.bind._
+import scalaz.{State, EitherT, Hoist, MonadState, \/-}
+import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 
 import parscala.Control.foldM
 import parscala.{tree => tr}
 
-abstract class O
-abstract class C
+abstract class O // Open
+abstract class C // Closed
 
 object CFGraph {
-  def fromExpression(n : tr.NodeTree) : CFGraph =
-    mkExtCFGraph(n).freeze
+  def fromExpression(n : tr.Node, pgraph : ProgramGraph) : CFGraph =
+    mkExtCFGraph(n, pgraph).freeze
 
-  type St = (Stream[BLabel], Stream[SLabel], CFGraph)
-  type CFGGen[A] = State[St, A]
-  type CFGAnalyser[A] = EitherT[CFGGen, Unit, A]
-
-  def nLabel() : CFGGen[Label] =
-    for (b <- genBLabel)
-    yield Label(b)
-
-  def nCond(expr : SLabel, t : BLabel, f : BLabel) : Cond = 
-    Cond(expr, t, f)
-
-  def nJump(target : BLabel) : Jump = 
-    Jump(target)
-
-  def genBLabel : CFGGen[BLabel] =
-    for (l <- State.gets[St, BLabel](_._1.head);
-         _ <- State.modify[St]{ case (bGen, sGen, graph) => (bGen.tail, sGen, graph) })
-    yield l
-
-  def genSLabel : CFGGen[SLabel] =
-    for (l <- State.gets[St, SLabel](_._2.head);
-         _ <- State.modify[St]{ case (bGen, sGen, graph) => (bGen, sGen.tail, graph) })
-    yield l
-
-  def modifyGraph(f : CFGraph => CFGraph) : CFGGen[Unit] = 
-    State.modify[St]{ case (bGen, sGen, graph) => (bGen, sGen, f(graph)) }
-
-  def liftM[A](m : CFGGen[A]) : CFGAnalyser[A] = EitherT.eitherTHoist.liftM(m)
-
-  def pure[A](x : A) : CFGAnalyser[A] = EitherT.eitherTMonad[CFGGen, Unit].pure(x)
-
-  def handleError[A](m : CFGAnalyser[A])(handler : Unit => CFGAnalyser[A]) : CFGAnalyser[A] =
-    EitherT.eitherTMonadError[CFGGen, Unit].handleError(m)(handler)
-
-  def mkExtCFGraph(expression : tr.NodeTree) : ExtensibleCFGraph = {
-    val bGen : BLabelGen = BLabel.stream
-    val sGen : SLabelGen = SLabel.stream
-    val (List(fst,s,d), bGen2) = ((bGen take 3).toList, bGen drop 3)
-
-    val start = BCat(emptyBlockWithLabel(s), BLast(Jump(fst)))
-    val done = BCat(emptyBlockWithLabel(d), BLast(Done()))
-    val first = emptyBlockWithLabel(fst)
-
-    val graph = new CFGraph(start, done, expression)
-    cfgStmts(first, d, expression.root).run.run((bGen2, sGen, graph)) match {
-      case ((bGen3, sGen2, cfg), \/-(block)) => 
-        val flushed = BCat(block, BLast(Jump(d)))
-        new ExtensibleCFGraph(cfg + flushed, bGen3, sGen2)
-      case ((bGen3, sGen2, cfg), _) =>
-        new ExtensibleCFGraph(cfg, bGen3, sGen2)
-    }
+  private case class St(
+      val bGen : BLabelGen
+    , val sGen : SLabelGen
+    , val blocks : Map[BLabel, Block[Node, C, C]]
+    , val methods : Methods
+    , val pgraph : ProgramGraph
+    , val abruptNext : BLabel
+    , val start : Block[Node, C, C]
+    , val done : Block[Node, C, C]
+  ) {
+    def addBlock(b : Block[Node, C, C]) : St = 
+      copy(blocks = this.blocks + (b.entryLabel -> b))
   }
 
-  def emptyBlockWithLabel(b : BLabel) : Block[Node, C, O] = 
+  private type Methods = Map[Either[SLabel, DLabel], (BLabel, BLabel)]
+  private type CFGGen[A] = State[St, A]
+  private type CFGAnalyser[A] = EitherT[CFGGen, Unit, A]
+
+//  private val cfgAMonad : Monad[CFGAnalyser] = implicitly[Monad[CFGAnalyser]]
+//  private val cfgAErr : MonadError[CFGAnalyser, Unit] = implicitly[MonadError[CFGAnalyser, Unit]]
+  private val cfgASt : MonadState[CFGAnalyser, St] = parscala.EitherT.eitherTStateTInstance
+  private val cfgATrans : Hoist[({type λ[M[_], A] = EitherT[M, Unit, A]})#λ] = EitherT.eitherTHoist
+
+  private def genBLabel[M[_]](implicit monadSt : MonadState[M, St]) : M[BLabel] =
+    modifySt{ st => (st.bGen.head, st.copy(bGen = st.bGen.tail)) }
+
+  private def modifySt[A, M[_]](f : St => (A, St))(implicit monadSt : MonadState[M, St]) : M[A] =
+    monadSt.get >>= (s => {
+    val (x, sNew) : (A, St) = f(s)
+    monadSt.put(sNew) >>
+    monadSt.pure(x)
+    })
+
+  private def gets[A](f : St => A) : CFGGen[A] =
+    for (s <- State.get[St]) yield f(s)
+
+  private def getAbruptNext : CFGGen[BLabel] =
+    gets(_.abruptNext)
+
+  private def setAbruptNext(l : BLabel) : CFGGen[Unit] =
+    modifySt[Unit, CFGGen]{ st => ((), st.copy(abruptNext = l)) }
+
+  private def singleton(n : Node[C, O]) : Block[Node, C, O] =
+    BFirst(n)
+
+  private def append(b : Block[Node, C, O], n : Node[O, O]) : Block[Node, C, O] =
+    BCat(b, BMiddle(n))
+
+  private def close(b : Block[Node, C, O], n : Node[O, C])(implicit monadSt : MonadState[CFGAnalyser, St] = cfgASt) : CFGAnalyser[Unit] =
+    modifySt{ st => ((), st.copy(blocks = st.blocks + (b.entryLabel -> BCat(b, BLast(n))))) }
+
+  private def liftM[A](m : CFGGen[A]) : CFGAnalyser[A] = 
+    EitherT.eitherTHoist.liftM(m)
+
+  private def handleError[A](m : CFGAnalyser[A])(handler : Unit => CFGAnalyser[A]) : CFGAnalyser[A] =
+    EitherT.eitherTMonadError[CFGGen, Unit].handleError(m)(handler)
+
+  private def raiseError[A]() : CFGAnalyser[A] =
+    EitherT.eitherTMonadError[CFGGen, Unit].raiseError(())
+
+  private def mkExtCFGraph(expression : tr.Node, pgraph : ProgramGraph) : ExtensibleCFGraph = {
+    val (b, startSt) : (Block[Node, C, O], St) = initSt(pgraph)
+    val endSt : St = cfgStmts(expression, b)(cfgASt).run.run(startSt) match {
+      case (st, \/-(block)) =>
+        st.addBlock(BCat(block, BLast(Jump(st.done.entryLabel))))
+      case (st, _) =>
+        st
+    }
+    new ExtensibleCFGraph(new CFGraph(endSt.blocks, endSt.start, endSt.done, pgraph), endSt.bGen, endSt.sGen)
+  }
+
+  /**
+   * Default state with an empty control flow graph and an empty set of
+   * declarations.
+   */
+  private def initSt(pgraph : ProgramGraph) : (Block[Node,C,O], St) = {
+    val bGen : BLabelGen = BLabel.stream
+    val sGen : SLabelGen = SLabel.stream
+    val List(first, start, done) : List[BLabel] = (bGen take 3).toList
+    val fst : Block[Node, C, O] = emptyBlockWithLabel(first)
+    val s : Block[Node, C, C] = BCat(BFirst(Label(start)), BLast(Jump(first)))
+    val d : Block[Node, C, C] = BCat(BFirst(Label(done)), BLast(Done(List())))
+    val blocks : Map[BLabel, Block[Node, C, C]] = Map(start -> s, done -> d)
+    (fst, St(bGen drop 3, sGen, blocks, Map(), pgraph, done, s, d))
+  }
+
+  private def emptyBlockWithLabel(b : BLabel) : Block[Node, C, O] = 
     BFirst(Label(b))
 
-  def emptyBlock : State[St, Block[Node, C, O]] = 
-    for (l <- genBLabel) yield emptyBlockWithLabel(l)
+  private def emptyBlock[M[_]](implicit monadSt : MonadState[M, St]) : M[Block[Node, C, O]] = 
+    genBLabel >>= (l => monadSt.pure(emptyBlockWithLabel(l)))
 
-  implicit def unitMonoidInstance : Monoid[Unit] = Monoid.instance((_, _) => Unit, Unit)
+  private def methodStartEnd(method : Either[SLabel, DLabel]) : CFGAnalyser[Option[(BLabel, BLabel)]] =
+    for (methods <- liftM(State.gets[St, Methods](_.methods)))
+    yield methods.get(method)
+
+  // private def addReturnPoint(method : Either[SLabel, DLabel], returnPoint : BLabel) : CFGAnalyser[Unit] =
+  //   liftM(State.gets[St, Map[BLabel, Block[Node, C, C]]](_.blocks)) >>= (blocks =>
+  //   methodStartEnd(method) >>= (mStartEnd =>
+  //   scalaz.std.option.cata(mStartEnd)(
+  //       { case (start, end) =>
+  //           scalaz.std.option.cata(blocks.get(end))
+  //               methodEnd => {
+  //                 def addReturn()
+
+  private def analyseMethod(method : Either[SLabel, DLabel])(implicit mSt : MonadState[CFGAnalyser, St], monadTrans : Hoist[({type λ[M[_], A] = EitherT[M, Unit, A]})#λ]) : CFGAnalyser[Option[(BLabel, BLabel)]] = {
+    println("analysing: " + method)
+    val const4 : (Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, BLabel)]] = Function.const4(mSt.pure(None))
+    mSt.gets(_.pgraph) >>= (programgraph =>
+    method match {
+      case Right(decl) =>
+        programgraph.declarations.get(decl) match {
+          case Some(decl) => 
+            tr.Decl.cata(const4 // var
+                        ,const4 // val
+                        ,(_, _, _, _, mBody) => // method
+                           mBody match {
+                             case Some(body) => 
+                               emptyBlock >>= (start =>
+                               emptyBlock >>= (done =>
+                               emptyBlock >>= (first =>
+                               close(start, Jump(first.entryLabel)) >> (
+                               monadTrans.liftM(setAbruptNext(done.entryLabel)) >> (
+                               monadTrans.liftM(cfgStmts(body, first).run) >>= (res => {
+                                 res match {
+                                   case \/-(b) => 
+                                     close(b, Jump(done.entryLabel)) >>
+                                     mSt.pure(Some((start.entryLabel, done.entryLabel)))
+                                   case _        =>
+                                     mSt.pure(Some((start.entryLabel, done.entryLabel)))
+                                 }
+                                 mSt.pure(Some((start.entryLabel, done.entryLabel)))
+                               }))))))
+                             case None => 
+                               emptyBlock >>= (start =>
+                               emptyBlock >>= (done =>
+                               close(start, Jump(done.entryLabel)) >> (
+                               close(done, Done(List())) >>
+                               mSt.pure(Some((start.entryLabel, done.entryLabel)))
+                               )))
+                         }
+                        ,const4 // class
+                        ,const4 // object
+                        ,const4 // package object
+                        ,const4 // package
+                        ,decl
+                        )
+          case None =>
+            { println("no such method: " + method); mSt.pure(None)}
+        }
+      case Left(expr @ _) =>
+        emptyBlock >>= (start =>
+        emptyBlock >>= (done =>
+        close(start, Jump(done.entryLabel)) >> (
+        close(done, Done(List())) >>
+        mSt.pure(Some((start.entryLabel, done.entryLabel)))
+        )))
+    }
+    )
+  }
+
+//  private implicit val unitMonoidInstance : Monoid[Unit] = Monoid.instance((_, _) => (), ())
     
-  def cfgStmts(b : Block[Node,C,O], abruptNext : BLabel, node : tr.Node) : CFGAnalyser[Block[Node,C,O]] = {
-    def step(acc : Block[Node,C,O], e : tr.Node) : CFGAnalyser[Block[Node,C,O]] =
-      cfgStmts(acc, abruptNext, e)
-
-    def deepStep(acc : Block[Node,C,O], xs : List[tr.Node]) : CFGAnalyser[Block[Node,C,O]] =
-      foldM(step, acc, xs)
-
+  private def cfgStmts
+    ( node : tr.Node, b : Block[Node, C, O] )
+    ( implicit m : MonadState[CFGAnalyser, St] ) 
+    : CFGAnalyser[Block[Node, C, O]] = {
     tr.Node.nodeCata(
         (l, _, _) => { // literal
           val literal = Expr(l)
-          pure(BCat(b, BMiddle(literal)))
+          m.pure(append(b, literal))
         }
       , (l, _, _) => { // identifier
           val identifier = Expr(l)
-          pure(BCat(b, BMiddle(identifier)))
+          m.pure(append(b, identifier))
         }
       , (l, _, rhs, _) => // pattern definition
-          for (rhsEvaled <- cfgStmts(b, abruptNext, rhs))
-          yield BCat(rhsEvaled, BMiddle(Expr(l)))
+          m.map(cfgStmts(rhs, b))(append(_, Expr(l)))
       , (l, _, rhs, _) => // assignment
-          for (rhsEvaled <- cfgStmts(b, abruptNext, rhs))
-          yield BCat(rhsEvaled, BMiddle(Expr(l)))
-      , (l, method, args, _) => // application
-          for (mEvaled <- cfgStmts(b, abruptNext, method);
-               argsEvaled <- foldM(deepStep, mEvaled, args))
-          yield BCat(argsEvaled, BMiddle(Expr(l)))
+          m.map(cfgStmts(rhs, b))(append(_, Expr(l)))
+      , (l, fun, args, funRef, _) => // application
+          cfgStmts(fun, b) >>= (afterFun =>
+          foldM((acc : Block[Node, C, O], x : tr.Node) => cfgStmts(x, acc), afterFun, args.flatten) >>= (afterArgs => {
+          methodStartEnd(Right(funRef)) >>= (mStartEnd =>
+          mStartEnd match {
+            case Some((start, end)) => 
+              genBLabel >>= (returnPoint => {
+              val call = Call(l, start, returnPoint)
+              close(afterArgs, call) >>
+              cfgASt.pure(singleton(Return(returnPoint, end, call)))
+              })
+            case None => 
+              analyseMethod(Right(funRef))(cfgASt, cfgATrans) >>= (mStartEnd2 =>
+              mStartEnd2 match {
+                case Some((start, end)) =>
+                  genBLabel >>= (returnPoint => {
+                  val call = Call(l, start, returnPoint)
+                  close(afterArgs, call) >> { println("ok");
+                  cfgASt.pure(singleton(Return(returnPoint, end, call)))}
+                  })
+                case None =>
+                  { println("ohh"); raiseError() }
+              }
+          )})}))
       , (l, constr, args, _) => // new
-          for (argsEvaled <- foldM(deepStep, b, args))
-          yield BCat(argsEvaled, BMiddle(Expr(l)))
+          m.map(foldM((acc : Block[Node, C, O], x : tr.Node) => cfgStmts(x, acc), b, args.flatten)(m))(append(_, Expr(l)))
       , (l, expr, tname, _) => // selection
-          for (exprEvaled <- cfgStmts(b, abruptNext, expr))
-          yield BCat(exprEvaled, BMiddle(Expr(l)))
+          m.map(cfgStmts(expr, b))(append(_, Expr(l)))
       , (l, _, _) => // qualified this
-          pure(BCat(b, BMiddle(Expr(l))))
+          m.pure(append(b, Expr(l)))
       , (l, components, t) => // tuple
-          for (compsEvaled <- foldM(step, b, components))
-          yield BCat(compsEvaled, BMiddle(Expr(l)))
+          m.map(foldM((acc : Block[Node, C, O], x : tr.Node) => cfgStmts(x, acc), b, components)(m))(append(_, Expr(l)))
       , (l, p, t, _) => // if-then
-          for (tBranch <- liftM(emptyBlock);
-               succ <- liftM(emptyBlock);
-               pEvaled <- cfgStmts(b, abruptNext, p);
+          for (afterP <- cfgStmts(p, b);
+               tBranch <- emptyBlock;
+               succ <- emptyBlock;
                cond = Cond(p.label, tBranch.entryLabel, succ.entryLabel);
-               closed = BCat(pEvaled, BLast(cond));
-               _ <- liftM(modifyGraph{ _ + closed });
-               _ <- handleError {
-                   for (tEvaled <- cfgStmts(tBranch, abruptNext, t);
-                        tFlushed = BCat(tEvaled, BLast(Jump(succ.entryLabel)));
-                        _ <- liftM(modifyGraph{ _ + tFlushed }))
-                   yield ()
-                 } {
-                   _ => pure(())
-                 })
+               _ <- close(afterP, cond);
+               afterTBranch <- cfgStmts(t, tBranch);
+               _ <- close(afterTBranch, Jump(succ.entryLabel))
+              )
           yield succ
       , (l, p, t, f, _) => // if-then-else
-          for (tBranch <- liftM(emptyBlock);
-               fBranch <- liftM(emptyBlock);
-               succ <- liftM(emptyBlock);
-               pEvaled <- cfgStmts(b, abruptNext, p);
+          for (afterP <- cfgStmts(p, b);
+               tBranch <- emptyBlock;
+               fBranch <- emptyBlock;
                cond = Cond(p.label, tBranch.entryLabel, fBranch.entryLabel);
-               closed = BCat(pEvaled, BLast(cond));
-               _ <- liftM(modifyGraph{ _ + closed });
-               _ <- handleError {
-                   for (tEvaled <- cfgStmts(tBranch, abruptNext, t);
-                        tFlushed = BCat(tEvaled, BLast(Jump(succ.entryLabel)));
-                        _ <- liftM(modifyGraph { _ + tFlushed }))
-                   yield ()
+               _ <- close(afterP, cond);
+               succ <- emptyBlock;
+               normalFlow <- handleError {
+                   for (afterTBranch <- cfgStmts(t, tBranch);
+                        _ <- close(afterTBranch, Jump(succ.entryLabel)))
+                   yield true
                  } {
-                   _ => pure(())
+                    _ => m.pure(false)
                  };
                _ <- handleError {
-                   for (fEvaled <- cfgStmts(fBranch, abruptNext, f);
-                        fFlushed = BCat(fEvaled, BLast(Jump(succ.entryLabel)));
-                        _ <- liftM(modifyGraph{ _ + fFlushed }))
-                   yield ()
-                 } {
-                   _ => pure(())
-                 })
+                      for (afterFBranch <- cfgStmts(f, fBranch);
+                           _ <- close(afterFBranch, Jump(succ.entryLabel)))
+                      yield ()
+                    } {
+                      _ => if (normalFlow)
+                             m.pure(())
+                           else
+                             raiseError()
+                    })
           yield succ
-      , (l, p, body, _) => // while loop
-          for (succ <- liftM(emptyBlock);
-               bodyEmpty <- liftM(emptyBlock);
-               testPBegin <- liftM(emptyBlock);
-               pEvaled <- cfgStmts(testPBegin, abruptNext, p);
-               cond = Cond(p.label, bodyEmpty.entryLabel, succ.entryLabel);
-               pClosed = BCat(pEvaled, BLast(cond));
-               precClosed = BCat(b, BLast(Jump(pClosed.entryLabel)));
-               _ <- liftM(modifyGraph{ _ + precClosed + pClosed });
+      , (l, p, loopBody, _) => // while loop
+          for (testP <- emptyBlock;
+               _ <- close(b, Jump(testP.entryLabel));
+               afterP <- cfgStmts(p, testP);
+               body <- emptyBlock;
+               succ <- emptyBlock;
+               cond = Cond(p.label, body.entryLabel, succ.entryLabel);
+               _ <- close(body, cond);
                _ <- handleError {
-                   for (bodyEvaled <- cfgStmts(bodyEmpty, abruptNext, body);
-                        bodyFlushed = BCat(bodyEvaled, BLast(Jump(pClosed.entryLabel)));
-                        _ <- liftM(modifyGraph{ _ + bodyFlushed }))
+                   for (afterBody <- cfgStmts(loopBody, body);
+                        _ <- close(afterBody, Jump(testP.entryLabel)))
                    yield ()
                  } {
-                   _ => pure(())
+                   _ => m.pure(())
                  })
           yield succ
-      , (l, enums, body, _) => pure(b) // for loop
-      , (l, enums, body, _) => pure(b) // for-yield loop
-      , (l, _) => { // return 
-          val precClosed = BCat(b, BLast(Jump(abruptNext)))
-          liftM (modifyGraph { _ + precClosed }) >> 
-          EitherT.eitherTMonadError[CFGGen, Unit].raiseError(())
-        }
+      , (l, enums, body, _) => // for loop
+          m.pure(append(b, Expr(l))) 
+      , (l, enums, body, _) => // for-yield loop
+          m.pure(append(b, Expr(l))) 
+      , (l, _) => // return 
+          liftM(getAbruptNext) >>= (abruptNext =>
+          close(append(b, Expr(l)), Jump(abruptNext)) >>
+          raiseError())
       , (l, expr, _) => // return with expr
-          cfgStmts(b, abruptNext, expr) >>= (exprEvaled => {
-            val precClosed = BCat(exprEvaled, BLast(Jump(abruptNext)))
-            liftM (modifyGraph { _ + precClosed }) >> 
-            EitherT.eitherTMonadError[CFGGen, Unit].raiseError(())
-          })
+          cfgStmts(expr, b) >>= (afterExpr =>
+          liftM(getAbruptNext) >>= (abruptNext =>
+          close(append(afterExpr, Expr(l)), Jump(abruptNext)) >>
+          raiseError()
+          ))
       , (l, expr, _) => // throw
-          cfgStmts(b, abruptNext, expr) >>= (exprEvaled => {
-            val precClosed = BCat(exprEvaled, BLast(Jump(abruptNext)))
-            liftM(modifyGraph { _ + precClosed }) >> 
-            EitherT.eitherTMonadError[CFGGen, Unit].raiseError(())
-          })
+          cfgStmts(expr, b) >>= (afterExpr =>
+          liftM(getAbruptNext) >>= (abruptNext =>
+          close(append(afterExpr, Expr(l)), Jump(abruptNext)) >>
+          raiseError()))
       , (l, exprs, _) => // block
-          foldM(step, b, exprs)
+          foldM((acc : Block[Node, C, O], x : tr.Node) => cfgStmts(x, acc), b, exprs)
+      , (l, args, body, _) => // lambda function
+          m.pure(append(b, Expr(l)))
       , (l, _) => // other expression
-          pure(BCat(b, BMiddle(Expr(l))))
+          m.pure(append(b, Expr(l)))
       , node)
 /*
       case (x @ q"do $loopBody while ($p)") :: xs => 
@@ -255,7 +363,7 @@ object CFGraph {
              flushed = BCat(b, BLast(NJump(jump, nextLabel)));
              _ <- liftM(modifyGraph{ _ + flushed }))
         yield ()}*/
-//      , node)
+//      , node
     }
   }
 /*
@@ -414,18 +522,19 @@ object CFGraph {
   }
 }
 */
-class CFGraph (val graph : Map[BLabel, Block[Node,C,C]], val start : BLabel, val done : BLabel, val nodeTree : tr.NodeTree) {
+
+class CFGraph (val graph : Map[BLabel, Block[Node,C,C]], val start : Block[Node,C,C], val done : Block[Node,C,C], val pgraph : ProgramGraph) {
   type BEdge = (BLabel, BLabel, EdgeLabel.TagType)
   type SEdge = (SLabel, SLabel, EdgeLabel.TagType)
 
-  def this(start : Block[Node,C,C], done : Block[Node,C,C], nodeTree : tr.NodeTree) =
-    this(Map(start.entryLabel -> start, done.entryLabel -> done), start.entryLabel, done.entryLabel, nodeTree)
+  def this(start : Block[Node,C,C], done : Block[Node,C,C], pgraph : ProgramGraph) =
+    this(Map(start.entryLabel -> start, done.entryLabel -> done), start, done, pgraph)
 
   def get(v : BLabel) : Option[Block[Node,C,C]] = 
     graph.get(v)
 
   def +(b : Block[Node,C,C]) : CFGraph =
-    new CFGraph(graph + (b.entryLabel -> b), start, done, nodeTree)
+    new CFGraph(graph + (b.entryLabel -> b), start, done, pgraph)
 
   def +(bs : List[Block[Node,C,C]]) : CFGraph =
     bs.foldLeft(this)(_ + _)
@@ -451,7 +560,7 @@ class CFGraph (val graph : Map[BLabel, Block[Node,C,C]], val start : BLabel, val
       }
     }
 
-    get(start) map {go(_, x, Set.empty)._1} getOrElse x
+    go(start, x, Set.empty)._1
   }
 
   def reverseBEdge : BEdge => BEdge = { case (l1, l2, tag) => (l2, l1, tag) }
@@ -478,5 +587,5 @@ class CFGraph (val graph : Map[BLabel, Block[Node,C,C]], val start : BLabel, val
     flow flatMap { case (s, t, _) => List(s, t) }
 
   def apply(l : SLabel) : Option[tr.Node] =
-    nodeTree.nodes.get(l)
+    pgraph.expressions.get(l)
 }

@@ -2,7 +2,7 @@ package parscala
 package controlflow
 
 class ReverseCFGraph(val g : CFGraph, val edges : List[(BLabel,BLabel,EdgeLabel.TagType)]) {
-  private val start : BLabel = g.done
+  private val start : BLabel = g.done.entryLabel
 
   def dominators() : Map[BLabel, Set[BLabel]] = {
     val labels : Set[BLabel] = g.graph.keySet

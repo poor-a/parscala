@@ -14,9 +14,9 @@ object CallGraphVisualiser {
     DotEdge(formatMethod(e.caller), formatMethod(e.callee))
 
   def format(g : CallGraph) : DotGraph = {
-    val methods : Set[Method] = g.calls.foldLeft(Set.empty[Method]){(acc, call) => acc + call.caller + call.callee}
-    val nodes : Set[DotNode] = methods map formatMethod
-    val edges : List[DotEdge] = g.calls map formatEdge
+    println("call graph: " + g.methods + " " + g.calls)
+    val nodes : Set[DotNode] = g.methods map formatMethod
+    val edges : Set[DotEdge] = g.calls map formatEdge
     DotGraph("callgraph", nodes, edges)
   }
 }

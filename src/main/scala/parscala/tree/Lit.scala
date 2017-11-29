@@ -10,3 +10,4 @@ case class StringLit(s : String) extends Lit
 case class FloatLit(f : Float) extends Lit
 case class DoubleLit(d : Double) extends Lit
 case class SymbolLit(sym : Symbol) extends Lit
+case class OtherLit(value : Any) extends Lit
