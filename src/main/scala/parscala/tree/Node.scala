@@ -188,7 +188,12 @@ object Node {
     modifySt{ s => (s.pGen.head, s.copy(pGen = s.pGen.tail)) }
 
   private def genDLabel (sym : Symbol) : NodeGen[DLabel] =
-    modifySt{ s => (s.dGen.head, s.copy(dGen = s.dGen.tail, symbols = s.symbols + ((sym, s.dGen.head)))) }
+    modifySt{ s => 
+      s.symbols.get(sym) match {
+        case Some(dl) => (dl, s)
+        case None => (s.dGen.head, s.copy(dGen = s.dGen.tail, symbols = s.symbols + ((sym, s.dGen.head)))) 
+      }
+    }
 
   private def label(f : SLabel => Node) : NodeGen[Node] = 
     for (l <- genSLabel;
@@ -352,7 +357,11 @@ object Node {
   private def withDLabel(genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[Decl]) : NodeGen[Decl] =
     for (l <- genLabel;
          decl <- f(l);
-         _ <- modifySt { st => ((), st.copy(decls = st.decls + (l -> decl))) })
+         _ <- modifySt { st => st.decls.get(l) match {
+                                 case Some(_) => ((), st)
+                                 case None => ((), st.copy(decls = st.decls + (l -> decl)))
+                       }
+         })
     yield decl
 
   def genDecl(t : Tree) : NodeGen[Decl] =
@@ -473,7 +482,7 @@ object Node {
       State.modify[St]{ case (ns, es) => (ns, edge :: es) }
 
     def record(l : SLabel, header : String, body : String) : DotNode =
-      DotNode(l.toString) !! DotAttr.shape("record") !! DotAttr.labelWithPorts("{ %s | %s }".format(header, Dot.dotEscape(body)))
+      DotNode(l.toString) !! DotAttr.shape("record") !! DotAttr.labelWithPorts("{ %s - %s | %s }".format(l.toString, header, Dot.dotEscape(body)))
 
     def edge(source : DotNode, target : DotNode, label : String) : DotEdge =
       DotEdge(source, target) !! DotAttr.label(label)
