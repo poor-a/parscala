@@ -121,9 +121,8 @@ object CFGraph {
   //               methodEnd => {
   //                 def addReturn()
 
-  private def analyseMethod(method : Either[SLabel, DLabel])(implicit mSt : MonadState[CFGAnalyser, St], monadTrans : Hoist[({type λ[M[_], A] = EitherT[M, Unit, A]})#λ]) : CFGAnalyser[Option[(BLabel, BLabel)]] = {
-    println("analysing: " + method)
-    val const4 : (Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, BLabel)]] = Function.const4(mSt.pure(None))
+  private def analyseMethod(method : Either[SLabel, DLabel])(implicit mSt : MonadState[CFGAnalyser, St], monadTrans : Hoist[({type λ[M[_], A] = EitherT[M, Unit, A]})#λ]) : CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = {
+    val const4 : (Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const4(mSt.pure(None))
     mSt.gets(_.pgraph) >>= (programgraph =>
     method match {
       case Right(decl) =>
@@ -131,32 +130,32 @@ object CFGraph {
           case Some(decl) => 
             tr.Decl.cata(const4 // var
                         ,const4 // val
-                        ,(_, _, _, _, mBody) => // method
+                        ,(_, _, _, _, mBody) => { // method
+                           emptyBlock >>= (start =>
+                           emptyBlock >>= (end => {
+						   val done = Done(List())
+                           close(end, done) >> {
                            mBody match {
                              case Some(body) => 
-                               emptyBlock >>= (start =>
-                               emptyBlock >>= (done =>
-                               emptyBlock >>= (first =>
+                               emptyBlock >>= (first => {
                                close(start, Jump(first.entryLabel)) >> (
-                               monadTrans.liftM(setAbruptNext(done.entryLabel)) >> (
+                               monadTrans.liftM(setAbruptNext(end.entryLabel)) >> (
                                monadTrans.liftM(cfgStmts(body, first).run) >>= (res => {
                                  res match {
                                    case \/-(b) => 
-                                     close(b, Jump(done.entryLabel)) >>
-                                     mSt.pure(Some((start.entryLabel, done.entryLabel)))
-                                   case _        =>
-                                     mSt.pure(Some((start.entryLabel, done.entryLabel)))
+                                     close(b, Jump(end.entryLabel)) >>
+                                     mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
+                                   case _      =>
+                                     mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
                                  }
-                                 mSt.pure(Some((start.entryLabel, done.entryLabel)))
-                               }))))))
+                                 mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
+                               })))})
                              case None => 
                                emptyBlock >>= (start =>
-                               emptyBlock >>= (done =>
-                               close(start, Jump(done.entryLabel)) >> (
-                               close(done, Done(List())) >>
-                               mSt.pure(Some((start.entryLabel, done.entryLabel)))
-                               )))
-                         }
+                               emptyBlock >>= (end =>
+                               close(start, Jump(end.entryLabel)) >> (
+                               mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
+                               )))}}}))}
                         ,const4 // class
                         ,const4 // object
                         ,const4 // package object
@@ -168,11 +167,12 @@ object CFGraph {
         }
       case Left(expr @ _) =>
         emptyBlock >>= (start =>
-        emptyBlock >>= (done =>
-        close(start, Jump(done.entryLabel)) >> (
-        close(done, Done(List())) >>
-        mSt.pure(Some((start.entryLabel, done.entryLabel)))
-        )))
+        emptyBlock >>= (end =>
+        close(start, Jump(end.entryLabel)) >> {
+		val done = Done(List())
+        close(end, done) >>
+        mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
+        }))
     }
     )
   }
@@ -199,25 +199,28 @@ object CFGraph {
       , (l, fun, args, funRef, _) => // application
           cfgStmts(fun, b) >>= (afterFun =>
           foldM((acc : Block[Node, C, O], x : tr.Node) => cfgStmts(x, acc), afterFun, args.flatten) >>= (afterArgs => {
+		  println("analysing " + l)
           methodStartEnd(Right(funRef)) >>= (mStartEnd =>
           mStartEnd match {
-            case Some((start, end)) => 
+            case Some((start, end)) =>
               genBLabel >>= (returnPoint => {
               val call = Call(l, start, returnPoint)
               close(afterArgs, call) >>
               cfgASt.pure(singleton(Return(returnPoint, end, call)))
               })
-            case None => 
+            case None =>
               analyseMethod(Right(funRef))(cfgASt, cfgATrans) >>= (mStartEnd2 =>
               mStartEnd2 match {
-                case Some((start, end)) =>
+                case Some((start, (end, done))) =>
                   genBLabel >>= (returnPoint => {
                   val call = Call(l, start, returnPoint)
-                  close(afterArgs, call) >> { println("ok");
-                  cfgASt.pure(singleton(Return(returnPoint, end, call)))}
-                  })
+                  close(afterArgs, call) >> {
+				  val doneWithNewReturn : Block[Node, C, C] = BCat(BFirst(Label(end)), BLast(done.addSucc(returnPoint)))
+				  modifySt{ st => ((), st.copy(blocks = st.blocks.updated(end, doneWithNewReturn)) )} >> {
+                  cfgASt.pure(singleton(Return(returnPoint, end, call)))
+                  }}})
                 case None =>
-                  { println("ohh"); raiseError() }
+                  raiseError()
               }
           )})}))
       , (l, constr, args, _) => // new

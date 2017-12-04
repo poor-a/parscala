@@ -351,17 +351,15 @@ object Node {
           foldM(step, List.empty, stmts) >>= (nodes => nBlock(nodes.reverse, t))
       , other => // other expression
           nExpr(other)
-      , t)
+      , t
+	  )
   }
 
   private def withDLabel(genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[Decl]) : NodeGen[Decl] =
     for (l <- genLabel;
          decl <- f(l);
-         _ <- modifySt { st => st.decls.get(l) match {
-                                 case Some(_) => ((), st)
-                                 case None => ((), st.copy(decls = st.decls + (l -> decl)))
-                       }
-         })
+         _ <- modifySt { st => (decl, st.copy(decls = st.decls + (l -> decl))) }
+         )
     yield decl
 
   def genDecl(t : Tree) : NodeGen[Decl] =
