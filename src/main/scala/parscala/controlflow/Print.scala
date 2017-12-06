@@ -109,7 +109,7 @@ object CFGPrinter {
       , (_) => // jump
           ""
       , (_) => // done
-          ""
+          "(done)"
       , n
       )
   }

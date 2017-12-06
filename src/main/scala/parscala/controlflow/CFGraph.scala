@@ -142,13 +142,12 @@ object CFGraph {
                                monadTrans.liftM(setAbruptNext(end.entryLabel)) >> (
                                monadTrans.liftM(cfgStmts(body, first).run) >>= (res => {
                                  res match {
-                                   case \/-(b) => 
+                                   case \/-(b) =>
                                      close(b, Jump(end.entryLabel)) >>
                                      mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
                                    case _      =>
                                      mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
                                  }
-                                 mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
                                })))})
                              case None => 
                                emptyBlock >>= (start =>
@@ -199,7 +198,6 @@ object CFGraph {
       , (l, fun, args, funRef, _) => // application
           cfgStmts(fun, b) >>= (afterFun =>
           foldM((acc : Block[Node, C, O], x : tr.Node) => cfgStmts(x, acc), afterFun, args.flatten) >>= (afterArgs => {
-		  println("analysing " + l)
           methodStartEnd(Right(funRef)) >>= (mStartEnd =>
           mStartEnd match {
             case Some((start, end)) =>
