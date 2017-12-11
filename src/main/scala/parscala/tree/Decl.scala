@@ -1,6 +1,8 @@
 package parscala
 package tree
 
+import parscala.dot
+
 /**
  * Superclass of declarations and definitions.
  */
@@ -80,6 +82,49 @@ object Decl {
       case Object(l, s, name, decls) => fObject(l, s, name, decls)
       case PackageObject(l, s, name, decls) => fPObject(l, s, name, decls)
       case Package(l, s, name, decls) => fPackage(l, s, name, decls)
+    }
+
+  /** Converts a declaration into a graph.
+   */
+  def toDot(d : Decl) : dot.DotGraph = {
+    val (_, tree) = toTree(d)
+    dot.DotGraph("Program graph", List(), List()) + tree
+  }
+
+  /** Helper function of toDot for generating dot nodes and edges
+   *  from a declaration.
+   *
+   *  @returns root and its children with edges of the tree
+   */
+  def toTree(decl : Decl) : (dot.DotNode, dot.DotGraph) =
+    cata((l, symbol, name, mRhs) => { // variable
+           val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(symbol.toString)
+           (root, dot.DotGraph("", List(root), List()))
+         }
+        ,(l, symbol, name, mRhs) => { // value
+           val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(symbol.toString)
+           (root, dot.DotGraph("", List(root), List()))
+         }
+        ,(l, symbol, name, argss, mBody) => { // method
+           val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(symbol.toString)
+           (root, dot.DotGraph("", List(root), List()))
+         }
+        ,topLevel // class
+        ,topLevel // object
+        ,topLevel // package object
+        ,topLevel // package
+        ,decl
+        )
+
+  /** Helper function for top-level declarations,
+   *  such as class, object, package object and package
+   */
+  private def topLevel(l : DLabel, symbol : Symbol, name : String, decls : List[Decl]) : (dot.DotNode, dot.DotGraph) = {
+      val (children, subtrees) : (List[dot.DotNode], List[dot.DotGraph]) = decls.map(toTree).unzip
+      val subtree : dot.DotGraph = subtrees.foldLeft(dot.DotGraph.empty(""))(_ + _)
+      val current = dot.DotNode(l.toString) !! dot.DotAttr.label(symbol.toString)
+      val tree : dot.DotGraph = dot.DotGraph("", current :: children, children.map{child => dot.DotEdge(current, child)}) + subtree
+      (current, tree)
     }
 
   def isClass(d : Decl) : Boolean = {

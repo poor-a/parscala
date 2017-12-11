@@ -36,6 +36,7 @@ object DotNode {
     new DotNode("node_%s".format(dotLegaliseId(id.toString)), List.empty)
 }
 
+
 class DotAttr(val key : String, val value : String) {
   override def toString : String = 
     "%s=%s".format(key, value)
@@ -110,6 +111,9 @@ class DotGraph(val name : String, val blocks : Traversable[DotNode], val edges :
 object DotGraph {
   def apply(name : String, blocks : Traversable[DotNode], edges : Traversable[DotEdge]) : DotGraph =
     new DotGraph(name, blocks, edges, List.empty)
+
+  def empty(name : String) : DotGraph =
+    new DotGraph(name, List.empty, List.empty, List.empty)
 }
 
 object Dot {

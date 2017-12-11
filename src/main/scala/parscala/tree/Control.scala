@@ -104,14 +104,17 @@ object Control {
       case q"$_ val $name: $_ = $expr" => valD(name.toString, t.symbol, Some(expr))
       case q"$_ val $name = $expr" => valD(name.toString, t.symbol, Some(expr))
       case q"$_ val $name: $_" => valD(name.toString, t.symbol, None)
-      case q"$_ def $name (...$argss) : $_ = $body" => methodD(name.toString, t.symbol, argss, Some(body))
       case q"$_ def $name (...$argss) : $_" => methodD(name.toString, t.symbol, argss, None)
-      case q"$_ class $name extends ..$_ { ..$defs }" => classD(name.toString, t.symbol, defs)
-      case q"$_ class $name extends $_ with ..$_ { ..$defs }" => classD(name.toString, t.symbol, defs)
-      case q"$_ object $name extends ..$_ { ..$defs }" => objectD(name.toString, t.symbol, defs)
-      case q"$_ object $name extends $_ with ..$_ { ..$defs }" => objectD(name.toString, t.symbol, defs)
-      case q"package object $name extends ..$_ { ..$defs }" => packageOD(name.toString, t.symbol, defs)
-      case q"package object $name extends $_ with ..$_ { ..$defs }" => packageOD(name.toString, t.symbol, defs)
+      case q"$_ def $name (...$argss) : $_ = $body" => methodD(name.toString, t.symbol, argss, Some(body))
+   // full syntax: 
+   // case q"$mods class $name[..$tparams] $ctorMods(...$paramss) extends { ..$earlydefns } with ..$parents { $self => ..$stats }"
+      case q"$_ class $name[..$_] $_(...$_) extends { ..$_ } with ..$_ { $_ => ..$defs }" => classD(name.toString, t.symbol, defs)
+   // full syntax: 
+   // case q"$mods object $tname extends { ..$earlydefns } with ..$parents { $self => ..$stats }"
+      case q"$_ object $name extends { ..$_ } with ..$_ { $_ => ..$defs }" => objectD(name.toString, t.symbol, defs)
+   // full syntax: 
+   // case q"package object $tname extends { ..$earlydefns } with ..$parents { $self => ..$stats }"
+      case q"package object $name extends { ..$_ } with ..$_ { $_ => ..$defs }" => packageOD(name.toString, t.symbol, defs)
       case q"package $name { ..$topStmts }" => packageD(name.toString, t.symbol, topStmts)
     }
 
