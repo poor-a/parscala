@@ -1,10 +1,12 @@
 package parscala
 package tree
 
-import scalaz.{State, Monad, MonadState, IndexedStateT}
+import scala.meta
+
+import scalaz.{State, StateT, \/, Monad, MonadState, MonadTrans, IndexedStateT}
 import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 
-import parscala.Control.{foldM, foldM_, mapM}
+import parscala.Control.{foldM, foldM_, mapM, forM, forM_}
 import dot.{Dot, DotAttr, DotGraph, DotNode, DotEdge}
 
 class NodeTree (val root : Node, val nodes : ExprMap[Node])
@@ -161,17 +163,29 @@ object Node {
 
   case class St
     ( pGen : PLabelGen
-    , sGen : SLabelGen 
+    , sGen : SLabelGen
     , dGen : DLabelGen
     , exprs : ExprMap[Node]
     , symbols : Map[Symbol, DLabel]
     , decls : DeclMap[Decl]
     , packages : List[Package]
     )
-  type NodeGen[A] = State[St, A]
-  private val stateInstance : MonadState[NodeGen, St] = IndexedStateT.stateMonad[St]
+
+  type Exception[A] = String \/ A
+  type NodeGen[A] = StateT[Exception, St, A]
+  private val stateInstance : MonadState[NodeGen, St] = IndexedStateT.stateTMonadState[St, Exception]
+  private val transInstance : MonadTrans[({ type λ[M[_], A] = StateT[M, St, A] })#λ] = IndexedStateT.StateMonadTrans
   val nodeGenMonadInstance : Monad[NodeGen] = stateInstance
 
+  def raiseError[A](e : String) : NodeGen[A] =
+    transInstance.liftM[Exception, A](\/.DisjunctionInstances1.raiseError[A](e))
+/*
+  private val errorInstance : MonadError[NodeGen, String] = new MonadError {
+    val errInst : MonadError[Exception, String] = \/.DisjunctionInstances1
+    override def bind[A, B](fa : NodeGen[A])(f : NodeGen(A) => NodeGen[B]) : NodeGen[B] = stateInstance.bind
+    override def handleError
+  }
+*/
   private def modifySt[A](f : St => (A, St)) : NodeGen[A] =
     for (s <- stateInstance.get;
          (x, sNew) = f(s);
@@ -179,7 +193,7 @@ object Node {
     yield x
 
   private def getDLabel (s : Symbol) : NodeGen[Option[DLabel]] =
-    State.gets[St, Option[DLabel]](_.symbols.get(s))
+    stateInstance.gets[Option[DLabel]](_.symbols.get(s))
 
   private def genSLabel : NodeGen[SLabel] =
     modifySt{ s => (s.sGen.head, s.copy(sGen = s.sGen.tail)) }
@@ -187,13 +201,19 @@ object Node {
   private def genPLabel : NodeGen[PLabel] =
     modifySt{ s => (s.pGen.head, s.copy(pGen = s.pGen.tail)) }
 
+  private def genDLabel() : NodeGen[DLabel] =
+    modifySt { s => (s.dGen.head, s.copy(dGen = s.dGen.tail)) }
+
   private def genDLabel (sym : Symbol) : NodeGen[DLabel] =
-    modifySt{ s => 
+    modifySt{ s =>
       s.symbols.get(sym) match {
         case Some(dl) => (dl, s)
         case None => (s.dGen.head, s.copy(dGen = s.dGen.tail, symbols = s.symbols + ((sym, s.dGen.head)))) 
       }
     }
+
+  private def addSymbol(sym : Symbol, l : DLabel) : NodeGen[Unit] =
+    modifySt { s => ((), s.copy(symbols = s.symbols + ((sym, l)))) }
 
   private def label(f : SLabel => Node) : NodeGen[Node] = 
     for (l <- genSLabel;
@@ -260,19 +280,13 @@ object Node {
   private def nExpr(tr : Tree) : NodeGen[Node] =
     label(Expr(_, tr))
 
-  private def addUnknownMethod(s : Symbol) : NodeGen[DLabel] =
-    for (l <- genDLabel(s);
-         m = Method(l, s, s.fullName, List(), None);
-         _ <- modifySt { st => ((), st.copy(decls = st.decls + (l -> m))) })
-    yield l
-  
   private def collectMethod(t : Tree) : NodeGen[Unit] =
     if (t.symbol != null && t.symbol.isMethod)
-      nodeGenMonadInstance.void(addUnknownMethod(t.symbol))
+      nodeGenMonadInstance.void(genDLabel(t.symbol))
     else
       nodeGenMonadInstance.pure(())
 
-  def genNode(t : Tree) : NodeGen[Node] = {
+  def genNode(t : Tree/*, desugared : meta.Term*/) : NodeGen[Node] = {
     import scalaz.syntax.bind._
     import compiler.Quasiquote
 
@@ -355,66 +369,79 @@ object Node {
 	  )
   }
 
-  private def withDLabel(genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[Decl]) : NodeGen[Decl] =
+  private def withDLabelM(genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[Decl]) : NodeGen[Decl] =
     for (l <- genLabel;
          decl <- f(l);
          _ <- modifySt { st => (decl, st.copy(decls = st.decls + (l -> decl))) }
          )
     yield decl
 
-  def genDecl(t : Tree) : NodeGen[Decl] =
-    Control.declCata(
-        (name, sym, mRhs) => // variable
-          withDLabel(genDLabel(sym))(l => {
-          val m : NodeGen[Option[Node]] = scalaz.std.option.cata(mRhs)(
-              rhs => stateInstance.map(genNode(rhs))(Some(_))
-            , stateInstance.pure(None)
-            )
-          m >>= (mExpr =>
-          stateInstance.pure(Var(l, sym, name, mExpr))
-          )})
-      , (name, sym, mRhs) => // value
-          withDLabel(genDLabel(sym))(l => {
-          val m : NodeGen[Option[Node]] = scalaz.std.option.cata(mRhs)(
-              rhs => stateInstance.map(genNode(rhs))(Some(_))
-            , stateInstance.pure(None)
-            )
-          m >>= (mAst => 
-          stateInstance.pure(Val(l, sym, name, mAst))
-          )})
-      , (name, sym, argss, mBody) => // method
-          withDLabel(genDLabel(sym))(l =>
-          mapM(mapM(genPat, _ : List[Tree]), argss) >>= (pats => {
-          val m : NodeGen[Option[Node]] = scalaz.std.option.cata(mBody)(
-              body => stateInstance.map(genNode(body))(Some(_))
-            , stateInstance.pure(None)
-            )
-          m >>= (mAst => 
-          stateInstance.pure(Method(l, sym, name, pats, mAst))
-          )}))
-      , (name, sym, decls) => // class
-          withDLabel(genDLabel(sym))(l =>
-          mapM(genDecl, decls) >>= (ds =>
-          stateInstance.pure(Class(l, sym, name, ds))
-          ))
-      , (name, sym, decls) => // object
-          withDLabel(genDLabel(sym))(l =>
-          mapM(genDecl, decls) >>= (ds =>
-          stateInstance.pure(Object(l,sym, name, ds))
-          ))
-      , (name, sym, decls) => // package object
-          withDLabel(genDLabel(sym))(l =>
-          mapM(genDecl, decls) >>= (ds =>
-          stateInstance.pure(PackageObject(l,sym, name, ds))
-          ))
-      , (name, sym, decls) => // package
-          withDLabel(genDLabel(sym))(l =>
-          mapM(genDecl, decls) >>= (ds => {
-          val p : Package = Package(l,sym, name, ds)
-          modifySt{ s => ((), s.copy(packages = p :: s.packages)) } >>= (_ =>
-          stateInstance.pure(p)
-          )}))
-      , t
+  private def withDLabel(genLabel : NodeGen[DLabel])(f : DLabel => Decl) : NodeGen[Decl] =
+    withDLabelM(genLabel){ l => stateInstance.pure(f(l)) }
+
+  private def dropAnonymousPackage(t : Tree) : List[Tree] =
+    t match {
+      case q"package $p { ..$stats }" if p.symbol.toString == "<empty>" => stats // TODO
+      case _ => List(t)
+    }
+
+  def resugar(sugared : meta.Source, desugared : Tree) : NodeGen[Unit] = {
+    val stats : List[meta.Stat] = source.stats
+    for(_ <- forM(stats){stat =>
+               Control.metaStatKindCata(
+                   _ => List() // term
+                , decl =>  // decl
+                    genDecl(decl, List())
+                , defn => genDefn(defn, List()) // definition
+                , _ => stateInstance.pure(()) // secondary constructor
+                , pobj => genDefn(defn, List()) // package object
+                , pkg => genDefn(pkg, List()) // package
+                , imprt => genDecl(imprt, List()) // import
+                , stat
+                )
+             }
+    ) yield ()
+  }
+
+  def genDecl(sugared : meta.Decl, ts : List[Tree]) : NodeGen[Decl] =
+    Control.declCataMeta(
+        (mods, pats) => valDecl => // val
+          withDLabelM(genDLabel()){ l => for (
+              _ <- forM_(ts){ t => addSymbol(t.symbol, l) };
+              symbols : Set[Symbol] = ts.map(_.symbol).toSet
+            ) yield
+              Val(l, pats, symbols, None, valDecl)
+          }
+      , (mods, pats) => varDecl => // var
+          withDLabelM(genDLabel()){ l => for (
+              _ <- forM(ts){ t => addSymbol(t.symbol, l) };
+              symbols : Set[Symbol] = ts.map(_.symbol).toSet
+            ) yield
+              Var(l, pats, symbols, None, varDecl)
+          }
+      , (_mods, name, _typeParams, argss) => defDecl => // method
+          ts match {
+            case List(tr) =>
+              withDLabel(genDLabel(tr.symbol)){ l =>
+                Method(l, tr.symbol, name, argss, None, defDecl)
+              }
+            case List() =>
+              raiseError("There is no matching sugared ast for declaration of method " + name)
+            case _ =>
+              raiseError("There are more than one sugared asts for declaration of method " + name)
+          }
+      , (mods, name, typeParams, bounds) => typeDecl =>  // type
+          ts match {
+            case List(tr) =>
+              withDLabel(genDLabel(tr.symbol)){ l => 
+                Type(l, tr.symbol, name, typeParams, bounds, typeDecl)
+              }
+            case List() =>
+              raiseError("There is no matching sugared ast for declaration of type " + name)
+            case _ =>
+              raiseError("There are more than one sugared asts for declaration of type " + name)
+          }
+      , sugared
       )
 
   private def genPat(t : Tree) : NodeGen[Pat] = 
@@ -450,7 +477,7 @@ object Node {
           )
       , t
       )
-
+/*
   def fromTree(t : Tree) : (ProgramGraph, Option[NodeTree]) = {
     val (st, nodes) : (St, Option[NodeTree]) = 
       if (t.isTerm) {
@@ -461,9 +488,9 @@ object Node {
         (st, None)
       }
     (new ProgramGraph(st.decls, st.exprs, st.symbols, st.packages), nodes)
-    }
+  }*/
 
-  def run[A](m : NodeGen[A]) : (St, A) = {
+  def runNodeGen[A](m : NodeGen[A]) : String \/ (St, A) = {
     val startSt : St = St(PLabel.stream, SLabel.stream, DLabel.stream, Map(), Map(), Map(), List())
     m.run(startSt)
   }
@@ -472,12 +499,14 @@ object Node {
     type St = (List[DotNode], List[DotEdge])
     type DotGen[A] = State[St, A]
 
+    val dotGenState : MonadState[DotGen, St] = IndexedStateT.stateMonad
+
     def add(node : DotNode, edges : List[DotEdge]) : DotGen[DotNode] = 
-      for (_ <- State.modify[St]{ case (ns, es) => (node :: ns, edges ++ es) })
+      for (_ <- dotGenState.modify{ case (ns, es) => (node :: ns, edges ++ es) })
       yield node
 
     def addEdge(edge : DotEdge) : DotGen[Unit] =
-      State.modify[St]{ case (ns, es) => (ns, edge :: es) }
+      dotGenState.modify{ case (ns, es) => (ns, edge :: es) }
 
     def record(l : SLabel, header : String, body : String) : DotNode =
       DotNode(l.toString) !! DotAttr.shape("record") !! DotAttr.labelWithPorts("{ %s - %s | %s }".format(l.toString, header, Dot.dotEscape(body)))
@@ -491,13 +520,13 @@ object Node {
              0,
              children)
 
-    def deepEnum(parent : DotNode, children : List[List[DotNode]], eLabelTemplate : (String, String) => String) : DotGen[Unit] = 
-      foldM_[DotGen, Int, List[DotNode]]((i, chldrn) => 
+    def deepEnum(parent : DotNode, children : List[List[DotNode]], eLabelTemplate : (String, String) => String) : DotGen[Unit] =
+      foldM_[DotGen, Int, List[DotNode]]((i, chldrn) =>
                 for (_ <- enum(parent, chldrn, eLabelTemplate(i.toString, _))) yield i + 1,
-            0, 
+            0,
             children)
 
-    def formatNode(n : Node) : DotGen[DotNode] = 
+    def formatNode(n : Node) : DotGen[DotNode] =
       nodeCata(
           (l, lit, t) => // literal
             add(record(l, "Literal", t.toString), List())

@@ -9,4 +9,5 @@ object Function {
   def const3[A](x : A) : (Any, Any, Any) => A = (_, _, _) => x
   def const4[A](x : A) : (Any, Any, Any, Any) => A = (_, _, _, _) => x
   def const5[A](x : A) : (Any, Any, Any, Any, Any) => A = (_, _, _, _, _) => x
+  def const6[A](x : A) : (Any, Any, Any, Any, Any, Any) => A = (_, _, _, _, _, _) => x
 }

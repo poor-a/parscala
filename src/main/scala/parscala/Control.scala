@@ -28,6 +28,12 @@ object Control {
   def mapM_[M[_], A, B](f : A => M[B], l : List[A])(implicit evidence : Monad[M]) : M[Unit] =
     evidence.void(evidence.sequence(l.map(f))(scalaz.std.list.listInstance))
 
+  def forM[M[_], A, B](l : List[A])(f : A => M[B])(implicit evidence : Monad[M]) : M[List[B]] =
+    mapM(f, l)
+
+  def forM_[M[_], A, B](l : List[A])(f : A => M[B])(implicit evidence : Monad[M]) : M[Unit] =
+    mapM_(f, l)
+
   def catSomes[A](xs : List[Option[A]]) : List[A] =
     xs.foldRight(List[A]())(
         (mx, acc) => mx match {

@@ -12,7 +12,7 @@ libraryDependencies ++= Seq( "org.scala-lang" % "scala-compiler" % scalaVersion.
                            , "org.scalactic" %% "scalactic" % "3.0.0"
                            , "org.scalatest" %% "scalatest" % "3.0.0" % "test"
                            , "org.scalaz" %% "scalaz-core" % "7.2.14"
-                           , "org.scalameta" % "scalameta_2.12" % "1.8.0"
+                           , "org.scalameta" % "scalameta_2.12" % "2.1.3"
                            )
 
 scalacOptions ++= Seq("-Xlint:_",

@@ -3,7 +3,7 @@ import parscala.callgraph.CallGraphBuilder
 import parscala.controlflow.{CFGraph, CFGPrinter}
 import parscala.df.{UseDefinition, DFGraph}
 import parscala.file.DirectoryTraverser
-import parscala.tree.{Node, Method, Class}
+import parscala.tree.{Node, Method, Class, Decl}
 
 import scala.collection.JavaConverters
 
@@ -65,6 +65,10 @@ object ParScala {
             } else {
               val pgraph : ProgramGraph = parscala.ParScala.analyse(scalaSourceFiles, c.classpath)
               println("decls: " + pgraph.declarations)
+              val pkgs : List[parscala.tree.Package] = pgraph.packages
+              println(pkgs.head.decls)
+              val pDotGraph = pkgs.foldLeft(dot.DotGraph("", List(), List())){(g, pkg) => g + Decl.toDot(pkg) }
+              MainWindow.showDotWithTitle(pDotGraph, "")
               if (c.showCallGraph) {
                 MainWindow.showCallGraph(CallGraphBuilder.fullCallGraph(pgraph))
               }

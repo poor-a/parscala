@@ -2,21 +2,43 @@ package parscala
 
 import parscala.{tree => tr}
 
-import scalaz.Monad
+import java.nio
+import org.langmeta.inputs
+import scala.meta
+
+import scalaz.{Monad, \/-, -\/}
 
 object ParScala {
-  def analyse(pathes : List[String], classPath : Option[String]) : ProgramGraph = {
+  def analyse(pathes : List[nio.file.Path], classPath : Option[String]) : Either[String, ProgramGraph] = {
     scalaz.std.option.cata(classPath)(
         cp => compiler.currentSettings.classpath.value = cp
       , ()
       )
     val run = new compiler.Run()
-    run.compile(pathes)
+    run.compile(pathes.map(_.toString))
+
+    val desugaredAsts : Iterator[Tree] = run.units.map(_.tree)
+    val sugaredSources : Iterator[meta.Parsed[meta.Source]] = pathes.toIterator.map(parseMeta)
+    val trees : Iterator[(Tree, meta.Source)] = desugaredAsts.zip(sugaredSources).flatMap { case (desugared, parseResult) =>
+      parseResult.fold(
+          _ => List()
+        , source =>
+            List(desugared, source)
+        )
+    }
     val m : Monad[tr.Node.NodeGen] = tr.Node.nodeGenMonadInstance
-    val (st, _) : (tr.Node.St, List[tr.Decl]) = tr.Node.run(m.sequence(run.units.toList.map{u : CompilationUnit => tr.Node.genDecl(u.body)})
-                                                                      (Scalaz.listTraverseInst))
-    new ProgramGraph(st.decls, st.exprs, st.symbols, st.packages)
+    val genDecls : tr.Node.NodeGen[Unit] = 
+      m.void(m.sequence(trees.toList.map{ case (desugared, sugared) => tr.Node.genDecl(sugared, List(desugared)) })(Scalaz.listTraverseInst))
+    tr.Node.runNodeGen(genDecls) match {
+	  case \/-((st, _)) =>
+        Right(new ProgramGraph(st.decls, st.exprs, st.symbols, st.packages))
+	  case -\/(err) =>
+        Left(err)
+	}
   }
+
+  def parseMeta(path : nio.file.Path) : meta.Parsed[meta.Source] =
+    meta.parsers.Parse.parseSource(inputs.Input.File(path), meta.dialects.Scala212)
 
   def astOfExprWithSource(expr : String) : Option[(Tree, SourceFile)] = {
     import compiler.Quasiquote
@@ -55,7 +77,9 @@ object ParScala {
     r.compileSources(List(source))
     val units : Iterator[CompilationUnit] = r.units
     if (units.nonEmpty) {
-      val q"package $_ { $clsAst }" = units.next().body
+      val body : Tree = units.next().body
+      print("body is a " + body.getClass)
+      val q"package $_ { $clsAst }" = body
       Some((clsAst, source))
     } else {
       None
