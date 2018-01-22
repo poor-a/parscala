@@ -23,12 +23,14 @@ object ParScala {
       parseResult.fold(
           _ => List()
         , source =>
-            List(desugared, source)
+            List((desugared, source))
         )
     }
     val m : Monad[tr.Node.NodeGen] = tr.Node.nodeGenMonadInstance
     val genDecls : tr.Node.NodeGen[Unit] = 
-      m.void(m.sequence(trees.toList.map{ case (desugared, sugared) => tr.Node.genDecl(sugared, List(desugared)) })(Scalaz.listTraverseInst))
+      m.void(m.sequence(trees.toList.map{ case (desugared, sugared) => tr.Node.genDecl(sugared, List(desugared)) } )
+					   (Scalaz.listTraverseInst)
+			)
     tr.Node.runNodeGen(genDecls) match {
 	  case \/-((st, _)) =>
         Right(new ProgramGraph(st.decls, st.exprs, st.symbols, st.packages))

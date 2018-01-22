@@ -3,7 +3,7 @@ import parscala.callgraph.CallGraphBuilder
 import parscala.controlflow.{CFGraph, CFGPrinter}
 import parscala.df.{UseDefinition, DFGraph}
 import parscala.file.DirectoryTraverser
-import parscala.tree.{Node, Method, Class, Decl}
+import parscala.tree.{Decl, Node}
 
 import scala.collection.JavaConverters
 
@@ -72,9 +72,9 @@ object ParScala {
               if (c.showCallGraph) {
                 MainWindow.showCallGraph(CallGraphBuilder.fullCallGraph(pgraph))
               }
-              val classes : List[Class] = pgraph.packages flatMap (_.classes)
+              val classes : List[Defn.Class] = pgraph.packages flatMap (_.classes)
               println(s"classes (${classes.size}): ${classes.mkString(", ")}")
-              val methods : List[Method] = classes flatMap (_.methods)
+              val methods : List[Either Decl.Method Defn.Method] = classes flatMap (_.methods)
               println(s"methods: ${methods.mkString(", ")}")
               scalaz.std.option.cata(c.method)(
                   mName => {

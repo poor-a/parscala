@@ -381,27 +381,44 @@ object Node {
 
   private def dropAnonymousPackage(t : Tree) : List[Tree] =
     t match {
-      case q"package $p { ..$stats }" if p.symbol.toString == "<empty>" => stats // TODO
+      case q"package $p { ..$stats }" if p.symbol.toString == "<empty>" => stats // TODO: is "<empty>" correct?
       case _ => List(t)
     }
 
+  private def overlapping(pos : meta.Position, desugared : List[Tree]) : List[Tree] =
+    desugared.filter{ tr => pos.start <= tr.pos.end && tr.pos.start <= pos.end }
+
   def resugar(sugared : meta.Source, desugared : Tree) : NodeGen[Unit] = {
-    val stats : List[meta.Stat] = source.stats
-    for(_ <- forM(stats){stat =>
+    val metaStats : List[meta.Stat] = source.stats
+    val scalacStats : List[Tree] = dropAnonymousPackage(desugared)
+    for(_ <- forM_(stats){ stat =>
                Control.metaStatKindCata(
-                   _ => List() // term
+                   _ => // term
+                    stateInstance.pure(()) 
                 , decl =>  // decl
-                    genDecl(decl, List())
-                , defn => genDefn(defn, List()) // definition
-                , _ => stateInstance.pure(()) // secondary constructor
-                , pobj => genDefn(defn, List()) // package object
-                , pkg => genDefn(pkg, List()) // package
-                , imprt => genDecl(imprt, List()) // import
+                    stateInstance.void(genDecl(decl, overlapping(decl.pos, scalacStats)))
+                , defn => // definition
+                    stateInstance.void(genDefn(defn, overlapping(defn.pos, scalacStats)))
+                , _ => // secondary constructor
+                    stateInstance.pure(())
+                , pobj => // package object
+                    stateInstance.void(genDefn(defn, overlapping(pobj.pos, scalacStats)))
+                , pkg => // package
+                    stateInstance.void(genPkg(pkg, overlapping(pkg.pos, scalacStats)))
+                , imprt => // import
+                    stateInstance.void(genDecl(imprt, overlapping(imprt, scalacStats)))
                 , stat
                 )
              }
     ) yield ()
   }
+
+  def genDefn(sugared : meta.Defn, ts : List[Tree]) : NodeGen[Defn] =
+	???
+
+  def genPkg(sugared  : meta.Pkg, ts : List[Tree]) : NodeGen[Pkg] =
+	// check that ts is a singleton list
+	???
 
   def genDecl(sugared : meta.Decl, ts : List[Tree]) : NodeGen[Decl] =
     Control.declCataMeta(
@@ -410,20 +427,20 @@ object Node {
               _ <- forM_(ts){ t => addSymbol(t.symbol, l) };
               symbols : Set[Symbol] = ts.map(_.symbol).toSet
             ) yield
-              Val(l, pats, symbols, None, valDecl)
+              Decl.Val(l, pats, symbols, valDecl)
           }
       , (mods, pats) => varDecl => // var
           withDLabelM(genDLabel()){ l => for (
               _ <- forM(ts){ t => addSymbol(t.symbol, l) };
               symbols : Set[Symbol] = ts.map(_.symbol).toSet
             ) yield
-              Var(l, pats, symbols, None, varDecl)
+              Decl.Var(l, pats, symbols, varDecl)
           }
       , (_mods, name, _typeParams, argss) => defDecl => // method
           ts match {
             case List(tr) =>
               withDLabel(genDLabel(tr.symbol)){ l =>
-                Method(l, tr.symbol, name, argss, None, defDecl)
+                Decl.Method(l, tr.symbol, name, argss, defDecl)
               }
             case List() =>
               raiseError("There is no matching sugared ast for declaration of method " + name)
@@ -434,7 +451,7 @@ object Node {
           ts match {
             case List(tr) =>
               withDLabel(genDLabel(tr.symbol)){ l => 
-                Type(l, tr.symbol, name, typeParams, bounds, typeDecl)
+                Decl.Type(l, tr.symbol, name, typeParams, bounds, typeDecl)
               }
             case List() =>
               raiseError("There is no matching sugared ast for declaration of type " + name)

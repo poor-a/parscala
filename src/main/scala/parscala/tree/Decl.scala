@@ -1,5 +1,6 @@
 package parscala
 package tree
+package decl
 
 import parscala.dot
 import scala.meta
@@ -7,62 +8,26 @@ import scala.meta
 /**
  * Superclass of declarations and definitions.
  */
-sealed abstract class Decl {
-  def label : DLabel
-}
+sealed abstract class Decl extends Statement with SymbolTree
 
-case class Var(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], rhs : Option[Node], sugared : meta.Decl.Var) extends Decl {
+object Decl {
+
+case class Var(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], sugared : meta.Decl.Var) extends Decl {
   def label : DLabel = l
 
   override def toString : String = sugared.toString
 }
 
-case class Val(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], rhs : Option[Node], sugared : meta.Decl.Val) extends Decl {
+case class Val(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], sugared : meta.Decl.Val) extends Decl {
   def label : DLabel = l
 
   override def toString : String = sugared.toString
 }
 
-case class Method(val l : DLabel, symbol : Symbol, name : meta.Term.Name, argss : List[List[meta.Term.Param]], body : Option[Node], sugared : meta.Decl.Def) extends Decl {
+case class Method(val l : DLabel, symbol : Symbol, name : meta.Term.Name, argss : List[List[meta.Term.Param]], sugared : meta.Decl.Def) extends Defn {
   def label : DLabel = l
 
   override def toString : String = symbol.toString
-}
-
-case class Class(val l : DLabel, symbol : Symbol, name : String, decls : List[Decl], sugared : meta.Defn.Class) extends Decl {
-  def label : DLabel = l
-
-  override def toString : String = symbol.toString
-
-  def filterDecls(pred : Decl => Boolean) : List[Decl] =
-    decls filter pred
-
-  def methods : List[Method] = 
-    parscala.Control.catSomes(filterDecls(Decl.isMethod).map(Decl.asMethod))
-}
-
-case class Object(val l : DLabel,  symbol : Symbol, name : String, decls : List[Decl], sugared : meta.Defn.Object) extends Decl {
-  def label : DLabel = l
-
-  override def toString : String = symbol.toString
-}
-
-case class PackageObject(val l : DLabel, symbol : Symbol, name : String, decls : List[Decl], sugared : meta.Defn.Object) extends Decl {
-  def label : DLabel = l
-
-  override def toString : String = symbol.toString
-}
-
-case class Package(val l : DLabel, symbol : Symbol, name : String, decls : List[Decl], sugared : meta.Pkg) extends Decl {
-  def label : DLabel = l
-
-  override def toString : String = symbol.toString
-
-  def filterDecls(pred : Decl => Boolean) : List[Decl] =
-    decls filter pred
-
-  def classes : List[Class] =
-    parscala.Control.catSomes(filterDecls(Decl.isClass).map(Decl.asClass))
 }
 
 case class Type(l : DLabel, symbol : Symbol, name : meta.Type.Name, params : List[meta.Type.Param], bounds : meta.Type.Bounds, sugared : meta.Decl.Type) extends Decl {
@@ -72,24 +37,30 @@ case class Type(l : DLabel, symbol : Symbol, name : meta.Type.Name, params : Lis
   override def toString : String = sugared.toString
 }
 
-object Decl {
-  def cata[A]( fVal : (DLabel, List[meta.Pat], Set[Symbol], Option[Node], meta.Decl.Val) => A
-             , fVar : (DLabel, List[meta.Pat], Set[Symbol], Option[Node], meta.Decl.Var) => A
-             , fMethod : (DLabel, Symbol, meta.Term.Name, List[List[meta.Term.Param]], Option[Node], meta.Decl.Def) => A
-             , fClass : (DLabel, Symbol, String, List[Decl], meta.Defn.Class) => A
-             , fObject : (DLabel, Symbol, String, List[Decl], meta.Defn.Object) => A
-             , fPObject : (DLabel, Symbol, String, List[Decl], meta.Defn.Object) => A
-             , fPackage : (DLabel, Symbol, String, List[Decl], meta.Pkg) => A
+  def cata[A]( fVal : (DLabel, List[meta.Pat], Set[Symbol], meta.Decl.Val) => A
+             , fVar : (DLabel, List[meta.Pat], Set[Symbol], meta.Decl.Var) => A
+             , fMethod : (DLabel, Symbol, meta.Term.Name, List[List[meta.Term.Param]], meta.Decl.Def) => A
+             , fType : (DLabel, Symbol, meta.Type.Name, List[meta.Type.Param], meta.Type.Bounds, meta.Decl.Type) => A
              , decl : Decl
              ) : A =
     decl match {
-      case Var(l, pats, symbols, rhs, desugared) => fVar(l, pats, symbols, rhs, desugared)
-      case Val(l, pats, symbols, rhs, desugared) => fVal(l, pats, symbols, rhs, desugared)
-      case Method(l, sym, name, argss, body, desugared) => fMethod(l, sym, name, argss, body, desugared)
-      case Class(l, sym, name, decls, desugared) => fClass(l, sym, name, decls, desugared)
-      case Object(l, sym, name, decls, desugared) => fObject(l, sym, name, decls, desugared)
-      case PackageObject(l, sym, name, decls, desugared) => fPObject(l, sym, name, decls, desugared)
-      case Package(l, sym, name, decls, desugared) => fPackage(l, sym, name, decls, desugared)
+      case Var(l, pats, symbols, desugared) => fVar(l, pats, symbols, desugared)
+      case Val(l, pats, symbols, desugared) => fVal(l, pats, symbols, desugared)
+      case Method(l, sym, name, argss, desugared) => fMethod(l, sym, name, argss, desugared)
+      case Type(l, sym, name, params, bounds, sugared) => fType(l, sym, name, params, bounds, sugared)
+    }
+
+  def kindCata[A]( val_ : Val => A
+                 , var_ : Var => A
+                 , method_ : Method => A
+                 , type_ : Type => A
+                 , d : Decl
+                 ) : A =
+    d match {
+      v : Val => val_(v)
+      v : Var => var_(v)
+      m : Method => method_(m)
+      t : Type => type_(t)
     }
 
   /** Converts a declaration into a graph.
