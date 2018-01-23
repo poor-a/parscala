@@ -3,7 +3,7 @@ import parscala.callgraph.CallGraphBuilder
 import parscala.controlflow.{CFGraph, CFGPrinter}
 import parscala.df.{UseDefinition, DFGraph}
 import parscala.file.DirectoryTraverser
-import parscala.tree.{Decl, Node}
+import parscala.tree
 
 import scala.collection.JavaConverters
 
@@ -65,16 +65,15 @@ object ParScala {
             } else {
               val pgraph : ProgramGraph = parscala.ParScala.analyse(scalaSourceFiles, c.classpath)
               println("decls: " + pgraph.declarations)
-              val pkgs : List[parscala.tree.Package] = pgraph.packages
-              println(pkgs.head.decls)
-              val pDotGraph = pkgs.foldLeft(dot.DotGraph("", List(), List())){(g, pkg) => g + Decl.toDot(pkg) }
+              val pkgs : List[tree.Defn.Package] = pgraph.packages
+              val pDotGraph = pkgs.foldLeft(dot.DotGraph("", List(), List())){(g, pkg) => g + tree.Defn.toDot(pkg) }
               MainWindow.showDotWithTitle(pDotGraph, "")
               if (c.showCallGraph) {
                 MainWindow.showCallGraph(CallGraphBuilder.fullCallGraph(pgraph))
               }
-              val classes : List[Defn.Class] = pgraph.packages flatMap (_.classes)
+              val classes : List[tree.Defn.Class] = pgraph.packages flatMap (_.classes)
               println(s"classes (${classes.size}): ${classes.mkString(", ")}")
-              val methods : List[Either Decl.Method Defn.Method] = classes flatMap (_.methods)
+              val methods : List[Either[tree.Decl.Method, tree.Defn.Method]] = classes flatMap (_.methods)
               println(s"methods: ${methods.mkString(", ")}")
               scalaz.std.option.cata(c.method)(
                   mName => {

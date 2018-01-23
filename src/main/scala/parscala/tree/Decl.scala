@@ -1,6 +1,5 @@
 package parscala
 package tree
-package decl
 
 import parscala.dot
 import scala.meta
@@ -8,15 +7,17 @@ import scala.meta
 /**
  * Superclass of declarations and definitions.
  */
-sealed abstract class Decl extends Statement with SymbolTree
+sealed abstract class Decl {
+  def sLabel : SLabel
+  def dLabel : DLabel
+}
 
 object Decl {
+  case class Var(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], sugared : meta.Decl.Var) extends Decl {
+    def label : DLabel = l
 
-case class Var(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], sugared : meta.Decl.Var) extends Decl {
-  def label : DLabel = l
-
-  override def toString : String = sugared.toString
-}
+    override def toString : String = sugared.toString
+  }
 
 case class Val(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], sugared : meta.Decl.Val) extends Decl {
   def label : DLabel = l
@@ -24,7 +25,7 @@ case class Val(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], sug
   override def toString : String = sugared.toString
 }
 
-case class Method(val l : DLabel, symbol : Symbol, name : meta.Term.Name, argss : List[List[meta.Term.Param]], sugared : meta.Decl.Def) extends Defn {
+case class Method(val l : DLabel, symbol : Symbol, name : meta.Term.Name, argss : List[List[meta.Term.Param]], sugared : meta.Decl.Def) extends Decl {
   def label : DLabel = l
 
   override def toString : String = symbol.toString
@@ -35,6 +36,9 @@ case class Type(l : DLabel, symbol : Symbol, name : meta.Type.Name, params : Lis
   override def label : DLabel = l
 
   override def toString : String = sugared.toString
+}
+
+case class Import() extends Decl {
 }
 
   def cata[A]( fVal : (DLabel, List[meta.Pat], Set[Symbol], meta.Decl.Val) => A
@@ -54,13 +58,15 @@ case class Type(l : DLabel, symbol : Symbol, name : meta.Type.Name, params : Lis
                  , var_ : Var => A
                  , method_ : Method => A
                  , type_ : Type => A
+                 , import_ : Import => A
                  , d : Decl
                  ) : A =
     d match {
-      v : Val => val_(v)
-      v : Var => var_(v)
-      m : Method => method_(m)
-      t : Type => type_(t)
+      case v : Val => val_(v)
+      case v : Var => var_(v)
+      case m : Method => method_(m)
+      case t : Type => type_(t)
+      case i : Import => import_(i)
     }
 
   /** Converts a declaration into a graph.
@@ -76,22 +82,22 @@ case class Type(l : DLabel, symbol : Symbol, name : meta.Type.Name, params : Lis
    *  @returns root and its children with edges of the tree
    */
   private def toTree(decl : Decl) : (dot.DotNode, dot.DotGraph) =
-    cata( (l, pats, symbols, mRhs, desugared) => { // value
+    cata( (l, pats, symbols, desugared) => { // value
             val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(desugared.toString)
             (root, dot.DotGraph("", List(root), List()))
           }
-        , (l, pats, symbols, mRhs, desugared) => { // variable
+        , (l, pats, symbols, desugared) => { // variable
             val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(desugared.toString)
             (root, dot.DotGraph("", List(root), List()))
           }
-        , (l, symbol, name, argss, body, desugared) => { // method
+        , (l, symbol, name, argss, desugared) => { // method
             val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(symbol.toString)
             (root, dot.DotGraph("", List(root), List()))
           }
-        , (l, symbol, name, decls, desugared) => topLevel(l, symbol, decls) // class
-        , (l, symbol, name, decls, desugared) => topLevel(l, symbol, decls) // object
-        , (l, symbol, name, decls, desugared) => topLevel(l, symbol, decls) // package object
-        , (l, symbol, name, decls, desugared) => topLevel(l, symbol, decls) // package
+        , (l, symbol, name, params, bounds, desugared) => { // type
+            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(symbol.toString)
+            (root, dot.DotGraph("", List(root), List()))
+          }
         , decl
         )
 
@@ -106,62 +112,17 @@ case class Type(l : DLabel, symbol : Symbol, name : meta.Type.Name, params : Lis
       (current, tree)
     }
 
-  def isClass(d : Decl) : Boolean = {
-    val c5False : (Any, Any, Any, Any, Any) => Boolean = Function.const5(false)
-    val c6False : (Any, Any, Any, Any, Any, Any) => Boolean = Function.const6(false)
-    val c5True : (Any, Any, Any, Any, Any) => Boolean = Function.const5(true)
-    Decl.cata(
-        c5False // value
-      , c5False // variable
-      , c6False // method
-      , c5True  // class
-      , c5False // object
-      , c5False // package object
-      , c5False // package
-      , d
-      )
-  }
-
-  def isMethod(d : Decl) : Boolean = {
-    val c5False : (Any, Any, Any, Any, Any) => Boolean = Function.const5(false)
-    val c6True : (Any, Any, Any, Any, Any, Any) => Boolean = Function.const6(true)
-    Decl.cata(
-        c5False
-      , c5False
-      , c6True
-      , c5False
-      , c5False
-      , c5False
-      , c5False
-      , d
-      )
-  }
-
-  def asClass(d : Decl) : Option[Class] = {
-    val c5None : (Any, Any, Any, Any, Any) => Option[Class] = Function.const5(None)
-    val c6None : (Any, Any, Any, Any, Any, Any) => Option[Class] = Function.const6(None)
-    Decl.cata(
-        c5None // value
-      , c5None // variable
-      , c6None // method
-      , (_, _, _, _, _) => Some(d.asInstanceOf[Class]) // class 
-      , c5None // object
-      , c5None // package object
-      , c5None // package
-      , d
-      )
-  }
+  def isMethod(d : Decl) : Boolean =
+    asMethod(d).nonEmpty
 
   def asMethod(d : Decl) : Option[Method] = {
-    val c5None : (Any, Any, Any, Any, Any) => Option[Method] = Function.const5(None)
+    val c4None : (Any, Any, Any, Any) => Option[Method] = Function.const4(None)
+    val c6None : (Any, Any, Any, Any, Any, Any) => Option[Method] = Function.const6(None)
     Decl.cata(
-        c5None // value
-      , c5None // variable
-      , (_, _, _, _, _, _) => Some(d.asInstanceOf[Method]) // method
-      , c5None // class 
-      , c5None // object
-      , c5None // package object
-      , c5None // package
+        c4None // value
+      , c4None // variable
+      , (_, _, _, _, _) => Some(d.asInstanceOf[Method]) // method
+      , c6None // type
       , d
       )
   }

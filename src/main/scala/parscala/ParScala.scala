@@ -17,7 +17,7 @@ object ParScala {
     val run = new compiler.Run()
     run.compile(pathes.map(_.toString))
 
-    val desugaredAsts : Iterator[Tree] = run.units.map(_.tree)
+    val desugaredAsts : Iterator[Tree] = run.units.map(_.body)
     val sugaredSources : Iterator[meta.Parsed[meta.Source]] = pathes.toIterator.map(parseMeta)
     val trees : Iterator[(Tree, meta.Source)] = desugaredAsts.zip(sugaredSources).flatMap { case (desugared, parseResult) =>
       parseResult.fold(
@@ -28,15 +28,15 @@ object ParScala {
     }
     val m : Monad[tr.Node.NodeGen] = tr.Node.nodeGenMonadInstance
     val genDecls : tr.Node.NodeGen[Unit] = 
-      m.void(m.sequence(trees.toList.map{ case (desugared, sugared) => tr.Node.genDecl(sugared, List(desugared)) } )
-					   (Scalaz.listTraverseInst)
-			)
+      m.void(m.sequence(trees.toList.map{ case (desugared, sugared) => tr.Node.resugar(sugared, desugared) } )
+                        (Scalaz.listTraverseInst)
+            )
     tr.Node.runNodeGen(genDecls) match {
-	  case \/-((st, _)) =>
+      case \/-((st, _)) =>
         Right(new ProgramGraph(st.decls, st.exprs, st.symbols, st.packages))
-	  case -\/(err) =>
+      case -\/(err) =>
         Left(err)
-	}
+    }
   }
 
   def parseMeta(path : nio.file.Path) : meta.Parsed[meta.Source] =

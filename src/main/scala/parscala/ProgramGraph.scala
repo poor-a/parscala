@@ -7,7 +7,7 @@ class ProgramGraph (
     val declarations : DeclMap[Decl]
   , val expressions : ExprMap[Node]
   , val symbolTable : Map[Symbol, DLabel]
-  , val packages : List[Package]
+  , val packages : List[Defn.Package]
   )
 
 /*

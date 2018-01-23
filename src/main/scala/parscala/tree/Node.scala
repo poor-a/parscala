@@ -1,6 +1,8 @@
 package parscala
 package tree
 
+import scala.language.higherKinds
+
 import scala.meta
 
 import scalaz.{State, StateT, \/, Monad, MonadState, MonadTrans, IndexedStateT}
@@ -12,107 +14,107 @@ import dot.{Dot, DotAttr, DotGraph, DotNode, DotEdge}
 class NodeTree (val root : Node, val nodes : ExprMap[Node])
 
 sealed abstract class Node {
-  def label : SLabel
+  def sLabel : SLabel
   def tree : Tree
 }
 
 case class Literal(val l : SLabel, lit : Lit, val t : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = t
 }
 
 case class Ident(val l : SLabel, val s : Symbol, val variable : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = variable
 }
 
 case class PatDef(val l : SLabel, val lhs : Pat, val rhs : Node, val t : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = t
 }
 
 case class Assign(val l : SLabel, val lhs : Node, val rhs : Node, val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class App(val l : SLabel, val method : Node, val args : List[List[Node]], val funRef : DLabel, val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class New(val l : SLabel, val constructor : Tree, val args : List[List[Node]], val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class Select(val l : SLabel, val expr : Node, val sel : TermName, val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class This(val l : SLabel, val obj : TypeName, val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class Tuple(val l : SLabel, val components : List[Node], val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class If(val l : SLabel, val pred : Node, val thenE : Node, val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class IfElse(val l : SLabel, val pred : Node, val thenE : Node, val elseE : Node, val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class While(val l : SLabel, val pred : Node, val body : Node, val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class For(val l : SLabel, val enums : List[Node], val body : Node, val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class ForYield(val l : SLabel, val enums : List[Node], val body : Node, val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class ReturnUnit(val l : SLabel, val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class Return(val l : SLabel, val e : Node, val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class Throw(val l : SLabel, val e : Node, val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class Block(val l : SLabel, val exprs : List[Node], val b : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = b
 }
 
 case class Lambda(val l : SLabel, val args : List[Node], val body : Node, val tr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = tr
 }
 
 case class Expr(val l : SLabel, val expr : Tree) extends Node {
-  def label : SLabel = l
+  def sLabel : SLabel = l
   def tree : Tree = expr
 }
 
@@ -168,7 +170,7 @@ object Node {
     , exprs : ExprMap[Node]
     , symbols : Map[Symbol, DLabel]
     , decls : DeclMap[Decl]
-    , packages : List[Package]
+    , packages : List[Defn.Package]
     )
 
   type Exception[A] = String \/ A
@@ -379,19 +381,21 @@ object Node {
   private def withDLabel(genLabel : NodeGen[DLabel])(f : DLabel => Decl) : NodeGen[Decl] =
     withDLabelM(genLabel){ l => stateInstance.pure(f(l)) }
 
-  private def dropAnonymousPackage(t : Tree) : List[Tree] =
+  private def dropAnonymousPackage(t : Tree) : List[Tree] = {
+    import compiler.Quasiquote
     t match {
       case q"package $p { ..$stats }" if p.symbol.toString == "<empty>" => stats // TODO: is "<empty>" correct?
       case _ => List(t)
     }
+  }
 
   private def overlapping(pos : meta.Position, desugared : List[Tree]) : List[Tree] =
     desugared.filter{ tr => pos.start <= tr.pos.end && tr.pos.start <= pos.end }
 
   def resugar(sugared : meta.Source, desugared : Tree) : NodeGen[Unit] = {
-    val metaStats : List[meta.Stat] = source.stats
+    val metaStats : List[meta.Stat] = sugared.stats
     val scalacStats : List[Tree] = dropAnonymousPackage(desugared)
-    for(_ <- forM_(stats){ stat =>
+    for(_ <- forM_(metaStats){ stat =>
                Control.metaStatKindCata(
                    _ => // term
                     stateInstance.pure(()) 
@@ -402,11 +406,11 @@ object Node {
                 , _ => // secondary constructor
                     stateInstance.pure(())
                 , pobj => // package object
-                    stateInstance.void(genDefn(defn, overlapping(pobj.pos, scalacStats)))
+                    stateInstance.void(genPkgObj(pobj, overlapping(pobj.pos, scalacStats)))
                 , pkg => // package
                     stateInstance.void(genPkg(pkg, overlapping(pkg.pos, scalacStats)))
                 , imprt => // import
-                    stateInstance.void(genDecl(imprt, overlapping(imprt, scalacStats)))
+                    stateInstance.void(genImport(imprt, overlapping(imprt.pos, scalacStats)))
                 , stat
                 )
              }
@@ -416,9 +420,15 @@ object Node {
   def genDefn(sugared : meta.Defn, ts : List[Tree]) : NodeGen[Defn] =
 	???
 
-  def genPkg(sugared  : meta.Pkg, ts : List[Tree]) : NodeGen[Pkg] =
+  def genPkg(sugared : meta.Pkg, ts : List[Tree]) : NodeGen[Defn.Package] =
 	// check that ts is a singleton list
 	???
+
+  def genImport(sugared : meta.Import, ts : List[Tree]) : NodeGen[Decl.Import] =
+    ???
+
+  def genPkgObj(sugared : meta.Pkg.Object, ts : List[Tree]) : NodeGen[Defn.PackageObject] =
+    ???
 
   def genDecl(sugared : meta.Decl, ts : List[Tree]) : NodeGen[Decl] =
     Control.declCataMeta(
