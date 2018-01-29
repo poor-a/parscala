@@ -1,6 +1,6 @@
 package parscala
 package callgraph
 
-import parscala.tree.Method
+import parscala.tree
 
-case class Edge(caller : Method, callee : Method)
+case class Edge(caller : tree.Defn.Method, callee : Either[tree.Decl.Method, tree.Defn.Method])

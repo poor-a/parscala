@@ -9,112 +9,112 @@ import scalaz.{State, StateT, \/, Monad, MonadState, MonadTrans, IndexedStateT}
 import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 
 import parscala.Control.{foldM, foldM_, mapM, forM, forM_}
-import dot.{Dot, DotAttr, DotGraph, DotNode, DotEdge}
+import dot.{Dot, DotAttr, DotGraph, DotNode, DotEdge, Shape}
 
-class NodeTree (val root : Node, val nodes : ExprMap[Node])
+class NodeTree (val root : Node, val nodes : ExprMap)
 
 sealed abstract class Node {
-  def sLabel : SLabel
+  def label : SLabel
   def tree : Tree
 }
 
 case class Literal(val l : SLabel, lit : Lit, val t : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = t
 }
 
 case class Ident(val l : SLabel, val s : Symbol, val variable : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = variable
 }
 
 case class PatDef(val l : SLabel, val lhs : Pat, val rhs : Node, val t : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = t
 }
 
 case class Assign(val l : SLabel, val lhs : Node, val rhs : Node, val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class App(val l : SLabel, val method : Node, val args : List[List[Node]], val funRef : DLabel, val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class New(val l : SLabel, val constructor : Tree, val args : List[List[Node]], val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class Select(val l : SLabel, val expr : Node, val sel : TermName, val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class This(val l : SLabel, val obj : TypeName, val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class Tuple(val l : SLabel, val components : List[Node], val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class If(val l : SLabel, val pred : Node, val thenE : Node, val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class IfElse(val l : SLabel, val pred : Node, val thenE : Node, val elseE : Node, val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class While(val l : SLabel, val pred : Node, val body : Node, val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class For(val l : SLabel, val enums : List[Node], val body : Node, val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class ForYield(val l : SLabel, val enums : List[Node], val body : Node, val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class ReturnUnit(val l : SLabel, val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class Return(val l : SLabel, val e : Node, val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class Throw(val l : SLabel, val e : Node, val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class Block(val l : SLabel, val exprs : List[Node], val b : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = b
 }
 
 case class Lambda(val l : SLabel, val args : List[Node], val body : Node, val tr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = tr
 }
 
 case class Expr(val l : SLabel, val expr : Tree) extends Node {
-  def sLabel : SLabel = l
+  def label : SLabel = l
   def tree : Tree = expr
 }
 
@@ -167,9 +167,10 @@ object Node {
     ( pGen : PLabelGen
     , sGen : SLabelGen
     , dGen : DLabelGen
-    , exprs : ExprMap[Node]
-    , symbols : Map[Symbol, DLabel]
-    , decls : DeclMap[Decl]
+    , exprs : ExprMap
+    , symbols : SymbolTable
+    , decls : DeclMap
+    , defns : DefnMap
     , packages : List[Defn.Package]
     )
 
@@ -518,7 +519,7 @@ object Node {
   }*/
 
   def runNodeGen[A](m : NodeGen[A]) : String \/ (St, A) = {
-    val startSt : St = St(PLabel.stream, SLabel.stream, DLabel.stream, Map(), Map(), Map(), List())
+    val startSt : St = St(PLabel.stream, SLabel.stream, DLabel.stream, Map(), Map(), Map(), Map(), List())
     m.run(startSt)
   }
 
@@ -536,7 +537,7 @@ object Node {
       dotGenState.modify{ case (ns, es) => (ns, edge :: es) }
 
     def record(l : SLabel, header : String, body : String) : DotNode =
-      DotNode(l.toString) !! DotAttr.shape("record") !! DotAttr.labelWithPorts("{ %s - %s | %s }".format(l.toString, header, Dot.dotEscape(body)))
+      DotNode(l.toString) !! DotAttr.shape(Shape.Record) !! DotAttr.labelWithPorts("{ %s - %s | %s }".format(l.toString, header, Dot.dotEscape(body)))
 
     def edge(source : DotNode, target : DotNode, label : String) : DotEdge =
       DotEdge(source, target) !! DotAttr.label(label)

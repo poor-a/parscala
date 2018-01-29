@@ -27,7 +27,9 @@ package object parscala {
   type SLabelGen = Stream[SLabel]
   type PLabelGen = Stream[PLabel]
   type DLabelGen = Stream[DLabel]
-  type ExprMap[A] = Map[SLabel, A]
-  type DeclMap[A] = Map[DLabel, A]
+  type ExprMap = Map[SLabel, tree.Node]
+  type DefnMap = Map[DLabel, tree.Defn]
+  type DeclMap = Map[DLabel, tree.Decl]
   type SymMap[A] = Map[Symbol, A]
+  type SymbolTable = SymMap[DLabel]
 }

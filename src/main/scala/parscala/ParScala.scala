@@ -9,7 +9,7 @@ import scala.meta
 import scalaz.{Monad, \/-, -\/}
 
 object ParScala {
-  def analyse(pathes : List[nio.file.Path], classPath : Option[String]) : Either[String, ProgramGraph] = {
+  def analyse(pathes : List[nio.file.Path], classPath : Option[String]) : (ProgramGraph, Option[String]) = {
     scalaz.std.option.cata(classPath)(
         cp => compiler.currentSettings.classpath.value = cp
       , ()
@@ -33,9 +33,9 @@ object ParScala {
             )
     tr.Node.runNodeGen(genDecls) match {
       case \/-((st, _)) =>
-        Right(new ProgramGraph(st.decls, st.exprs, st.symbols, st.packages))
+        (new ProgramGraph(st.decls, st.defns, st.exprs, st.symbols, st.packages), None)
       case -\/(err) =>
-        Left(err)
+        (new ProgramGraph(Map(), Map(), Map(), Map(),  List()), Some(err))
     }
   }
 

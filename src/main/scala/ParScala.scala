@@ -8,8 +8,8 @@ import parscala.tree
 import scala.collection.JavaConverters
 
 import java.util.stream.{Stream, Collectors}
-import java.io.{File,PrintWriter}
-import java.nio.file._
+import java.io.PrintWriter
+import java.nio.file.{Path, Paths, Files, StandardOpenOption, FileAlreadyExistsException}
 
 case class Config (
   val method : Option[String],
@@ -37,11 +37,11 @@ object ParScala {
     }
   }
 
-  private def expandPath(path : String) : String = 
+  private def expandPath(path : String) : Path = 
     if (path startsWith "~")
-      new File(System.getProperty("user.home"), path.tail).getPath()
+      Paths.get(System.getProperty("user.home"), path.tail)
     else
-      path
+      Paths.get(path)
 
   def main(args : Array[String]) : Unit = {
     val cli = new Cli
@@ -57,13 +57,17 @@ object ParScala {
           if (c.files.isEmpty && c.directories.isEmpty)
             Console.err.println("No Scala source is given.")
           else {
-            val existingFiles : List[String] = c.files filter {new File(_).exists()}
-            val scalaSourceFilesInDirs : Stream[String] = c.directories.foldLeft(Stream.empty[String])((files, dir) => Stream.concat(DirectoryTraverser.getScalaSources(dir), files))
-            val scalaSourceFiles = (JavaConverters.asScalaBuffer(scalaSourceFilesInDirs.collect(Collectors.toList[String])).toList) ++ existingFiles
+            val existingFiles : List[Path] = 
+              for (f <- c.files;
+                   p = Paths.get(f);
+                   if (Files.exists(p)))
+              yield p
+            val scalaSourceFilesInDirs : Stream[Path] = c.directories.foldLeft(Stream.empty[Path])((files, dir) => Stream.concat(DirectoryTraverser.getScalaSources(dir), files))
+            val scalaSourceFiles = existingFiles ++ (JavaConverters.asScalaBuffer(scalaSourceFilesInDirs.collect(Collectors.toList[Path])).toList)
             if (scalaSourceFiles.isEmpty) {
               Console.err.println("No Scala files are found.")
             } else {
-              val pgraph : ProgramGraph = parscala.ParScala.analyse(scalaSourceFiles, c.classpath)
+              val (pgraph, _) : (ProgramGraph, Option[String]) = parscala.ParScala.analyse(scalaSourceFiles, c.classpath)
               println("decls: " + pgraph.declarations)
               val pkgs : List[tree.Defn.Package] = pgraph.packages
               val pDotGraph = pkgs.foldLeft(dot.DotGraph("", List(), List())){(g, pkg) => g + tree.Defn.toDot(pkg) }
@@ -77,37 +81,35 @@ object ParScala {
               println(s"methods: ${methods.mkString(", ")}")
               scalaz.std.option.cata(c.method)(
                   mName => {
-                    val oMethod : Option[Method] = methods.find(_.symbol.fullName == mName)
+                    val oMethod : Option[Either[tree.Decl.Method, tree.Defn.Method]] = 
+                      methods.find(m => m.fold(_.symbol, _.symbol).fullName == mName)
                     oMethod match {
-                      case Some(method) => {
+                      case Some(Right(method)) => {
                         println("found method")
                         if (c.showCfg || c.showDataflowGraph || !c.dotOutput.isEmpty) {
-                          val bodyAndCfg : Option[(Node, CFGraph)] = for (body <- method.body) yield (body, CFGraph.fromExpression(body, pgraph))
-                          scalaz.std.option.cata(bodyAndCfg)(
-                          { case (body, cfg) => {
-                              if (c.showCfg)
-                                MainWindow.showDotWithTitle(CFGPrinter.formatGraph(cfg), "Control flow graph of %s".format(method.name))
-                              if (c.showDataflowGraph) {
-                                   val usedef : UseDefinition = UseDefinition.fromCFGraph(cfg)
-                                   val dataflow : DFGraph = DFGraph(body, usedef)
-                                   MainWindow.showDotWithTitle(Node.toDot(body).addEdges(dataflow.toDotEdges), 
-                                                               "Data flow graph of %s".format(method.name))
-                              }
-                              if (!c.dotOutput.isEmpty)
-                                dumpDot(c.dotOutput.get, CFGPrinter.formatGraph(cfg))
-                            }
+                          val body : tree.Node = method.body
+                          val cfg = CFGraph.fromExpression(body, pgraph)
+                          if (c.showCfg)
+                            MainWindow.showDotWithTitle(CFGPrinter.formatGraph(cfg), "Control flow graph of %s".format(method.name))
+                          if (c.showDataflowGraph) {
+                            val usedef : UseDefinition = UseDefinition.fromCFGraph(cfg)
+                            val dataflow : DFGraph = DFGraph(body, usedef)
+                            MainWindow.showDotWithTitle(tree.Node.toDot(body).addEdges(dataflow.toDotEdges), 
+                                                        "Data flow graph of %s".format(method.name))
                           }
-                          , { val what : String = 
-                                if (c.showCfg || !c.dotOutput.isEmpty)
-                                  "The body of %s is not available, could not generate the control flow graph.".format(method.name)
-                                else if (c.showDataflowGraph)
-                                  "The body of %s is not available, could not generate the data flow graph.".format(method.name)
-                                else
-                                  "The body of %s is not available."
-                              Console.err.println(what)
-                            }
-                          )
+                          if (!c.dotOutput.isEmpty)
+                            dumpDot(c.dotOutput.get, CFGPrinter.formatGraph(cfg))
                         }
+                      }
+                      case Some(Left(method)) => {
+                        val what : String = 
+                          if (c.showCfg || !c.dotOutput.isEmpty)
+                            "The body of %s is not available, could not generate the control flow graph.".format(method.name)
+                          else if (c.showDataflowGraph)
+                            "The body of %s is not available, could not generate the data flow graph.".format(method.name)
+                          else
+                            "The body of %s is not available."
+                        Console.err.println(what)
                       }
                       case None =>
                         println("Method %s is not found.".format(mName))

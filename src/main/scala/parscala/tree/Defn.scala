@@ -4,12 +4,10 @@ package tree
 import parscala.dot
 
 sealed abstract class Defn {
-  def dLabel : DLabel
-  def sLabel : SLabel
+  def label : DLabel
 }
 
 object Defn {
-  
   case class Var(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], rhs : Node, sugared : meta.Decl.Var) extends Defn {
     def label : DLabel = l
 
@@ -33,9 +31,21 @@ object Defn {
 
     override def toString : String = symbol.toString
 
-    def methods : List[Either[Decl.Method, Method]] =
-      List()
-//    parscala.Control.catSomes(stats.map(_.asSymbolTree))
+    def methods : List[Either[Decl.Method, Method]] = {
+      val bitraverse : scalaz.Bitraverse[Either] = scalaz.std.either.eitherInstance
+      val optionApplicative : scalaz.Applicative[Option] = scalaz.std.option.optionInstance
+      def asMethodDecl(d : Decl) : Option[Decl.Method] =
+        d match {
+          case m : Decl.Method => Some(m)
+          case _ => None
+        }
+
+      parscala.Control.catSomes(stats.map{stat =>
+        stat.asSymbolTree.flatMap{ symbolTree =>
+          bitraverse.bitraverse(symbolTree.unSymbolTree)(asMethodDecl)(asMethod)(optionApplicative)
+        } 
+      })
+    }
   }
 
   case class Object(val l : DLabel, symbol : Symbol, name : String, stats : List[Statement], sugared : meta.Defn.Object) extends Defn{
@@ -106,6 +116,12 @@ object Defn {
       case o : Object => object_(o)
       case p : PackageObject => pkgobject_(p)
       case p : Package => package_(p)
+    }
+
+  def asMethod(d : Defn) : Option[Method] =
+    d match {
+      case m : Method => Some(m)
+      case _ => None
     }
 
   def toDot(d : Defn) : dot.DotGraph =

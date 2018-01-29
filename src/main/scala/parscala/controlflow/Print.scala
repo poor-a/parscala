@@ -59,7 +59,7 @@ object CFGPrinter {
               val header :: stmts = contents(b)
               val content : String = "{ %s | %s }".format(header, stmts.mkString("\\l"))
 
-              Some((DotNode(l.toString) !! DotAttr.shape("record") !! DotAttr.labelWithPorts(content), formatEdges(b)))
+              Some((DotNode(l.toString) !! DotAttr.shape(Shape.Record) !! DotAttr.labelWithPorts(content), formatEdges(b)))
             }
             case None => None
           }
@@ -86,7 +86,7 @@ object CFGPrinter {
     }
   }
 
-  private def formatNode(n : Node[_,_], nodes : ExprMap[tr.Node]) : String = {
+  private def formatNode(n : Node[_,_], nodes : ExprMap) : String = {
     def showExpr(expr : SLabel) : String = 
       "%3s: %s".format(expr, scalaz.std.option.cata(nodes.get(expr))(node => Dot.dotEscape(node.tree.toString()), "##Err##"))
 

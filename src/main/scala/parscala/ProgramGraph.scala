@@ -1,14 +1,18 @@
 package parscala
 
-import tree._
+import parscala.{tree => tr}
 //import callgraph.{CallGraph,CallGraphBuilder}
 
 class ProgramGraph (
-    val declarations : DeclMap[Decl]
-  , val expressions : ExprMap[Node]
-  , val symbolTable : Map[Symbol, DLabel]
-  , val packages : List[Defn.Package]
-  )
+    val declarations : DeclMap
+  , val definitions : DefnMap
+  , val expressions : ExprMap
+  , val symbolTable : SymMap[DLabel]
+  , val packages : List[tr.Defn.Package]
+  ) {
+  def lookupDeclDefn(l : DLabel) : Option[Either[tr.Decl, tr.Defn]] =
+    declarations.get(l).map(Left(_)) orElse definitions.get(l).map(Right(_))
+}
 
 /*
 class ProgramGraph_(val packages : Set[Package_]) {

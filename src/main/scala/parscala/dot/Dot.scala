@@ -50,9 +50,13 @@ object Color extends Enumeration {
   val Purple, Red = Value
 }
 
+object Shape extends Enumeration {
+  val Rectangle, Record = Value
+}
+
 object DotAttr {
-  def shape(s : String) : DotAttr =
-    new DotAttr("shape", s)
+  def shape(s : Shape.Value) : DotAttr =
+    new DotAttr("shape", s.toString.toLowerCase)
 
   def label(l : String) : DotAttr = 
     new DotAttr("label", "\"%s\"".format(Dot.dotEscape(l)))

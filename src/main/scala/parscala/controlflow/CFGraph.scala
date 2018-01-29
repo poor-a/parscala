@@ -122,44 +122,55 @@ object CFGraph {
   //                 def addReturn()
 
   private def analyseMethod(method : Either[SLabel, DLabel])(implicit mSt : MonadState[CFGAnalyser, St], monadTrans : Hoist[({type λ[M[_], A] = EitherT[M, Unit, A]})#λ]) : CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = {
+    val const2 : (Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const2(mSt.pure(None))
     val const4 : (Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const4(mSt.pure(None))
+    val const5 : (Any, Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const5(mSt.pure(None))
+    val const6 : (Any, Any, Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const6(mSt.pure(None))
     mSt.gets(_.pgraph) >>= (programgraph =>
     method match {
-      case Right(decl) =>
-        programgraph.declarations.get(decl) match {
-          case Some(decl) => 
-            tr.Decl.cata(const4 // var
-                        ,const4 // val
-                        ,(_, _, _, _, mBody) => { // method
+      case Right(dLabel) =>
+        programgraph.lookupDeclDefn(dLabel) match {
+          case Some(Left(decl)) => 
+            tr.Decl.cata( const4 // var
+                        , const4 // val
+                        , (_, _, _, _, _) => // method
+                            for (start <- emptyBlock;
+                                 end <- emptyBlock;
+                                 done = Done(List());
+                                 _ <- close(start, Jump(end.entryLabel));
+                                 _ <- close(end, done))
+
+                            yield Some((start.entryLabel, (end.entryLabel, done)))
+                        , const6 // type
+                        , const2 // import
+                        , decl
+                        )
+          case Some(Right(defn)) =>
+            tr.Defn.cata( const5 // value
+                        , const5 // variable
+                        ,(_, _, _, _, body, _) => { // method
                            emptyBlock >>= (start =>
                            emptyBlock >>= (end => {
-						   val done = Done(List())
+                           val done = Done(List())
                            close(end, done) >> {
-                           mBody match {
-                             case Some(body) => 
-                               emptyBlock >>= (first => {
-                               close(start, Jump(first.entryLabel)) >> (
-                               monadTrans.liftM(setAbruptNext(end.entryLabel)) >> (
-                               monadTrans.liftM(cfgStmts(body, first).run) >>= (res => {
-                                 res match {
-                                   case \/-(b) =>
-                                     close(b, Jump(end.entryLabel)) >>
-                                     mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
-                                   case _      =>
-                                     mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
-                                 }
-                               })))})
-                             case None => 
-                               emptyBlock >>= (start =>
-                               emptyBlock >>= (end =>
-                               close(start, Jump(end.entryLabel)) >> (
-                               mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
-                               )))}}}))}
-                        ,const4 // class
-                        ,const4 // object
-                        ,const4 // package object
-                        ,const4 // package
-                        ,decl
+                           emptyBlock >>= (first => {
+                           close(start, Jump(first.entryLabel)) >> (
+                           monadTrans.liftM(setAbruptNext(end.entryLabel)) >> (
+                           monadTrans.liftM(cfgStmts(body, first).run) >>= (res => {
+                           res match {
+                               case \/-(b) =>
+                                 close(b, Jump(end.entryLabel)) >>
+                                 mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
+                               case _      =>
+                                 mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
+                             }
+                           })))})}}))}
+
+                        , const5 // class
+                        , const5 // object
+                        , const5 // package object
+                        , const5 // package
+                        , defn
                         )
           case None =>
             { println("no such method: " + method); mSt.pure(None)}
@@ -168,7 +179,7 @@ object CFGraph {
         emptyBlock >>= (start =>
         emptyBlock >>= (end =>
         close(start, Jump(end.entryLabel)) >> {
-		val done = Done(List())
+        val done = Done(List())
         close(end, done) >>
         mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
         }))
@@ -213,8 +224,8 @@ object CFGraph {
                   genBLabel >>= (returnPoint => {
                   val call = Call(l, start, returnPoint)
                   close(afterArgs, call) >> {
-				  val doneWithNewReturn : Block[Node, C, C] = BCat(BFirst(Label(end)), BLast(done.addSucc(returnPoint)))
-				  modifySt{ st => ((), st.copy(blocks = st.blocks.updated(end, doneWithNewReturn)) )} >> {
+                  val doneWithNewReturn : Block[Node, C, C] = BCat(BFirst(Label(end)), BLast(done.addSucc(returnPoint)))
+                  modifySt{ st => ((), st.copy(blocks = st.blocks.updated(end, doneWithNewReturn)) )} >> {
                   cfgASt.pure(singleton(Return(returnPoint, end, call)))
                   }}})
                 case None =>
