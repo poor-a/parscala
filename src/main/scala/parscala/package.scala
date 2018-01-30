@@ -11,16 +11,16 @@ package object parscala {
   /**
    * The Scala compiler.
    */
-  val compiler : Global = new Global(settings)
+  val scalac : Global = new Global(settings)
 
-  type Tree = compiler.Tree
-  type Constant = compiler.Constant
-  type Name = compiler.Name
-  type TermName = compiler.TermName
-  type TypeName = compiler.TypeName
-  type Symbol = compiler.Symbol
-  type Modifiers = compiler.Modifiers
-  type CompilationUnit = compiler.CompilationUnit
+  type Tree = scalac.Tree
+  type Constant = scalac.Constant
+  type Name = scalac.Name
+  type TermName = scalac.TermName
+  type TypeName = scalac.TypeName
+  type Symbol = scalac.Symbol
+  type Modifiers = scalac.Modifiers
+  type CompilationUnit = scalac.CompilationUnit
   type SourceFile = scala.reflect.internal.util.SourceFile
 
   type BLabelGen = Stream[BLabel]

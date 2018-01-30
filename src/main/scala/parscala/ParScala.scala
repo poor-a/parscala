@@ -11,10 +11,10 @@ import scalaz.{Monad, \/-, -\/}
 object ParScala {
   def analyse(pathes : List[nio.file.Path], classPath : Option[String]) : (ProgramGraph, Option[String]) = {
     scalaz.std.option.cata(classPath)(
-        cp => compiler.currentSettings.classpath.value = cp
+        cp => scalac.currentSettings.classpath.value = cp
       , ()
       )
-    val run = new compiler.Run()
+    val run = new scalac.Run()
     run.compile(pathes.map(_.toString))
 
     val desugaredAsts : Iterator[Tree] = run.units.map(_.body)
@@ -43,19 +43,19 @@ object ParScala {
     meta.parsers.Parse.parseSource(inputs.Input.File(path), meta.dialects.Scala212)
 
   def astOfExprWithSource(expr : String) : Option[(Tree, SourceFile)] = {
-    import compiler.Quasiquote
+    import scalac.Quasiquote
 
-    val freshGen = compiler.currentFreshNameCreator
-    val packageName : TermName = compiler.freshTermName("p")(freshGen)
-    val objectName : TermName = compiler.freshTermName("o")(freshGen)
-    val funName : TermName = compiler.freshTermName("f")(freshGen)
+    val freshGen = scalac.currentFreshNameCreator
+    val packageName : TermName = scalac.freshTermName("p")(freshGen)
+    val objectName : TermName = scalac.freshTermName("o")(freshGen)
+    val funName : TermName = scalac.freshTermName("f")(freshGen)
     val code : String = "package %s { object %s { def %s : Any = { %s } } }".format( packageName
                                                                                    , objectName
                                                                                    , funName
                                                                                    , expr
                                                                                    )
-    val source : SourceFile = compiler.newSourceFile(code)
-    val r : compiler.Run = new compiler.Run // todo: reset reporter
+    val source : SourceFile = scalac.newSourceFile(code)
+    val r : scalac.Run = new scalac.Run // todo: reset reporter
     r.compileSources(List(source))
     val units : Iterator[CompilationUnit] = r.units
     if (units.nonEmpty) {
@@ -69,13 +69,13 @@ object ParScala {
   def astOfExpr : String => Option[Tree] = (astOfExprWithSource _) andThen (_.map(_._1))
 
   def astOfClassWithSource(cls : String) : Option[(Tree, SourceFile)] = {
-    import compiler.Quasiquote
+    import scalac.Quasiquote
 
-    val freshGen = compiler.currentFreshNameCreator
-    val packageName : TermName = compiler.freshTermName("p")(freshGen)
+    val freshGen = scalac.currentFreshNameCreator
+    val packageName : TermName = scalac.freshTermName("p")(freshGen)
     val code : String = "package %s { %s }".format(packageName, cls)
-    val source : SourceFile = compiler.newSourceFile(code)
-    val r : compiler.Run = new compiler.Run
+    val source : SourceFile = scalac.newSourceFile(code)
+    val r : scalac.Run = new scalac.Run
     r.compileSources(List(source))
     val units : Iterator[CompilationUnit] = r.units
     if (units.nonEmpty) {

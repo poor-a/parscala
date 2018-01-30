@@ -122,18 +122,17 @@ object CFGraph {
   //                 def addReturn()
 
   private def analyseMethod(method : Either[SLabel, DLabel])(implicit mSt : MonadState[CFGAnalyser, St], monadTrans : Hoist[({type λ[M[_], A] = EitherT[M, Unit, A]})#λ]) : CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = {
-    val const2 : (Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const2(mSt.pure(None))
-    val const4 : (Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const4(mSt.pure(None))
-    val const5 : (Any, Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const5(mSt.pure(None))
+    val const3 : (Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const3(mSt.pure(None))
     val const6 : (Any, Any, Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const6(mSt.pure(None))
+    val const7 : (Any, Any, Any, Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const7(mSt.pure(None))
     mSt.gets(_.pgraph) >>= (programgraph =>
     method match {
       case Right(dLabel) =>
         programgraph.lookupDeclDefn(dLabel) match {
           case Some(Left(decl)) => 
-            tr.Decl.cata( const4 // var
-                        , const4 // val
-                        , (_, _, _, _, _) => // method
+            tr.Decl.cata( const6 // var
+                        , const6 // val
+                        , (_, _, _, _, _, _) => // method
                             for (start <- emptyBlock;
                                  end <- emptyBlock;
                                  done = Done(List());
@@ -141,14 +140,14 @@ object CFGraph {
                                  _ <- close(end, done))
 
                             yield Some((start.entryLabel, (end.entryLabel, done)))
-                        , const6 // type
-                        , const2 // import
+                        , const7 // type
+                        , const3 // import
                         , decl
                         )
           case Some(Right(defn)) =>
-            tr.Defn.cata( const5 // value
-                        , const5 // variable
-                        ,(_, _, _, _, body, _) => { // method
+            tr.Defn.cata( const7 // value
+                        , const7 // variable
+                        ,(_, _, _, _, body, _, _) => { // method
                            emptyBlock >>= (start =>
                            emptyBlock >>= (end => {
                            val done = Done(List())
@@ -166,10 +165,10 @@ object CFGraph {
                              }
                            })))})}}))}
 
-                        , const5 // class
-                        , const5 // object
-                        , const5 // package object
-                        , const5 // package
+                        , const6 // class
+                        , const6 // object
+                        , const6 // package object
+                        , const6 // package
                         , defn
                         )
           case None =>

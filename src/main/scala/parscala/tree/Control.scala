@@ -2,7 +2,7 @@ package parscala
 package tree
 
 import scala.meta
-import compiler.Quasiquote
+import scalac.Quasiquote
 
 /**
  * Useful method over syntax trees.
@@ -92,12 +92,12 @@ object Control {
       // TODO make literal handling total
       case q"${n : Int}" => lit(IntLit(n), t)
       case q"${s : String}" => lit(StringLit(s), t)
-      case _ if t.isInstanceOf[compiler.Ident] => id(t.symbol)
+      case _ if t.isInstanceOf[scalac.Ident] => id(t.symbol)
       case q"(..$components)" if components.size >= 2 => tuple(components)
       case q"new { ..$earlydefns } with ..$parents { $_ => ..$stats }" => newE(earlydefns, parents, stats)
       case q"$expr.this" => thisE(expr)
       case q"$expr.$tname" => sel(expr, tname)
-      case q"$expr(...$args)" if t.isInstanceOf[compiler.Apply] => app(expr, args)
+      case q"$expr(...$args)" if t.isInstanceOf[scalac.Apply] => app(expr, args)
       case q"if ($pred) $thenE" => ifE(pred, thenE)
       case q"if ($pred) $thenE else $elseE" => ifElse(pred, thenE, elseE)
       case q"while ($pred) $body" => whileE(pred, body)
@@ -111,7 +111,7 @@ object Control {
 //      case fq"$pat <- $expr" => gen(pat, expr)
 //      case fq"if $pred" => guard(pred)
 //      case fq"$pat = $expr" => forValDef(pat, expr)
-      case _ if t.isInstanceOf[compiler.Block] =>
+      case _ if t.isInstanceOf[scalac.Block] =>
         val q"{ ..$stmts }" = t
         block(stmts)
       case _ => other(t)
@@ -224,7 +224,7 @@ object Control {
                 , t : Tree
                 ) : A =
     t match {
-      case pq"${lit : compiler.Literal}" => litP(lit.value)
+      case pq"${lit : scalac.Literal}" => litP(lit.value)
       case pq"$name @ $pat" => idP(name, pat)
       case pq"_" => underP()
       case _ => otherP(t)
@@ -262,14 +262,14 @@ object Control {
                 , lit : Constant
                 ) : A =
     lit match {
-      case compiler.Constant(n : Int) => intLit(n)
-      case compiler.Constant(b : Boolean) => boolLit(b)
-      case compiler.Constant(c : Char) => charLit(c)
-      case compiler.Constant(s : String) => stringLit(s)
-      case compiler.Constant(f : Float) => floatLit(f)
-      case compiler.Constant(d : Double) => doubleLit(d)
-      case compiler.Constant(s : Symbol) => symbolLit(s)
-      case compiler.Constant(x) => otherLit(x)
+      case scalac.Constant(n : Int) => intLit(n)
+      case scalac.Constant(b : Boolean) => boolLit(b)
+      case scalac.Constant(c : Char) => charLit(c)
+      case scalac.Constant(s : String) => stringLit(s)
+      case scalac.Constant(f : Float) => floatLit(f)
+      case scalac.Constant(d : Double) => doubleLit(d)
+      case scalac.Constant(s : Symbol) => symbolLit(s)
+      case scalac.Constant(x) => otherLit(x)
     }
 
   def metaStatKindCata[A]( term_ : meta.Term => A

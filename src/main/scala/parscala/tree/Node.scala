@@ -291,7 +291,7 @@ object Node {
 
   def genNode(t : Tree/*, desugared : meta.Term*/) : NodeGen[Node] = {
     import scalaz.syntax.bind._
-    import compiler.Quasiquote
+    import scalac.Quasiquote
 
     def step(ns : List[Node], tr : Tree) : NodeGen[List[Node]] =
       for (n <- genNode(tr))
@@ -382,8 +382,14 @@ object Node {
   private def withDLabel(genLabel : NodeGen[DLabel])(f : DLabel => Decl) : NodeGen[Decl] =
     withDLabelM(genLabel){ l => stateInstance.pure(f(l)) }
 
+  private def check(b : Boolean, msg : String) : NodeGen[Unit] =
+    if (b)
+      stateInstance.pure(())
+    else
+      raiseError(msg)
+
   private def dropAnonymousPackage(t : Tree) : List[Tree] = {
-    import compiler.Quasiquote
+    import scalac.Quasiquote
     t match {
       case q"package $p { ..$stats }" if p.symbol.toString == "<empty>" => stats // TODO: is "<empty>" correct?
       case _ => List(t)
@@ -431,39 +437,66 @@ object Node {
   def genPkgObj(sugared : meta.Pkg.Object, ts : List[Tree]) : NodeGen[Defn.PackageObject] =
     ???
 
-  def genDecl(sugared : meta.Decl, ts : List[Tree]) : NodeGen[Decl] =
+  def genDecl(sugared : meta.Decl, ts : List[Tree]) : NodeGen[Decl] = {
+    // the first component has either only values or only variables but not both
+    lazy val valsVarsGettersSetters : Option[(List[scalac.ValDef], List[scalac.DefDef])] = {
+      val optionMonad : Monad[Option] = scalaz.std.option.optionInstance
+      val listFoldable : scalaz.Foldable[List] = scalaz.std.list.listInstance
+      listFoldable.foldRightM(ts, (List[scalac.ValDef](), List[scalac.DefDef]())){ case (tr, (vs, getset)) =>
+        tr match {
+          case v : scalac.ValDef => Some((v :: vs, getset))
+          case d : scalac.DefDef => Some((vs, d :: getset))
+          case _ => None
+        }
+      } (optionMonad)
+    }
     Control.declCataMeta(
         (mods, pats) => valDecl => // val
-          withDLabelM(genDLabel()){ l => for (
-              _ <- forM_(ts){ t => addSymbol(t.symbol, l) };
-              symbols : Set[Symbol] = ts.map(_.symbol).toSet
-            ) yield
-              Decl.Val(l, pats, symbols, valDecl)
-          }
+          scalaz.std.option.cata(valsVarsGettersSetters)(
+            { case (vals, gettersSetters) =>
+                withDLabelM(genDLabel()){ l => for (
+                    _ <- check(gettersSetters.isEmpty, "For a value declaration statement, there is a matching getter or a setter.");
+                    _ <- forM_(ts){ t => addSymbol(t.symbol, l) };
+                    symbols : Set[Symbol] = ts.map(_.symbol).toSet
+                  ) yield
+                    Decl.Val(l, pats, symbols, valDecl, vals, gettersSetters)
+                }
+            }
+            , raiseError("For a value declaration statement, there is a matching desugared ast which is not a value declaration.")
+            )
       , (mods, pats) => varDecl => // var
-          withDLabelM(genDLabel()){ l => for (
-              _ <- forM(ts){ t => addSymbol(t.symbol, l) };
-              symbols : Set[Symbol] = ts.map(_.symbol).toSet
-            ) yield
-              Decl.Var(l, pats, symbols, varDecl)
-          }
+          scalaz.std.option.cata(valsVarsGettersSetters)(
+            { case (vars, gettersSetters) =>
+                withDLabelM(genDLabel()){ l => for (
+                    _ <- forM(ts){ t => addSymbol(t.symbol, l) };
+                    symbols : Set[Symbol] = ts.map(_.symbol).toSet
+                  ) yield
+                    Decl.Var(l, pats, symbols, varDecl, vars, gettersSetters)
+                }
+            }
+            , raiseError("For a variable declaration statement, there is a matching desugared ast which is not a variable declaration nor is a method.")
+            )
       , (_mods, name, _typeParams, argss) => defDecl => // method
           ts match {
-            case List(tr) =>
+            case List(tr : scalac.DefDef) =>
               withDLabel(genDLabel(tr.symbol)){ l =>
-                Decl.Method(l, tr.symbol, name, argss, defDecl)
+                Decl.Method(l, tr.symbol, name, argss, defDecl, tr)
               }
+            case List(_) =>
+              raiseError("The matching desugared ast of a method declaration is not a method declaration.")
             case List() =>
-              raiseError("There is no matching sugared ast for declaration of method " + name)
+              raiseError("There is no matching desugared ast for declaration of method " + name)
             case _ =>
-              raiseError("There are more than one sugared asts for declaration of method " + name)
+              raiseError("There are more than one desugared asts for declaration of method " + name)
           }
       , (mods, name, typeParams, bounds) => typeDecl =>  // type
           ts match {
-            case List(tr) =>
+            case List(tr : scalac.TypeDef) =>
               withDLabel(genDLabel(tr.symbol)){ l => 
-                Decl.Type(l, tr.symbol, name, typeParams, bounds, typeDecl)
+                Decl.Type(l, tr.symbol, name, typeParams, bounds, typeDecl, tr)
               }
+            case List(_) =>
+              raiseError("The matching desugared ast of a type declaration is not a type declaration.")
             case List() =>
               raiseError("There is no matching sugared ast for declaration of type " + name)
             case _ =>
@@ -471,6 +504,7 @@ object Node {
           }
       , sugared
       )
+  }
 
   private def genPat(t : Tree) : NodeGen[Pat] = 
     Control.patCata(
