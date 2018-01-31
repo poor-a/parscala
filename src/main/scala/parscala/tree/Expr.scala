@@ -207,7 +207,7 @@ object Expr {
   private def genDLabel() : NodeGen[DLabel] =
     modifySt { s => (s.dGen.head, s.copy(dGen = s.dGen.tail)) }
 
-  private def genDLabel (sym : Symbol) : NodeGen[DLabel] =
+  private def genDLabel(sym : Symbol) : NodeGen[DLabel] =
     modifySt{ s =>
       s.symbols.get(sym) match {
         case Some(dl) => (dl, s)
@@ -431,7 +431,25 @@ object Expr {
       )
 
   def genDefn(sugared : meta.Defn, ts : List[Tree]) : NodeGen[Defn] =
-        
+    Control.defnCataMeta(
+        (_mods, pats, _oDeclType, metaRhs) => valDef => // value
+          scalaz.std.option.cata(valsVarsGettersSetters(ts))(
+            { case (vals @ val_ :: _, getters) =>
+                putDefn(genDLabel()){ l => {
+                    val symbols : List[Symbol] = vals.map(_.symbol)
+                    for( _ <- forM_(symbols(addSymbol(_, l));
+                         scalac.ValDef(_, _, _, scalacRhs) = val_;
+                         rhs <- genExpr2(metaRhs, List(scalacRhs))))
+                    yield Defn.Val(l, pats, symbols, rhs, valDef, vals, getters)
+                    }
+                }
+             case _ =>
+               raiseError("The matching asts of the value definition " + valDef + " does not contain value definitions.")
+            }
+            , raiseError("The matching ast of the value definition " + valDef + " contains asts other than value definitions and getters.")
+            )
+
+    )
 
   def genPkg(sugared : meta.Pkg, ts : List[Tree]) : NodeGen[Defn.Package] =
     ts match {
@@ -455,22 +473,23 @@ object Expr {
   def genPkgObj(sugared : meta.Pkg.Object, ts : List[Tree]) : NodeGen[Defn.PackageObject] =
     raiseError("Not supported: package object")
 
-  def genDecl(sugared : meta.Decl, ts : List[Tree]) : NodeGen[Decl] = {
     // the first component has either only values or only variables but not both
-    lazy val valsVarsGettersSetters : Option[(List[scalac.ValDef], List[scalac.DefDef])] = {
-      val optionMonad : Monad[Option] = scalaz.std.option.optionInstance
-      val listFoldable : scalaz.Foldable[List] = scalaz.std.list.listInstance
-      listFoldable.foldRightM(ts, (List[scalac.ValDef](), List[scalac.DefDef]())){ case (tr, (vs, getset)) =>
-        tr match {
-          case v : scalac.ValDef => Some((v :: vs, getset))
-          case d : scalac.DefDef => Some((vs, d :: getset))
-          case _ => None
-        }
-      } (optionMonad)
-    }
+  private def valsVarsGettersSetters(ts : List[Tree]) : Option[(List[scalac.ValDef], List[scalac.DefDef])] = {
+    val optionMonad : Monad[Option] = scalaz.std.option.optionInstance
+    val listFoldable : scalaz.Foldable[List] = scalaz.std.list.listInstance
+    listFoldable.foldRightM(ts, (List[scalac.ValDef](), List[scalac.DefDef]())){ case (tr, (vs, getset)) =>
+      tr match {
+        case v : scalac.ValDef => Some((v :: vs, getset))
+        case d : scalac.DefDef => Some((vs, d :: getset))
+        case _ => None
+      }
+    } (optionMonad)
+  }
+
+  def genDecl(sugared : meta.Decl, ts : List[Tree]) : NodeGen[Decl] = {
     Control.declCataMeta(
         (mods, pats) => valDecl => // val
-          scalaz.std.option.cata(valsVarsGettersSetters)(
+          scalaz.std.option.cata(valsVarsGettersSetters(ts))(
             { case (vals, gettersSetters) =>
                 putDecl(genDLabel()){ l => for (
                     _ <- check(gettersSetters.isEmpty, "For a value declaration statement, there is a matching getter or a setter.");
@@ -483,7 +502,7 @@ object Expr {
             , raiseError("For a value declaration statement, there is a matching desugared ast which is not a value declaration.")
             )
       , (mods, pats) => varDecl => // var
-          scalaz.std.option.cata(valsVarsGettersSetters)(
+          scalaz.std.option.cata(valsVarsGettersSetters(ts))(
             { case (vars, gettersSetters) =>
                 putDecl(genDLabel()){ l => for (
                     _ <- forM(ts){ t => addSymbol(t.symbol, l) };
