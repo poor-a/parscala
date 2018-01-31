@@ -13,7 +13,7 @@ abstract class O // Open
 abstract class C // Closed
 
 object CFGraph {
-  def fromExpression(n : tr.Node, pgraph : ProgramGraph) : CFGraph =
+  def fromExpression(n : tr.Expr, pgraph : ProgramGraph) : CFGraph =
     mkExtCFGraph(n, pgraph).freeze
 
   private case class St(
@@ -76,7 +76,7 @@ object CFGraph {
   private def raiseError[A]() : CFGAnalyser[A] =
     EitherT.eitherTMonadError[CFGGen, Unit].raiseError(())
 
-  private def mkExtCFGraph(expression : tr.Node, pgraph : ProgramGraph) : ExtensibleCFGraph = {
+  private def mkExtCFGraph(expression : tr.Expr, pgraph : ProgramGraph) : ExtensibleCFGraph = {
     val (b, startSt) : (Block[Node, C, O], St) = initSt(pgraph)
     val endSt : St = cfgStmts(expression, b)(cfgASt).run.run(startSt) match {
       case (st, \/-(block)) =>
@@ -189,10 +189,10 @@ object CFGraph {
 //  private implicit val unitMonoidInstance : Monoid[Unit] = Monoid.instance((_, _) => (), ())
     
   private def cfgStmts
-    ( node : tr.Node, b : Block[Node, C, O] )
+    ( node : tr.Expr, b : Block[Node, C, O] )
     ( implicit m : MonadState[CFGAnalyser, St] ) 
     : CFGAnalyser[Block[Node, C, O]] = {
-    tr.Node.nodeCata(
+    tr.Expr.nodeCata(
         (l, _, _) => { // literal
           val literal = Expr(l)
           m.pure(append(b, literal))
@@ -207,7 +207,7 @@ object CFGraph {
           m.map(cfgStmts(rhs, b))(append(_, Expr(l)))
       , (l, fun, args, funRef, _) => // application
           cfgStmts(fun, b) >>= (afterFun =>
-          foldM((acc : Block[Node, C, O], x : tr.Node) => cfgStmts(x, acc), afterFun, args.flatten) >>= (afterArgs => {
+          foldM((acc : Block[Node, C, O], x : tr.Expr) => cfgStmts(x, acc), afterFun, args.flatten) >>= (afterArgs => {
           methodStartEnd(Right(funRef)) >>= (mStartEnd =>
           mStartEnd match {
             case Some((start, end)) =>
@@ -232,13 +232,13 @@ object CFGraph {
               }
           )})}))
       , (l, constr, args, _) => // new
-          m.map(foldM((acc : Block[Node, C, O], x : tr.Node) => cfgStmts(x, acc), b, args.flatten)(m))(append(_, Expr(l)))
+          m.map(foldM((acc : Block[Node, C, O], x : tr.Expr) => cfgStmts(x, acc), b, args.flatten)(m))(append(_, Expr(l)))
       , (l, expr, tname, _) => // selection
           m.map(cfgStmts(expr, b))(append(_, Expr(l)))
       , (l, _, _) => // qualified this
           m.pure(append(b, Expr(l)))
       , (l, components, t) => // tuple
-          m.map(foldM((acc : Block[Node, C, O], x : tr.Node) => cfgStmts(x, acc), b, components)(m))(append(_, Expr(l)))
+          m.map(foldM((acc : Block[Node, C, O], x : tr.Expr) => cfgStmts(x, acc), b, components)(m))(append(_, Expr(l)))
       , (l, p, t, _) => // if-then
           for (afterP <- cfgStmts(p, b);
                tBranch <- emptyBlock;
@@ -310,7 +310,7 @@ object CFGraph {
           close(append(afterExpr, Expr(l)), Jump(abruptNext)) >>
           raiseError()))
       , (l, exprs, _) => // block
-          foldM((acc : Block[Node, C, O], x : tr.Node) => cfgStmts(x, acc), b, exprs)
+          foldM((acc : Block[Node, C, O], x : tr.Expr) => cfgStmts(x, acc), b, exprs)
       , (l, args, body, _) => // lambda function
           m.pure(append(b, Expr(l)))
       , (l, _) => // other expression
@@ -597,6 +597,6 @@ class CFGraph (val graph : Map[BLabel, Block[Node,C,C]], val start : Block[Node,
   def bLabels : List[BLabel] =
     flow flatMap { case (s, t, _) => List(s, t) }
 
-  def apply(l : SLabel) : Option[tr.Node] =
+  def apply(l : SLabel) : Option[tr.Expr] =
     pgraph.expressions.get(l)
 }

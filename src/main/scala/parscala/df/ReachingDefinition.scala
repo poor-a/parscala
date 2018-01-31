@@ -23,13 +23,13 @@ object ReachingDefinition {
           val const3 : (Any, Any, Any) => RD = (_, _, _) => rd
           val const4 : (Any, Any, Any, Any) => RD = (_, _, _, _) => rd
           val const5 : (Any, Any, Any, Any, Any) => RD = (_, _, _, _, _) => rd
-          tr.Node.nodeCata(
+          tr.Expr.nodeCata(
               const3 // literal
             , const3 // identifier
             , (sl, pat, _, _) => // pattern definition
                 rd ++ (tr.Pat.identifiers(pat).map(symbol => (symbol, sl)).toSet)
             , (sl, lhs, _, _) => // assignment
-                tr.Node.nodeCata(
+                tr.Expr.nodeCata(
                     const3 // literal
                   , (_, symbol, _) => // identifier
                       rd.filter { x : (Symbol, SLabel) => x._1 != symbol }.+((symbol, sl))

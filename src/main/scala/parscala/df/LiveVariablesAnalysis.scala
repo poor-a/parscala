@@ -23,7 +23,7 @@ object LiveVariablesAnalysis {
           val const3 : (Any, Any, Any) => Set[LV] = (_, _, _) => live
           val const4 : (Any, Any, Any, Any) => Set[LV] = (_, _, _, _) => live
           val const5 : (Any, Any, Any, Any, Any) => Set[LV] = (_, _, _, _, _) => live
-          tr.Node.nodeCata(
+          tr.Expr.nodeCata(
               const3 // literal
             , (_, symbol, _) => // identifier
                 live + symbol
@@ -31,7 +31,7 @@ object LiveVariablesAnalysis {
                 live -- tr.Pat.identifiers(pat)
             }
             , (_, lhs, _, _) => // assignment
-                tr.Node.nodeCata(
+                tr.Expr.nodeCata(
                     const3 // literal
                   , (_, symbol, _) => // identifier
                       live - symbol

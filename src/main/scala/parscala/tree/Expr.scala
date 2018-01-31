@@ -11,135 +11,135 @@ import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 import parscala.Control.{foldM, foldM_, mapM, forM, forM_}
 import dot.{Dot, DotAttr, DotGraph, DotNode, DotEdge, Shape}
 
-class NodeTree (val root : Node, val nodes : ExprMap)
+class ExprTree (val root : Expr, val nodes : ExprMap)
 
-sealed abstract class Node {
+sealed abstract class Expr {
   def label : SLabel
   def tree : Tree
 }
 
-case class Literal(val l : SLabel, lit : Lit, val t : Tree) extends Node {
+case class Literal(val l : SLabel, lit : Lit, val t : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = t
 }
 
-case class Ident(val l : SLabel, val s : Symbol, val variable : Tree) extends Node {
+case class Ident(val l : SLabel, val s : Symbol, val variable : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = variable
 }
 
-case class PatDef(val l : SLabel, val lhs : Pat, val rhs : Node, val t : Tree) extends Node {
+case class PatDef(val l : SLabel, val lhs : Pat, val rhs : Expr, val t : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = t
 }
 
-case class Assign(val l : SLabel, val lhs : Node, val rhs : Node, val tr : Tree) extends Node {
+case class Assign(val l : SLabel, val lhs : Expr, val rhs : Expr, val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class App(val l : SLabel, val method : Node, val args : List[List[Node]], val funRef : DLabel, val tr : Tree) extends Node {
+case class App(val l : SLabel, val method : Expr, val args : List[List[Expr]], val funRef : DLabel, val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class New(val l : SLabel, val constructor : Tree, val args : List[List[Node]], val tr : Tree) extends Node {
+case class New(val l : SLabel, val constructor : Tree, val args : List[List[Expr]], val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class Select(val l : SLabel, val expr : Node, val sel : TermName, val tr : Tree) extends Node {
+case class Select(val l : SLabel, val expr : Expr, val sel : TermName, val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class This(val l : SLabel, val obj : TypeName, val tr : Tree) extends Node {
+case class This(val l : SLabel, val obj : TypeName, val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class Tuple(val l : SLabel, val components : List[Node], val tr : Tree) extends Node {
+case class Tuple(val l : SLabel, val components : List[Expr], val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class If(val l : SLabel, val pred : Node, val thenE : Node, val tr : Tree) extends Node {
+case class If(val l : SLabel, val pred : Expr, val thenE : Expr, val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class IfElse(val l : SLabel, val pred : Node, val thenE : Node, val elseE : Node, val tr : Tree) extends Node {
+case class IfElse(val l : SLabel, val pred : Expr, val thenE : Expr, val elseE : Expr, val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class While(val l : SLabel, val pred : Node, val body : Node, val tr : Tree) extends Node {
+case class While(val l : SLabel, val pred : Expr, val body : Expr, val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class For(val l : SLabel, val enums : List[Node], val body : Node, val tr : Tree) extends Node {
+case class For(val l : SLabel, val enums : List[Expr], val body : Expr, val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class ForYield(val l : SLabel, val enums : List[Node], val body : Node, val tr : Tree) extends Node {
+case class ForYield(val l : SLabel, val enums : List[Expr], val body : Expr, val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class ReturnUnit(val l : SLabel, val tr : Tree) extends Node {
+case class ReturnUnit(val l : SLabel, val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class Return(val l : SLabel, val e : Node, val tr : Tree) extends Node {
+case class Return(val l : SLabel, val e : Expr, val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class Throw(val l : SLabel, val e : Node, val tr : Tree) extends Node {
+case class Throw(val l : SLabel, val e : Expr, val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class Block(val l : SLabel, val exprs : List[Node], val b : Tree) extends Node {
+case class Block(val l : SLabel, val exprs : List[Expr], val b : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = b
 }
 
-case class Lambda(val l : SLabel, val args : List[Node], val body : Node, val tr : Tree) extends Node {
+case class Lambda(val l : SLabel, val args : List[Expr], val body : Expr, val tr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = tr
 }
 
-case class Expr(val l : SLabel, val expr : Tree) extends Node {
+case class Other(val l : SLabel, val expr : Tree) extends Expr {
   def label : SLabel = l
   def tree : Tree = expr
 }
 
-object Node {
+object Expr {
   def nodeCata[A](nLiteral : (SLabel, Lit, Tree) => A,
                   nIdent : (SLabel, Symbol, Tree) => A,
-                  nPatDef : (SLabel, Pat, Node, Tree) => A,
-                  nAssign : (SLabel, Node, Node, Tree) => A,
-                  nApp : (SLabel, Node, List[List[Node]], DLabel, Tree) => A,
-                  nNew : (SLabel, Tree, List[List[Node]], Tree) => A,
-                  nSelect : (SLabel, Node, TermName, Tree) => A,
+                  nPatDef : (SLabel, Pat, Expr, Tree) => A,
+                  nAssign : (SLabel, Expr, Expr, Tree) => A,
+                  nApp : (SLabel, Expr, List[List[Expr]], DLabel, Tree) => A,
+                  nNew : (SLabel, Tree, List[List[Expr]], Tree) => A,
+                  nSelect : (SLabel, Expr, TermName, Tree) => A,
                   nThis : (SLabel, TypeName, Tree) => A,
-                  nTuple : (SLabel, List[Node], Tree) => A,
-                  nIf : (SLabel, Node, Node, Tree) => A,
-                  nIfElse : (SLabel, Node, Node, Node, Tree) => A,
-                  nWhile : (SLabel, Node, Node, Tree) => A,
-                  nFor : (SLabel, List[Node], Node, Tree) => A,
-                  nForYield : (SLabel, List[Node], Node, Tree) => A,
+                  nTuple : (SLabel, List[Expr], Tree) => A,
+                  nIf : (SLabel, Expr, Expr, Tree) => A,
+                  nIfElse : (SLabel, Expr, Expr, Expr, Tree) => A,
+                  nWhile : (SLabel, Expr, Expr, Tree) => A,
+                  nFor : (SLabel, List[Expr], Expr, Tree) => A,
+                  nForYield : (SLabel, List[Expr], Expr, Tree) => A,
                   nReturnUnit : (SLabel, Tree) => A,
-                  nReturn : (SLabel, Node, Tree) => A,
-                  nThrow : (SLabel, Node, Tree) => A,
-                  nBlock : (SLabel, List[Node], Tree) => A,
-                  nLambda : (SLabel, List[Node], Node, Tree) => A,
-                  nExpr : (SLabel, Tree) => A,
-                  n : Node) : A =
+                  nReturn : (SLabel, Expr, Tree) => A,
+                  nThrow : (SLabel, Expr, Tree) => A,
+                  nBlock : (SLabel, List[Expr], Tree) => A,
+                  nLambda : (SLabel, List[Expr], Expr, Tree) => A,
+                  nOther : (SLabel, Tree) => A,
+                  n : Expr) : A =
     n match {
       case Literal(sl, lit, t) => nLiteral(sl, lit, t)
       case Ident(sl, sym, t) => nIdent(sl, sym, t)
@@ -160,7 +160,7 @@ object Node {
       case Throw(sl, expr, t) => nThrow(sl, expr, t)
       case Block(sl, exprs, t) => nBlock(sl, exprs, t)
       case Lambda(sl, args, body, tr) => nLambda(sl, args, body, tr)
-      case Expr(sl, expr) => nExpr(sl, expr)
+      case Other(sl, expr) => nOther(sl, expr)
     }
 
   case class St
@@ -218,7 +218,7 @@ object Node {
   private def addSymbol(sym : Symbol, l : DLabel) : NodeGen[Unit] =
     modifySt { s => ((), s.copy(symbols = s.symbols + ((sym, l)))) }
 
-  private def label(f : SLabel => Node) : NodeGen[Node] = 
+  private def label(f : SLabel => Expr) : NodeGen[Expr] = 
     for (l <- genSLabel;
          n = f(l);
          _ <- modifySt{ s => ((), s.copy(exprs = s.exprs.updated(l, n))) })
@@ -229,59 +229,59 @@ object Node {
          p = f(l))
     yield p
 
-  private def nLiteral(lit : Lit, t : Tree) : NodeGen[Node] = 
+  private def nLiteral(lit : Lit, t : Tree) : NodeGen[Expr] = 
     label(Literal(_, lit, t))
 
-  private def nIdent(symbol : Symbol, ident : Tree) : NodeGen[Node] =
+  private def nIdent(symbol : Symbol, ident : Tree) : NodeGen[Expr] =
     label(Ident(_, symbol, ident))
 
-  private def nPatDef(lhs : Pat, rhs : Node, tr : Tree) : NodeGen[Node] =
+  private def nPatDef(lhs : Pat, rhs : Expr, tr : Tree) : NodeGen[Expr] =
     label(PatDef(_, lhs, rhs, tr))
 
-  private def nAssign(lhs : Node, rhs : Node, tr : Tree) : NodeGen[Node] =
+  private def nAssign(lhs : Expr, rhs : Expr, tr : Tree) : NodeGen[Expr] =
     label(Assign(_, lhs, rhs, tr))
 
-  private def nNew(constructor : Tree, args : List[List[Node]], tr : Tree) : NodeGen[Node] = 
+  private def nNew(constructor : Tree, args : List[List[Expr]], tr : Tree) : NodeGen[Expr] = 
     label(New(_, constructor, args, tr))
 
-  private def nApp(fun : Node, args : List[List[Node]], funRef : DLabel, tr : Tree) : NodeGen[Node] = 
+  private def nApp(fun : Expr, args : List[List[Expr]], funRef : DLabel, tr : Tree) : NodeGen[Expr] = 
     label(App(_, fun, args, funRef, tr))
 
-  private def nIf(pred : Node, thenE : Node, tr : Tree) : NodeGen[Node] = 
+  private def nIf(pred : Expr, thenE : Expr, tr : Tree) : NodeGen[Expr] = 
     label(If(_, pred, thenE, tr))
 
-  private def nIfElse(pred : Node, thenE : Node, elseE : Node, tr : Tree) : NodeGen[Node] = 
+  private def nIfElse(pred : Expr, thenE : Expr, elseE : Expr, tr : Tree) : NodeGen[Expr] = 
     label(IfElse(_, pred, thenE, elseE, tr))
 
-  private def nWhile(pred : Node, body : Node, tr : Tree) : NodeGen[Node] = 
+  private def nWhile(pred : Expr, body : Expr, tr : Tree) : NodeGen[Expr] = 
     label(While(_, pred, body, tr))
 
-  private def nFor(enums : List[Node], body : Node, tr : Tree) : NodeGen[Node] = 
+  private def nFor(enums : List[Expr], body : Expr, tr : Tree) : NodeGen[Expr] = 
     label(For(_, enums, body, tr))
 
-  private def nForYield(enums : List[Node], body : Node, tr : Tree) : NodeGen[Node] = 
+  private def nForYield(enums : List[Expr], body : Expr, tr : Tree) : NodeGen[Expr] = 
     label(ForYield(_, enums, body, tr))
 
-  private def nSelect(expr : Node, sel : TermName, tr : Tree) : NodeGen[Node] = 
+  private def nSelect(expr : Expr, sel : TermName, tr : Tree) : NodeGen[Expr] = 
     label(Select(_, expr, sel, tr))
 
-  private def nThis(qualifier : TypeName, tr : Tree) : NodeGen[Node] = 
+  private def nThis(qualifier : TypeName, tr : Tree) : NodeGen[Expr] = 
     label(This(_, qualifier, tr))
 
-  private def nTuple(comps : List[Node], tuple : Tree) : NodeGen[Node] = 
+  private def nTuple(comps : List[Expr], tuple : Tree) : NodeGen[Expr] = 
     label(Tuple(_, comps, tuple))
 
-  private def nReturnUnit(tr : Tree) : NodeGen[Node] =
+  private def nReturnUnit(tr : Tree) : NodeGen[Expr] =
     label(ReturnUnit(_, tr))
 
-  private def nReturn(expr : Node, tr : Tree) : NodeGen[Node] =
+  private def nReturn(expr : Expr, tr : Tree) : NodeGen[Expr] =
     label(Return(_, expr, tr))
 
-  private def nBlock(exprs : List[Node], tr : Tree) : NodeGen[Node] =
+  private def nBlock(exprs : List[Expr], tr : Tree) : NodeGen[Expr] =
     label(Block(_, exprs, tr))
 
-  private def nExpr(tr : Tree) : NodeGen[Node] =
-    label(Expr(_, tr))
+  private def nOther(tr : Tree) : NodeGen[Expr] =
+    label(Other(_, tr))
 
   private def collectMethod(t : Tree) : NodeGen[Unit] =
     if (t.symbol != null && t.symbol.isMethod)
@@ -289,15 +289,17 @@ object Node {
     else
       nodeGenMonadInstance.pure(())
 
-  def genNode(t : Tree/*, desugared : meta.Term*/) : NodeGen[Node] = {
+  def genExpr2(sugared : meta.Term, ts : List[Tree]) : NodeGen[Expr] = raiseError("Not supported: expr")
+
+  def genExpr(t : Tree, desugared : meta.Term) : NodeGen[Expr] = {
     import scalaz.syntax.bind._
     import scalac.Quasiquote
 
-    def step(ns : List[Node], tr : Tree) : NodeGen[List[Node]] =
-      for (n <- genNode(tr))
+    def step(ns : List[Expr], tr : Tree) : NodeGen[List[Expr]] =
+      for (n <- genExpr(tr, ???))
       yield n :: ns
 
-    def deepStep(nns : List[List[Node]], tr : List[Tree]) : NodeGen[List[List[Node]]] = 
+    def deepStep(nns : List[List[Expr]], tr : List[Tree]) : NodeGen[List[List[Expr]]] = 
       for (ns <- foldM(step, List.empty, tr))
       yield ns.reverse :: nns
 
@@ -317,10 +319,10 @@ object Node {
       , nThis(_, t) // this
       , (expr, termName) => // selection
           collectMethod(t) >>
-          genNode(expr) >>= (e => 
+          genExpr(expr, ???) >>= (e => 
           nSelect(e, termName, t))
       , (method, argss) => // application
-          genNode(method) >>= (m =>
+          genExpr(method, ???) >>= (m =>
           foldM(deepStep, List.empty, argss) >>= (nodes =>
           getDLabel(method.symbol) >>= {
             case Some(funRef) =>
@@ -331,56 +333,60 @@ object Node {
               )
           }))
       , (pred, thenE) => // if-then
-          genNode(pred) >>= (p => 
-          genNode(thenE) >>= (th =>
+          genExpr(pred, ???) >>= (p => 
+          genExpr(thenE, ???) >>= (th =>
           nIf(p, th, t)))
       , (pred, thenE, elseE) => // if-then-else
-          genNode(pred) >>= (p => 
-          genNode(thenE) >>= (th =>
-          genNode(elseE) >>= (e =>
+          genExpr(pred, ???) >>= (p => 
+          genExpr(thenE, ???) >>= (th =>
+          genExpr(elseE, ???) >>= (e =>
           nIfElse(p, th, e, t))))
       , (pred, body) => // while loop
-          genNode(pred) >>= (p => 
-          genNode(body) >>= (b =>
+          genExpr(pred, ???) >>= (p => 
+          genExpr(body, ???) >>= (b =>
           nWhile(p, b, t)))
       , (enums, body) => // for loop
           foldM(step, List.empty, enums) >>= (nodes =>
-          genNode(body) >>= (b =>
+          genExpr(body, ???) >>= (b =>
           nFor(nodes, b, t)))
       , (enums, body) => // for-yield loop
           foldM(step, List.empty, enums) >>= (nodes =>
-          genNode(body) >>= (b =>
+          genExpr(body, ???) >>= (b =>
           nForYield(nodes, b, t)))
       , (lhs, rhs) => // assignment
-          genNode(lhs) >>= (lNode =>
-          genNode(rhs) >>= (rNode =>
-          nAssign(lNode, rNode, t)))
+          genExpr(lhs, ???) >>= (lExpr =>
+          genExpr(rhs, ???) >>= (rExpr =>
+          nAssign(lExpr, rExpr, t)))
       , (_, lhs, rhs) => // var or val def
-          genNode(rhs) >>= (rNode =>
+          genExpr(rhs, ???) >>= (rExpr =>
           labelPat(IdentPat(_, lhs)) >>= (pat =>
-          nPatDef(pat, rNode, t)))
+          nPatDef(pat, rExpr, t)))
       , () => // return
           nReturnUnit(t)
       , expr => // return with expr
-          genNode(expr) >>= (node =>
+          genExpr(expr, ???) >>= (node =>
           nReturn(node, t))
       , stmts => // expression block
           foldM(step, List.empty, stmts) >>= (nodes => nBlock(nodes.reverse, t))
       , other => // other expression
-          nExpr(other)
+          nOther(other)
       , t
-	  )
+      )
   }
 
-  private def withDLabelM(genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[Decl]) : NodeGen[Decl] =
+  private def putDecl[D <: Decl](genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[D]) : NodeGen[D] =
     for (l <- genLabel;
          decl <- f(l);
          _ <- modifySt { st => (decl, st.copy(decls = st.decls + (l -> decl))) }
          )
     yield decl
 
-  private def withDLabel(genLabel : NodeGen[DLabel])(f : DLabel => Decl) : NodeGen[Decl] =
-    withDLabelM(genLabel){ l => stateInstance.pure(f(l)) }
+  private def putDefn[D <: Defn](genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[D]) : NodeGen[D] =
+    for (l <- genLabel;
+         defn <- f(l);
+         _ <- modifySt { st => (defn, st.copy(defns = st.defns + (l -> defn))) }
+         )
+    yield defn
 
   private def check(b : Boolean, msg : String) : NodeGen[Unit] =
     if (b)
@@ -402,40 +408,52 @@ object Node {
   def resugar(sugared : meta.Source, desugared : Tree) : NodeGen[Unit] = {
     val metaStats : List[meta.Stat] = sugared.stats
     val scalacStats : List[Tree] = dropAnonymousPackage(desugared)
-    for(_ <- forM_(metaStats){ stat =>
-               Control.metaStatKindCata(
-                   _ => // term
-                    stateInstance.pure(()) 
-                , decl =>  // decl
-                    stateInstance.void(genDecl(decl, overlapping(decl.pos, scalacStats)))
-                , defn => // definition
-                    stateInstance.void(genDefn(defn, overlapping(defn.pos, scalacStats)))
-                , _ => // secondary constructor
-                    stateInstance.pure(())
-                , pobj => // package object
-                    stateInstance.void(genPkgObj(pobj, overlapping(pobj.pos, scalacStats)))
-                , pkg => // package
-                    stateInstance.void(genPkg(pkg, overlapping(pkg.pos, scalacStats)))
-                , imprt => // import
-                    stateInstance.void(genImport(imprt, overlapping(imprt.pos, scalacStats)))
-                , stat
-                )
-             }
-    ) yield ()
+    forM_(metaStats){ stat => genStat(stat, overlapping(stat.pos, scalacStats)) }
   }
 
+  def genStat(sugared : meta.Stat, ts : List[Tree]) : NodeGen[Statement] =
+    Control.metaStatKindCata(
+        term => // term
+          stateInstance.map(genExpr2(term, ts))(Statement.fromExpr(_))
+      , decl =>  // decl
+          stateInstance.map(genDecl(decl, ts))(Statement.fromDecl(_))
+      , defn => // definition
+          stateInstance.map(genDefn(defn, ts))(Statement.fromDefn(_))
+      , _ => // secondary constructor
+          raiseError("Secondary constructors are not supported yet.")
+      , pobj => // package object
+          stateInstance.map(genPkgObj(pobj, ts))(Statement.fromDefn(_))
+      , pkg => // package
+          stateInstance.map(genPkg(pkg, ts))(Statement.fromDefn(_))
+      , imprt => // import
+          stateInstance.map(genImport(imprt, ts))(Statement.fromDecl(_))
+      , sugared
+      )
+
   def genDefn(sugared : meta.Defn, ts : List[Tree]) : NodeGen[Defn] =
-	???
+        
 
   def genPkg(sugared : meta.Pkg, ts : List[Tree]) : NodeGen[Defn.Package] =
-	// check that ts is a singleton list
-	???
+    ts match {
+      case List(tr @ scalac.PackageDef(_, scalacStats)) =>
+        putDefn(genDLabel(tr.symbol)){ l =>
+          for (statements <- forM(sugared.stats)( stat => genStat(stat, overlapping(stat.pos, scalacStats)) ))
+          yield Defn.Package(l, tr.symbol, tr.symbol.fullName, statements, sugared, tr)
+        }
+      case List(_) =>
+        raiseError("The matching desugared ast is not a package definition for the package " + sugared.name + ".")
+      case List() =>
+        raiseError("There are no matching desugared asts for the package " + sugared.name + ".")
+      case _ =>
+        raiseError("There are more than one matching desugared asts for the package " + sugared.name + ".")
+    }
+
 
   def genImport(sugared : meta.Import, ts : List[Tree]) : NodeGen[Decl.Import] =
-    ???
+    raiseError("Not supported: import")
 
   def genPkgObj(sugared : meta.Pkg.Object, ts : List[Tree]) : NodeGen[Defn.PackageObject] =
-    ???
+    raiseError("Not supported: package object")
 
   def genDecl(sugared : meta.Decl, ts : List[Tree]) : NodeGen[Decl] = {
     // the first component has either only values or only variables but not both
@@ -454,7 +472,7 @@ object Node {
         (mods, pats) => valDecl => // val
           scalaz.std.option.cata(valsVarsGettersSetters)(
             { case (vals, gettersSetters) =>
-                withDLabelM(genDLabel()){ l => for (
+                putDecl(genDLabel()){ l => for (
                     _ <- check(gettersSetters.isEmpty, "For a value declaration statement, there is a matching getter or a setter.");
                     _ <- forM_(ts){ t => addSymbol(t.symbol, l) };
                     symbols : Set[Symbol] = ts.map(_.symbol).toSet
@@ -467,7 +485,7 @@ object Node {
       , (mods, pats) => varDecl => // var
           scalaz.std.option.cata(valsVarsGettersSetters)(
             { case (vars, gettersSetters) =>
-                withDLabelM(genDLabel()){ l => for (
+                putDecl(genDLabel()){ l => for (
                     _ <- forM(ts){ t => addSymbol(t.symbol, l) };
                     symbols : Set[Symbol] = ts.map(_.symbol).toSet
                   ) yield
@@ -479,28 +497,28 @@ object Node {
       , (_mods, name, _typeParams, argss) => defDecl => // method
           ts match {
             case List(tr : scalac.DefDef) =>
-              withDLabel(genDLabel(tr.symbol)){ l =>
-                Decl.Method(l, tr.symbol, name, argss, defDecl, tr)
+              putDecl(genDLabel(tr.symbol)){ l =>
+                stateInstance.pure(Decl.Method(l, tr.symbol, name, argss, defDecl, tr))
               }
             case List(_) =>
               raiseError("The matching desugared ast of a method declaration is not a method declaration.")
             case List() =>
-              raiseError("There is no matching desugared ast for declaration of method " + name)
+              raiseError("There are no matching desugared asts for declaration of method " + name + ".")
             case _ =>
-              raiseError("There are more than one desugared asts for declaration of method " + name)
+              raiseError("There are more than one desugared asts for declaration of method " + name + ".")
           }
       , (mods, name, typeParams, bounds) => typeDecl =>  // type
           ts match {
             case List(tr : scalac.TypeDef) =>
-              withDLabel(genDLabel(tr.symbol)){ l => 
-                Decl.Type(l, tr.symbol, name, typeParams, bounds, typeDecl, tr)
+              putDecl(genDLabel(tr.symbol)){ l => 
+                stateInstance.pure(Decl.Type(l, tr.symbol, name, typeParams, bounds, typeDecl, tr))
               }
             case List(_) =>
               raiseError("The matching desugared ast of a type declaration is not a type declaration.")
             case List() =>
-              raiseError("There is no matching sugared ast for declaration of type " + name)
+              raiseError("There are no matching sugared asts for declaration of type " + name + ".")
             case _ =>
-              raiseError("There are more than one sugared asts for declaration of type " + name)
+              raiseError("There are more than one sugared asts for declaration of type " + name + ".")
           }
       , sugared
       )
@@ -540,11 +558,11 @@ object Node {
       , t
       )
 /*
-  def fromTree(t : Tree) : (ProgramGraph, Option[NodeTree]) = {
-    val (st, nodes) : (St, Option[NodeTree]) = 
+  def fromTree(t : Tree) : (ProgramGraph, Option[ExprTree]) = {
+    val (st, nodes) : (St, Option[ExprTree]) = 
       if (t.isTerm) {
-        val (st, node) = run(genNode(t))
-        (st, Some(new NodeTree(node, st.exprs)))
+        val (st, node) = run(genExpr(t))
+        (st, Some(new ExprTree(node, st.exprs)))
       } else {
         val (st, _) = run(genDecl(t))
         (st, None)
@@ -557,7 +575,7 @@ object Node {
     m.run(startSt)
   }
 
-  def toDot(n : Node) : DotGraph = {
+  def toDot(n : Expr) : DotGraph = {
     type St = (List[DotNode], List[DotEdge])
     type DotGen[A] = State[St, A]
 
@@ -588,87 +606,87 @@ object Node {
             0,
             children)
 
-    def formatNode(n : Node) : DotGen[DotNode] =
+    def formatExpr(n : Expr) : DotGen[DotNode] =
       nodeCata(
           (l, lit, t) => // literal
             add(record(l, "Literal", t.toString), List())
         , (l, _, t) => // identifier reference
             add(record(l, "Identifier", t.toString), List())
         , (l, pat, rhs, t) => // pattern definition
-            formatNode(rhs) >>= (right => {
+            formatExpr(rhs) >>= (right => {
             val patDef = record(l, "Pattern definition", pat.toString)
             add(patDef, List(edge(patDef, right, "value")))
             })
         , (l, lhs, rhs, t) => // assignment
-            formatNode(lhs) >>= (left => 
-            formatNode(rhs) >>= (right => {
+            formatExpr(lhs) >>= (left => 
+            formatExpr(rhs) >>= (right => {
               val as = record(l, "Assignment", t.toString())
               val lEdge = edge(as, left, "left")
               val rEdge = edge(as, right, "right")
               add(as, List(lEdge, rEdge))
             }))
         , (l, m, argss, _, t) => // application
-            formatNode(m) >>= ( method => 
-            mapM(mapM(formatNode, _ : List[Node]), argss) >>= (nodess => {
+            formatExpr(m) >>= ( method => 
+            mapM(mapM(formatExpr, _ : List[Expr]), argss) >>= (nodess => {
               val app = record(l, "Application", t.toString())
               val edgeToMethod = edge(app, method, "method")
               deepEnum(app, nodess, "arg(%s, %s)".format(_, _)) >>
               add(app, List(edgeToMethod))
             }))
         , (l, cls, argss, t) => // new
-            mapM(mapM(formatNode, _ : List[Node]), argss) >>= (nodess => {
+            mapM(mapM(formatExpr, _ : List[Expr]), argss) >>= (nodess => {
               val newE = record(l, "New", t.toString())
-              //val clsNode = ???
+              //val clsExpr = ???
               deepEnum(newE, nodess, "arg(%s, %s)".format(_, _)) >>
               add(newE, List())
             })
         , (l, obj, termName, t) => // selection
-            formatNode(obj) >>= (o => {
-              //val termNode = ???
+            formatExpr(obj) >>= (o => {
+              //val termExpr = ???
               val select = record(l, "Selection", t.toString())
               add(select, List(edge(select, o, "")))
             })
         , (l, typeName, t) => // this
             add(record(l, "This", t.toString()), List())
         , (l, comps, t) => // tuple
-            mapM(formatNode, comps) >>= (nodes => {
+            mapM(formatExpr, comps) >>= (nodes => {
               val tuple = record(l, "Tuple", t.toString())
               enum(tuple, nodes,"comp(%s)".format(_))
               add(tuple, List())
             })
         , (l, pred, thenE, t) => // if-then
-            formatNode(pred) >>= (p =>
-            formatNode(thenE) >>= (th => {
+            formatExpr(pred) >>= (p =>
+            formatExpr(thenE) >>= (th => {
               val ifE = record(l, "If-then", "")
               add(ifE, List(edge(ifE, p, "predicate"),
                             edge(ifE, th, "then")))
             }))
         , (l, pred, thenE, elseE, t) => // if-then-else
-            formatNode(pred) >>= (p =>
-            formatNode(thenE) >>= (th =>
-            formatNode(elseE) >>= (el => {
+            formatExpr(pred) >>= (p =>
+            formatExpr(thenE) >>= (th =>
+            formatExpr(elseE) >>= (el => {
               val ifE = record(l, "If-then-else", "")
               add(ifE, List(edge(ifE, p, "predicate"),
                             edge(ifE, th, "then"),
                             edge(ifE, el, "else")))
             })))
         , (l, pred, body, t) => // while loop
-            formatNode(pred) >>= (p =>
-            formatNode(body) >>= (b => {
+            formatExpr(pred) >>= (p =>
+            formatExpr(body) >>= (b => {
               val whileE = record(l, "While loop", "")
               add(whileE, List(edge(whileE, p, "predicate"), 
                                edge(whileE, b, "body")))
             }))
         , (l, enums, body, t) => // for loop
-            mapM(formatNode, enums) >>= (nodes =>
-            formatNode(body) >>= (b => {
+            mapM(formatExpr, enums) >>= (nodes =>
+            formatExpr(body) >>= (b => {
               val forE = record(l, "For loop", "")
               enum(forE, nodes, "enum(%s)".format(_)) >>
               add(forE, List(edge(forE, b, "body")))
             }))
         , (l, enums, body, t) => // for-yield loop
-            mapM(formatNode, enums) >>= (nodes =>
-            formatNode(body) >>= (b => {
+            mapM(formatExpr, enums) >>= (nodes =>
+            formatExpr(body) >>= (b => {
               val forE = record(l, "For-yield loop", "")
               enum(forE, nodes, "enum(%s)".format(_)) >>
               add(forE, List(edge(forE, b, "yield")))
@@ -678,24 +696,24 @@ object Node {
             add(returnE, List())
           }
         , (l, expr, t) => // return with expr
-            formatNode(expr) >>= (e => {
+            formatExpr(expr) >>= (e => {
               val returnE = record(l, "Return", "")
               add(returnE, List(edge(returnE, e, "return")))
             })
         , (l, expr, t) => // throw
-            formatNode(expr) >>= (e => {
+            formatExpr(expr) >>= (e => {
               val throwE = record(l, "Throw", "")
               add(throwE, List(edge(throwE, e, "throw")))
             })
         , (l, stmts, _) => // block
-            mapM(formatNode, stmts) >>= (nodes => {
+            mapM(formatExpr, stmts) >>= (nodes => {
               val b = record(l, "Block", "")
               enum(b, nodes, "expr(%s)".format(_)) >>
               add(b, List())
             })
         , (l, args, body, _) => // lambda function
-            mapM(formatNode, args) >>= (nodes => {
-              formatNode(body) >>= (b => {
+            mapM(formatExpr, args) >>= (nodes => {
+              formatExpr(body) >>= (b => {
                 val lambda = record(l, "Lambda", "")
                 enum(lambda, nodes, "arg(%s)".format(_)) >>
                 add(lambda, List(edge(lambda, b, "body")))
@@ -705,13 +723,14 @@ object Node {
             val e = record(l, "Expression", expr.toString())
             add(e, List())
           }
-        , n)
+        , n
+        )
 
-    val (nodes, edges) = formatNode(n).exec((List(), List()))
+    val (nodes, edges) = formatExpr(n).exec((List(), List()))
     DotGraph("", nodes.reverse, edges)
   }
 /*
-  def resugar(root : Node, transformer : Node => NodeGen[Node]) : NodeGen[Node] = {
+  def resugar(root : Expr, transformer : Expr => NodeGen[Expr]) : NodeGen[Expr] = {
     for (transformRes <- transformer(root))
     yield transformRes match {
       }

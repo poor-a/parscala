@@ -8,19 +8,19 @@ sealed abstract class Defn {
 }
 
 object Defn {
-  case class Var(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], rhs : Node, sugared : meta.Decl.Var, desugared : List[scalac.ValDef], gettersSetters : List[scalac.DefDef]) extends Defn {
+  case class Var(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], rhs : Expr, sugared : meta.Decl.Var, desugared : List[scalac.ValDef], gettersSetters : List[scalac.DefDef]) extends Defn {
     def label : DLabel = l
 
     override def toString : String = sugared.toString
   }
 
-  case class Val(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], rhs : Node, sugared : meta.Decl.Val, desugared : List[scalac.ValDef], gettersSetters : List[scalac.DefDef]) extends Defn {
+  case class Val(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], rhs : Expr, sugared : meta.Decl.Val, desugared : List[scalac.ValDef], gettersSetters : List[scalac.DefDef]) extends Defn {
     def label : DLabel = l
 
     override def toString : String = sugared.toString
   }
 
-  case class Method(val l : DLabel, symbol : Symbol, name : meta.Term.Name, argss : List[List[meta.Term.Param]], body : Node, sugared : meta.Decl.Def, desugared : scalac.DefDef) extends Defn {
+  case class Method(val l : DLabel, symbol : Symbol, name : meta.Term.Name, argss : List[List[meta.Term.Param]], body : Expr, sugared : meta.Decl.Def, desugared : scalac.DefDef) extends Defn {
     def label : DLabel = l
 
     override def toString : String = symbol.toString
@@ -80,9 +80,9 @@ object Defn {
     }
   }
 
-  def cata[A]( fVal : (DLabel, List[meta.Pat], Set[Symbol], Node, meta.Decl.Val, List[scalac.ValDef], List[scalac.DefDef]) => A
-             , fVar : (DLabel, List[meta.Pat], Set[Symbol], Node, meta.Decl.Var, List[scalac.ValDef], List[scalac.DefDef]) => A
-             , fMethod : (DLabel, Symbol, meta.Term.Name, List[List[meta.Term.Param]], Node, meta.Decl.Def, scalac.DefDef) => A
+  def cata[A]( fVal : (DLabel, List[meta.Pat], Set[Symbol], Expr, meta.Decl.Val, List[scalac.ValDef], List[scalac.DefDef]) => A
+             , fVar : (DLabel, List[meta.Pat], Set[Symbol], Expr, meta.Decl.Var, List[scalac.ValDef], List[scalac.DefDef]) => A
+             , fMethod : (DLabel, Symbol, meta.Term.Name, List[List[meta.Term.Param]], Expr, meta.Decl.Def, scalac.DefDef) => A
              , fClass : (DLabel, Symbol, String, List[Statement], meta.Defn.Class, scalac.ClassDef) => A
              , fObject : (DLabel, Symbol, String, List[Statement], meta.Defn.Object, scalac.ModuleDef) => A
              , fPObject : (DLabel, Symbol, String, List[Statement], meta.Defn.Object, scalac.ModuleDef) => A

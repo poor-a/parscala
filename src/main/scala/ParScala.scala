@@ -67,11 +67,10 @@ object ParScala {
             if (scalaSourceFiles.isEmpty) {
               Console.err.println("No Scala files are found.")
             } else {
-              val (pgraph, _) : (ProgramGraph, Option[String]) = parscala.ParScala.analyse(scalaSourceFiles, c.classpath)
+              val (pgraph, oErr) : (ProgramGraph, Option[String]) = parscala.ParScala.analyse(scalaSourceFiles, c.classpath)
+              oErr foreach { err => println("ERROR: " + err) }
               println("decls: " + pgraph.declarations)
-              val pkgs : List[tree.Defn.Package] = pgraph.packages
-              val pDotGraph = pkgs.foldLeft(dot.DotGraph("", List(), List())){(g, pkg) => g + tree.Defn.toDot(pkg) }
-              MainWindow.showDotWithTitle(pDotGraph, "")
+              println("defns: " + pgraph.definitions)
               if (c.showCallGraph) {
                 MainWindow.showCallGraph(CallGraphBuilder.fullCallGraph(pgraph))
               }
@@ -87,14 +86,14 @@ object ParScala {
                       case Some(Right(method)) => {
                         println("found method")
                         if (c.showCfg || c.showDataflowGraph || !c.dotOutput.isEmpty) {
-                          val body : tree.Node = method.body
+                          val body : tree.Expr = method.body
                           val cfg = CFGraph.fromExpression(body, pgraph)
                           if (c.showCfg)
                             MainWindow.showDotWithTitle(CFGPrinter.formatGraph(cfg), "Control flow graph of %s".format(method.name))
                           if (c.showDataflowGraph) {
                             val usedef : UseDefinition = UseDefinition.fromCFGraph(cfg)
                             val dataflow : DFGraph = DFGraph(body, usedef)
-                            MainWindow.showDotWithTitle(tree.Node.toDot(body).addEdges(dataflow.toDotEdges), 
+                            MainWindow.showDotWithTitle(tree.Expr.toDot(body).addEdges(dataflow.toDotEdges), 
                                                         "Data flow graph of %s".format(method.name))
                           }
                           if (!c.dotOutput.isEmpty)

@@ -31,7 +31,7 @@ object UseDefinition {
           val const3 : (Any, Any, Any) => Set[Assignment] = (_, _, _) => Set.empty
           val const4 : (Any, Any, Any, Any) => Set[Assignment] = (_, _, _, _) => Set.empty
           val const5 : (Any, Any, Any, Any, Any) => Set[Assignment] = (_, _, _, _, _) => Set.empty
-          tr.Node.nodeCata(
+          tr.Expr.nodeCata(
               const3 // literal
             , (sl, symbol, _) => // identifier
                 reachingDefs filter { case (sym, assignment) => symbol == sym }

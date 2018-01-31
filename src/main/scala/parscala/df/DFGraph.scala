@@ -2,7 +2,7 @@ package parscala
 package df
 
 import parscala.controlflow._
-import tree.{Node, NodeTree}
+import tree.{Expr, ExprTree}
 import parscala.{tree => tr}
 
 import scala.collection.immutable.Traversable
@@ -64,13 +64,13 @@ object DFGraph {
   type Edge = ((SLabel, SLabel), DEdgeLabel)
 
  /**
-  * Constructs a dataflow graph from a `NodeTree`
+  * Constructs a dataflow graph from a `ExprTree`
   * (extended abstract syntax tree) and use-definition information.
   *
   * @see [[UseDefinition]]
-  * @see [[tree.NodeTree]]
+  * @see [[tree.ExprTree]]
   */
-  def apply(tree : NodeTree, ud : UseDefinition) : DFGraph =
+  def apply(tree : ExprTree, ud : UseDefinition) : DFGraph =
     new DFGraph(traverse(tree.root, ud).toList)
 
  /**
@@ -78,15 +78,15 @@ object DFGraph {
   * and use-definition information.
   *
   * @see [[UseDefinition]]
-  * @see [[tree.NodeTree]]
+  * @see [[tree.ExprTree]]
   */
-  def apply(ast : Node, ud : UseDefinition) : DFGraph =
+  def apply(ast : Expr, ud : UseDefinition) : DFGraph =
     new DFGraph(traverse(ast, ud).toList)
 
-  private def traverse(root : Node, ud : UseDefinition) : Set[Edge] = {
+  private def traverse(root : Expr, ud : UseDefinition) : Set[Edge] = {
     def const2[A](x : A) : (Any, Any) => A = (_, _) => x
     def const3[A](x : A) : (Any, Any, Any) => A = (_, _, _) => x
-    tree.Node.nodeCata(
+    tree.Expr.nodeCata(
         const3(Set())  // literal
       , (label, id, _) => { // identifier
           ud(label).map { case (sym @ _, assignment) => ((assignment -> label), F()) }}

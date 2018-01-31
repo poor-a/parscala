@@ -38,11 +38,11 @@ object CallGraphBuilder {
   }
 
   def calls(method : tr.Defn.Method, pgraph : ProgramGraph) : CallGraph = {
-    def collectCalls(ast : tr.Node) : CallGraph = {
+    def collectCalls(ast : tr.Expr) : CallGraph = {
       val const2 : (Any, Any) => CallGraph = Function.const2(empty)
       val const3 : (Any, Any, Any) => CallGraph = Function.const3(empty)
       val const4 : (Any, Any, Any, Any) => CallGraph = Function.const4(empty)
-      tr.Node.nodeCata(
+      tr.Expr.nodeCata(
           const3 // literal
         , const3 // identifier
         , (_, _, rhs, _) => // pattern matching definition

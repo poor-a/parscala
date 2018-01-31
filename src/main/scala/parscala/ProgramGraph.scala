@@ -2,6 +2,7 @@ package parscala
 
 import parscala.{tree => tr}
 //import callgraph.{CallGraph,CallGraphBuilder}
+import parscala.dot
 
 class ProgramGraph (
     val declarations : DeclMap
@@ -12,6 +13,9 @@ class ProgramGraph (
   ) {
   def lookupDeclDefn(l : DLabel) : Option[Either[tr.Decl, tr.Defn]] =
     declarations.get(l).map(Left(_)) orElse definitions.get(l).map(Right(_))
+
+  def toDot : dot.DotGraph =
+    packages.foldLeft(dot.DotGraph("Program graph", List(), List())){ (g, pkg) => g + tree.Defn.toDot(pkg) }
 }
 
 /*

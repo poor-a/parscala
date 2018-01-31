@@ -117,6 +117,9 @@ object Control {
       case _ => other(t)
   }
 
+  /**
+   * Catamorphism over scala.meta declaration syntax trees.
+   */
   def declCataMeta[A]( val_ : (List[meta.Mod], List[meta.Pat]) => meta.Decl.Val => A
                      , var_ : (List[meta.Mod], List[meta.Pat]) => meta.Decl.Var => A
                      , def_ : (List[meta.Mod], meta.Term.Name, List[meta.Type.Param], List[List[meta.Term.Param]]) => meta.Decl.Def => A
