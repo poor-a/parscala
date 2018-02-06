@@ -79,9 +79,7 @@ object ParScala {
     r.compileSources(List(source))
     val units : Iterator[CompilationUnit] = r.units
     if (units.nonEmpty) {
-      val body : Tree = units.next().body
-      print("body is a " + body.getClass)
-      val q"package $_ { $clsAst }" = body
+      val q"package $_ { $clsAst }" = units.next().body
       Some((clsAst, source))
     } else {
       None
