@@ -180,23 +180,26 @@ object Control {
       case q"package $name { ..$topStmts }" => packageD(name.toString, t.symbol, topStmts)
     }
 
-  def defnCataMeta[A]( val_ : (List[meta.Mod], List[meta.Pat], Option[meta.Type], meta.Term) => A
-                     , var_ : (List[meta.Mod], List[meta.Pat], Option[meta.Type], Option[meta.Term]) => A
-                     , def_ : (List[meta.Mod], meta.Term.Name, List[meta.Type.Param], List[List[meta.Term.Param]], Option[meta.Type], meta.Term) => A
-                     , macro_ : (List[meta.Mod], meta.Term.Name, List[meta.Type.Param], List[List[meta.Term.Param]], Option[meta.Type], meta.Term) => A
-                     , type_ : (List[meta.Mod], meta.Type.Name, List[meta.Type.Param], meta.Type) => A
-                     , class_ : (List[meta.Mod], meta.Type.Name, List[meta.Type.Param], meta.Ctor.Primary, meta.Template) => A
-                     , trait_ : (List[meta.Mod], meta.Type.Name, List[meta.Type.Param], meta.Ctor.Primary, meta.Template) => A
+  def defnCataMeta[A]( val_ : (List[meta.Mod], List[meta.Pat], Option[meta.Type], meta.Term) => meta.Defn.Val => A
+                     , var_ : (List[meta.Mod], List[meta.Pat], Option[meta.Type], Option[meta.Term]) => meta.Defn.Var => A
+                     , def_ : (List[meta.Mod], meta.Term.Name, List[meta.Type.Param], List[List[meta.Term.Param]], Option[meta.Type], meta.Term) => meta.Defn.Def => A
+                     , macro_ : (List[meta.Mod], meta.Term.Name, List[meta.Type.Param], List[List[meta.Term.Param]], Option[meta.Type], meta.Term) => meta.Defn.Macro => A
+                     , type_ : (List[meta.Mod], meta.Type.Name, List[meta.Type.Param], meta.Type) => meta.Defn.Type => A
+
+                     , class_ : (List[meta.Mod], meta.Type.Name, List[meta.Type.Param], meta.Ctor.Primary, meta.Template) => meta.Defn.Class => A
+                     , trait_ : (List[meta.Mod], meta.Type.Name, List[meta.Type.Param], meta.Ctor.Primary, meta.Template) => meta.Defn.Trait => A
+                     , object_ : (List[meta.Mod], meta.Term.Name, meta.Template) => meta.Defn.Object => A
                      , defn : meta.Defn
                      ) : A =
     defn match {
-      case meta.Defn.Val(mods, pats, oDecltype, rhs) => val_(mods, pats, oDecltype, rhs)
-      case meta.Defn.Var(mods, pats, oDecltype, oRhs) => var_(mods, pats, oDecltype, oRhs)
-      case meta.Defn.Def(mods, name, typeParams, paramss, decltype, body) => def_(mods, name, typeParams, paramss, decltype, body)
-      case meta.Defn.Macro(mods, name, typeParams, paramss, decltype, body) => macro_(mods, name, typeParams, paramss, decltype, body)
-      case meta.Defn.Type(mods, name, typeParams, body) => type_(mods, name, typeParams, body)
-      case meta.Defn.Class(mods, name, typeParams, ctor, template) => class_(mods, name, typeParams, ctor, template)
-      case meta.Defn.Trait(mods, name, typeParams, ctor, template) => trait_(mods, name, typeParams, ctor, template)
+      case v @ meta.Defn.Val(mods, pats, oDecltype, rhs) => val_(mods, pats, oDecltype, rhs)(v)
+      case v @ meta.Defn.Var(mods, pats, oDecltype, oRhs) => var_(mods, pats, oDecltype, oRhs)(v)
+      case d @ meta.Defn.Def(mods, name, typeParams, paramss, decltype, body) => def_(mods, name, typeParams, paramss, decltype, body)(d)
+      case m @ meta.Defn.Macro(mods, name, typeParams, paramss, decltype, body) => macro_(mods, name, typeParams, paramss, decltype, body)(m)
+      case t @ meta.Defn.Type(mods, name, typeParams, body) => type_(mods, name, typeParams, body)(t)
+      case c @ meta.Defn.Class(mods, name, typeParams, ctor, template) => class_(mods, name, typeParams, ctor, template)(c)
+      case t @ meta.Defn.Trait(mods, name, typeParams, ctor, template) => trait_(mods, name, typeParams, ctor, template)(t)
+      case o @ meta.Defn.Object(mods, name, template) => object_(mods, name, template)(o)
     }
 
 

@@ -166,6 +166,7 @@ object CFGraph {
                            })))})}}))}
 
                         , const6 // class
+                        , const6 // trait
                         , const6 // object
                         , const6 // package object
                         , const6 // package

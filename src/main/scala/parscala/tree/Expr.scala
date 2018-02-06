@@ -5,7 +5,7 @@ import scala.language.higherKinds
 
 import scala.meta
 
-import scalaz.{State, StateT, \/, Monad, MonadState, MonadTrans, IndexedStateT}
+import scalaz.{State, StateT, \/, Traverse, Monad, MonadState, MonadTrans, IndexedStateT}
 import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 
 import parscala.Control.{foldM, foldM_, mapM, forM, forM_}
@@ -437,19 +437,107 @@ object Expr {
             { case (vals @ val_ :: _, getters) =>
                 putDefn(genDLabel()){ l => {
                     val symbols : List[Symbol] = vals.map(_.symbol)
-                    for( _ <- forM_(symbols(addSymbol(_, l));
+                    for( _ <- forM_(symbols)(addSymbol(_, l));
                          scalac.ValDef(_, _, _, scalacRhs) = val_;
-                         rhs <- genExpr2(metaRhs, List(scalacRhs))))
-                    yield Defn.Val(l, pats, symbols, rhs, valDef, vals, getters)
+                         rhs <- genExpr2(metaRhs, List(scalacRhs)))
+                    yield Defn.Val(l, pats, symbols.toSet, rhs, valDef, vals, getters)
                     }
+                  }
+              case _ =>
+                raiseError("Matching asts of the value definition " + valDef + " do not contain value definitions.")
+            }
+            , raiseError("Matching asts of the value definition " + valDef + " contain asts other than value definitions and getters.")
+            )
+      , (_mods, pats, _oDeclType, oMetaRhs) => varDef => // variable
+          scalaz.std.option.cata(valsVarsGettersSetters(ts))(
+            { case (vars @ var_ :: _, gettersSetters) =>
+                putDefn(genDLabel()){ l => {
+                    val optionTraverse : Traverse[Option] = scalaz.std.option.optionInstance
+                    val symbols : List[Symbol] = vars.map(_.symbol)
+                    for( _ <- forM_(symbols)(addSymbol(_, l));
+                         scalac.ValDef(_, _, _, scalacRhs) = var_;
+                         oRhs <- optionTraverse.traverse(oMetaRhs)(metaRhs => genExpr2(metaRhs, List(scalacRhs))))
+                    yield Defn.Var(l, pats, symbols.toSet, oRhs, varDef, vars, gettersSetters)
+                  }
                 }
              case _ =>
-               raiseError("The matching asts of the value definition " + valDef + " does not contain value definitions.")
+               raiseError("Matching asts of the value definition " + varDef + " do not contain value definitions.")
             }
-            , raiseError("The matching ast of the value definition " + valDef + " contains asts other than value definitions and getters.")
+            , raiseError("Matching asts of the value definition " + varDef + " contain asts other than value definitions and getters.")
             )
+      , (_mods, name, _typeParams, paramss, oDeclType, metaBody) => defn => // method
+          ts match {
+            case List(desugared @ scalac.DefDef(_, _, _, _, _, scalacBody)) =>
+              putDefn(genDLabel(desugared.symbol)){ l =>
+                for (body <- genExpr2(metaBody, List(scalacBody)))
+                yield Defn.Method(l, desugared.symbol, name, paramss, body, defn, desugared)
+              }
+            case List(_) =>
+              raiseError("The matching ast for the method definition " + name + " is not a method.")
+            case List() =>
+              raiseError("There are no matching asts for the method definition " + name + ".")
+            case _ =>
+              raiseError("There are more than one matching asts for the method definition " + name + ".")
+          }
+      , (_mods, _name, _typeParams, _paramss, _oDeclType, _metaBody) => _macroDef => // macro
+          raiseError("Macros are not supported yet.")
+      , (_mods, _name, _typeParams, _metaBody) => _typeDef => // type
+          raiseError("Type definitions are not supported yet.")
+      , (_mods, name, _typeParams, _constructor, metaBody) => classDef => // class
+          ts match {
+            case List(desugared @ scalac.ClassDef(_, _, _, scalacBody)) =>
+              for (_ <- check(!desugared.symbol.asClass.isTrait, "The matching ast for the class definition " + name + " is a trait.");
+                   class_ <- putDefn(genDLabel(desugared.symbol)){ l =>
+                               for (statements <- resugarTemplate(metaBody, scalacBody))
+                               yield Defn.Class(l, desugared.symbol, name, statements, classDef, desugared)
+                             })
+                yield class_
+            case List(_) =>
+              raiseError("The matching ast for the class definition " + name + " is not a class.")
+            case List() =>
+              raiseError("There are no matching asts for the class definition " + name + ".")
+            case _ =>
+              raiseError("There are more than one matching asts for the class definition " + name + ".")
+          }
+      , (_mods, name, _typeParams, _constructor, metaBody) => traitDef => // trait
+          ts match {
+            case List(desugared @ scalac.ClassDef(_, _, _, scalacBody)) =>
+              for (_ <- check(desugared.symbol.asClass.isTrait, "The matching ast for the trait definition " + name + " is a class.");
+                   trait_ <- putDefn(genDLabel(desugared.symbol)){ l =>
+                               for (statements <- resugarTemplate(metaBody, scalacBody))
+                               yield Defn.Trait(l, desugared.symbol, name, statements, traitDef, desugared)
+                             })
+              yield trait_
+            case List(_) =>
+              raiseError("The matching ast for the trait definition " + name + " is not a trait.")
+            case List() =>
+              raiseError("There are no matching asts for the trait definition " + name + ".")
+            case _ =>
+              raiseError("There are more than one matching asts for the trait definition " + name + ".")
+          }
+      , (_mods, name, metaBody) => objectDef => // object
+          ts match {
+            case List(desugared @ scalac.ModuleDef(scalacMods @ _, scalacName @ _, scalacBody)) =>
+              putDefn(genDLabel(desugared.symbol)){ l =>
+                for(statements <- resugarTemplate(metaBody, scalacBody))
+                yield Defn.Object(l, desugared.symbol, name, statements, objectDef, desugared)
+              }
+            case List(_) =>
+              raiseError("The matching ast for the object definition " + name + " is not an object.")
+            case List() =>
+              raiseError("There are no matching asts for the object definition " + name + ".")
+            case _ =>
+              raiseError("There are more than one matching asts for the object definition " + name + ".")
+          }
+      , sugared
+      )
 
-    )
+  def resugarTemplate(sugared : meta.Template, desugared : scalac.Template) : NodeGen[List[Statement]] = {
+    val metaStatements : List[meta.Stat] = sugared.stats
+    val scalac.Template(_, _, scalacStatements : List[Tree]) = desugared
+    val listTraverse : Traverse[List] = scalaz.std.list.listInstance
+    nodeGenMonadInstance.traverse(metaStatements){ statement => genStat(statement, overlapping(statement.pos, scalacStatements)) }(listTraverse)
+  }
 
   def genPkg(sugared : meta.Pkg, ts : List[Tree]) : NodeGen[Defn.Package] =
     ts match {
@@ -459,7 +547,7 @@ object Expr {
           yield Defn.Package(l, tr.symbol, tr.symbol.fullName, statements, sugared, tr)
         }
       case List(_) =>
-        raiseError("The matching desugared ast is not a package definition for the package " + sugared.name + ".")
+        raiseError("The matching desugared ast for the package " + sugared.name + " is not a package definition.")
       case List() =>
         raiseError("There are no matching desugared asts for the package " + sugared.name + ".")
       case _ =>
@@ -468,10 +556,35 @@ object Expr {
 
 
   def genImport(sugared : meta.Import, ts : List[Tree]) : NodeGen[Decl.Import] =
-    raiseError("Not supported: import")
+    ts match {
+      case List(desugared : scalac.Import) =>
+        putDecl(genDLabel(desugared.symbol)){ l =>
+          stateInstance.pure(Decl.Import(l, sugared, desugared))
+        }
+      case List(_) =>
+        raiseError("The matching desugared ast of the import declaration " + sugared + " is not an import declaration.")
+      case List() =>
+        raiseError("There are no matching desugared asts for the import declaration " + sugared + ".")
+      case _ =>
+        raiseError("There are more than one matching desugared asts for the import declaration " + sugared + ".")
+    }
 
-  def genPkgObj(sugared : meta.Pkg.Object, ts : List[Tree]) : NodeGen[Defn.PackageObject] =
-    raiseError("Not supported: package object")
+  def genPkgObj(sugared : meta.Pkg.Object, ts : List[Tree]) : NodeGen[Defn.PackageObject] = {
+    val meta.Pkg.Object(_, name, metaBody) = sugared
+    ts match {
+      case List(scalac.PackageDef(_, List(desugared @ scalac.ModuleDef(_, _, scalacBody)))) =>
+        putDefn(genDLabel(desugared.symbol)){ l =>
+          for (body <- resugarTemplate(metaBody, scalacBody))
+          yield Defn.PackageObject(l, desugared.symbol, name, body, sugared, desugared)
+        }
+      case List(_) =>
+        raiseError("The matching desugared ast of the package object definition " + name + " is not a package object definition.")
+      case List() =>
+        raiseError("There are no matching desugared asts for the package object definition " + name + ".")
+      case _ =>
+        raiseError("There are more than one matching desugared asts for the package object definition " + name + ".")
+    }
+  }
 
     // the first component has either only values or only variables but not both
   private def valsVarsGettersSetters(ts : List[Tree]) : Option[(List[scalac.ValDef], List[scalac.DefDef])] = {
