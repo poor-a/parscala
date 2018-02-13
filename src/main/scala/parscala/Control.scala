@@ -34,6 +34,14 @@ object Control {
   def forM_[M[_], A, B](l : List[A])(f : A => M[B])(implicit evidence : Monad[M]) : M[Unit] =
     mapM_(f, l)
 
+  def zipWithM[M[_], A, B, C](f : (A, B) => M[C])(as : List[A], bs : List[B])(implicit evidence : Monad[M]) : M[List[C]] =
+    (as, bs) match {
+      case (a :: as_, b :: bs_) =>
+        evidence.apply2(f(a, b), zipWithM(f)(as_, bs_))(_ :: _)
+      case (_, _) =>
+        evidence.pure(List())
+    }
+
   def catSomes[A](xs : List[Option[A]]) : List[A] =
     xs.foldRight(List[A]())(
         (mx, acc) => mx match {

@@ -12,7 +12,7 @@ object Control {
    * Catamorphism over expression syntax trees of scala.meta.
    */
   def exprCataMeta[A]( lit : meta.Lit => A
-                     , id : String => A
+                     , name : String => A
                      , tuple : List[meta.Term] => A
                      , newE : (meta.Type, meta.Name, List[List[meta.Term]]) => A
                      , thisE : meta.Name => A
@@ -33,7 +33,7 @@ object Control {
                      ) : A =
     t match {
       case l : meta.Lit => lit(l)
-      case meta.Term.Name(s) => id(s)
+      case meta.Term.Name(s) => name(s)
       case meta.Term.Tuple(comps) => tuple(comps)
       case meta.Term.New(meta.Init(typ, name, argss)) => newE(typ, name, argss)
       case meta.Term.This(qual) => thisE(qual)

@@ -24,6 +24,7 @@ scalacOptions ++= Seq("-Xlint:_",
                       "-Ywarn-unused",
                       "-Ywarn-unused-import",
                       "-Ywarn-adapted-args",
+                      "-opt:l:none",
                       "-target:jvm-1.8")
 
 

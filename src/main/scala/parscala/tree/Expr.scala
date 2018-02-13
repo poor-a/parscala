@@ -15,110 +15,114 @@ class ExprTree (val root : Expr, val nodes : ExprMap)
 
 sealed abstract class Expr {
   def label : SLabel
-  def tree : Tree
 }
 
-case class Literal(val l : SLabel, lit : Lit, val t : Tree) extends Expr {
+case class Literal(val l : SLabel, val sugared : meta.Lit) extends Expr {
   def label : SLabel = l
-  def tree : Tree = t
 }
 
-case class Ident(val l : SLabel, val s : Symbol, val variable : Tree) extends Expr {
+case class Ident(val l : SLabel, val s : Symbol) extends Expr {
   def label : SLabel = l
-  def tree : Tree = variable
 }
 
-case class PatDef(val l : SLabel, val lhs : Pat, val rhs : Expr, val t : Tree) extends Expr {
+case class Assign(val l : SLabel, val lhs : Reference, val rhs : Expr) extends Expr {
   def label : SLabel = l
-  def tree : Tree = t
 }
 
-case class Assign(val l : SLabel, val lhs : Expr, val rhs : Expr, val tr : Tree) extends Expr {
+case class App(val l : SLabel, val method : Expr, val args : List[List[Expr]], val funRef : DLabel) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class App(val l : SLabel, val method : Expr, val args : List[List[Expr]], val funRef : DLabel, val tr : Tree) extends Expr {
+case class AppInfix(val l : SLabel, val lhs : Expr, val method : Ident, val args : List[Expr], val funRef : DLabel) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class New(val l : SLabel, val constructor : Tree, val args : List[List[Expr]], val tr : Tree) extends Expr {
+case class AppUnary(val l : SLabel, val method : Ident, val arg : Expr, val funRef : DLabel) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class Select(val l : SLabel, val expr : Expr, val sel : TermName, val tr : Tree) extends Expr {
+case class New(val l : SLabel, val tpe : meta.Type, val args : List[List[Expr]]) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class This(val l : SLabel, val obj : TypeName, val tr : Tree) extends Expr {
+case class NewAnonymous(val l : SLabel, val template : Template) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class Tuple(val l : SLabel, val components : List[Expr], val tr : Tree) extends Expr {
+case class Select(val l : SLabel, val qualifier : Expr, val sel : Ident) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class If(val l : SLabel, val pred : Expr, val thenE : Expr, val tr : Tree) extends Expr {
+case class This(val l : SLabel, val qualifier : Ident) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class IfElse(val l : SLabel, val pred : Expr, val thenE : Expr, val elseE : Expr, val tr : Tree) extends Expr {
+case class Super(val l : SLabel, val thisp : Ident, val superp : Ident) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class While(val l : SLabel, val pred : Expr, val body : Expr, val tr : Tree) extends Expr {
+case class Tuple(val l : SLabel, val components : List[Expr]) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class For(val l : SLabel, val enums : List[Expr], val body : Expr, val tr : Tree) extends Expr {
+case class If(val l : SLabel, val pred : Expr, val thenE : Expr) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class ForYield(val l : SLabel, val enums : List[Expr], val body : Expr, val tr : Tree) extends Expr {
+case class IfElse(val l : SLabel, val pred : Expr, val thenE : Expr, val elseE : Expr) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class ReturnUnit(val l : SLabel, val tr : Tree) extends Expr {
+case class While(val l : SLabel, val pred : Expr, val body : Expr) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class Return(val l : SLabel, val e : Expr, val tr : Tree) extends Expr {
+case class For(val l : SLabel, val enums : List[meta.Enumerator], val body : Expr) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class Throw(val l : SLabel, val e : Expr, val tr : Tree) extends Expr {
+case class ForYield(val l : SLabel, val enums : List[meta.Enumerator], val body : Expr) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class Block(val l : SLabel, val exprs : List[Expr], val b : Tree) extends Expr {
+case class ReturnUnit(val l : SLabel) extends Expr {
   def label : SLabel = l
-  def tree : Tree = b
 }
 
-case class Lambda(val l : SLabel, val args : List[Expr], val body : Expr, val tr : Tree) extends Expr {
+case class Return(val l : SLabel, val e : Expr) extends Expr {
   def label : SLabel = l
-  def tree : Tree = tr
 }
 
-case class Other(val l : SLabel, val expr : Tree) extends Expr {
+case class Throw(val l : SLabel, val e : Expr) extends Expr {
   def label : SLabel = l
-  def tree : Tree = expr
 }
+
+case class Block(val l : SLabel, val statements : List[Statement]) extends Expr {
+  def label : SLabel = l
+}
+
+case class Lambda(val l : SLabel, val args : List[Expr], val body : Expr) extends Expr {
+  def label : SLabel = l
+}
+
+case class Other(val l : SLabel, val expr : meta.Term) extends Expr {
+  def label : SLabel = l
+}
+
+final case class Template(early : List[Statement], inits : List[Initializer], self : meta.Self, statements : List[Statement])
+
+final case class Initializer(tpe : meta.Type, argss : List[List[Expr]])
+
+sealed abstract class Reference
+
+final case class RefThis(val expr : This) extends Reference
+final case class RefSuper(val expr : Super) extends Reference
+final case class RefIdent(val expr : Ident) extends Reference
+final case class RefSelect(val expr : Select) extends Reference
+final case class RefAppUnary(val expr : AppUnary) extends Reference
 
 object Expr {
+/*
   def nodeCata[A](nLiteral : (SLabel, Lit, Tree) => A,
                   nIdent : (SLabel, Symbol, Tree) => A,
                   nPatDef : (SLabel, Pat, Expr, Tree) => A,
@@ -162,7 +166,7 @@ object Expr {
       case Lambda(sl, args, body, tr) => nLambda(sl, args, body, tr)
       case Other(sl, expr) => nOther(sl, expr)
     }
-
+*/
   case class St
     ( pGen : PLabelGen
     , sGen : SLabelGen
@@ -228,7 +232,7 @@ object Expr {
     for (l <- genPLabel;
          p = f(l))
     yield p
-
+/*
   private def nLiteral(lit : Lit, t : Tree) : NodeGen[Expr] = 
     label(Literal(_, lit, t))
 
@@ -283,14 +287,90 @@ object Expr {
   private def nOther(tr : Tree) : NodeGen[Expr] =
     label(Other(_, tr))
 
+*/
+
   private def collectMethod(t : Tree) : NodeGen[Unit] =
     if (t.symbol != null && t.symbol.isMethod)
       nodeGenMonadInstance.void(genDLabel(t.symbol))
     else
       nodeGenMonadInstance.pure(())
 
-  def genExpr2(sugared : meta.Term, ts : List[Tree]) : NodeGen[Expr] = raiseError("Not supported: expr")
+  def singleton[A, B](as : List[A])(f : A => B)(err : => B) : B =
+    as match {
+      case List(a) => f(a)
+      case _ => err
+    }
 
+  def genExpr2(sugared : meta.Term, ts : List[Tree]) : NodeGen[Expr] = {
+    import scalac.Quasiquote
+
+    Control.exprCataMeta(
+        lit => singleton // literal
+                 (ts)
+                 (_ => label(Literal(_, lit)))
+                 (raiseError(s"Wrong number of matching asts. Got ${ts.length}, expected 1."))
+      , name => singleton // name
+                  (ts)
+                  (identifier => label(Ident(_, identifier.symbol)))
+                  (raiseError(s"Wrong number of matching asts. Got ${ts.length}, expected 1."))
+      , metaComponents => // tuple
+          ts match {
+            case List(q"(..$scalacComponents)") if scalacComponents.size >= 2 =>
+              for (components <- parscala.Control.zipWithM
+                                   ((metaComp : meta.Term, scalacComp : Tree) => genExpr2(metaComp, List(scalacComp)))
+                                   (metaComponents, scalacComponents)
+                                   (nodeGenMonadInstance);
+                   l <- genSLabel)
+              yield Tuple(l, components)
+            case List(_) =>
+              raiseError("The matching ast of a tuple is not a tuple.")
+            case List() =>
+              raiseError("There are no matching asts for a tuple.")
+            case _ =>
+              raiseError("There are more than one matching asts for a tuple.")
+          }
+      , (metaType, _name, metaArgss) => // new
+          ts match {
+            case List(q"new $scalacType(...$scalacArgss)") =>
+              for (argss <- parscala.Control.zipWithM
+                                ((metaArgs : List[meta.Term], scalacArgs : List[Tree]) =>
+                                   parscala.Control.zipWithM
+                                     ((metaArg : meta.Term, scalacArg : Tree) =>
+                                        genExpr2(metaArg, List(scalacArg))
+                                     )
+                                     (metaArgs, scalacArgs)
+                                     (nodeGenMonadInstance)
+                                 )
+                                 (metaArgss, scalacArgss)
+                                 (nodeGenMonadInstance);
+                   l <- genSLabel)
+              yield New(l, metaType, argss)
+            case List(_) =>
+              raiseError("The matching ast of a new expression is not a new expression.")
+            case List() =>
+              raiseError("There are no matching asts for a new expression.")
+            case _ =>
+              raiseError("There are more than one matching asts for a new expression.")
+          }
+      , ??? // this
+      , ??? // select
+      , ??? // apply
+      , ??? // applyInfix
+      , ??? // if then
+      , ??? // if then else
+      , ??? // while
+      , ??? // for
+      , ??? // for yield
+      , ??? // assign
+      , ??? // return
+      , ??? // return expr
+      , ??? // block
+      , ??? // other
+      , sugared
+      )
+  }
+
+/*
   def genExpr(t : Tree, desugared : meta.Term) : NodeGen[Expr] = {
     import scalaz.syntax.bind._
     import scalac.Quasiquote
@@ -373,7 +453,7 @@ object Expr {
       , t
       )
   }
-
+*/
   private def putDecl[D <: Decl](genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[D]) : NodeGen[D] =
     for (l <- genLabel;
          decl <- f(l);
