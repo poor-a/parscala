@@ -176,6 +176,7 @@ object Expr {
     , decls : DeclMap
     , defns : DefnMap
     , packages : List[Defn.Package]
+    , callTargets : Map[SLabel, List[Either[DLabel, SLabel]]]
     )
 
   type Exception[A] = String \/ A
@@ -232,62 +233,6 @@ object Expr {
     for (l <- genPLabel;
          p = f(l))
     yield p
-/*
-  private def nLiteral(lit : Lit, t : Tree) : NodeGen[Expr] = 
-    label(Literal(_, lit, t))
-
-  private def nIdent(symbol : Symbol, ident : Tree) : NodeGen[Expr] =
-    label(Ident(_, symbol, ident))
-
-  private def nPatDef(lhs : Pat, rhs : Expr, tr : Tree) : NodeGen[Expr] =
-    label(PatDef(_, lhs, rhs, tr))
-
-  private def nAssign(lhs : Expr, rhs : Expr, tr : Tree) : NodeGen[Expr] =
-    label(Assign(_, lhs, rhs, tr))
-
-  private def nNew(constructor : Tree, args : List[List[Expr]], tr : Tree) : NodeGen[Expr] = 
-    label(New(_, constructor, args, tr))
-
-  private def nApp(fun : Expr, args : List[List[Expr]], funRef : DLabel, tr : Tree) : NodeGen[Expr] = 
-    label(App(_, fun, args, funRef, tr))
-
-  private def nIf(pred : Expr, thenE : Expr, tr : Tree) : NodeGen[Expr] = 
-    label(If(_, pred, thenE, tr))
-
-  private def nIfElse(pred : Expr, thenE : Expr, elseE : Expr, tr : Tree) : NodeGen[Expr] = 
-    label(IfElse(_, pred, thenE, elseE, tr))
-
-  private def nWhile(pred : Expr, body : Expr, tr : Tree) : NodeGen[Expr] = 
-    label(While(_, pred, body, tr))
-
-  private def nFor(enums : List[Expr], body : Expr, tr : Tree) : NodeGen[Expr] = 
-    label(For(_, enums, body, tr))
-
-  private def nForYield(enums : List[Expr], body : Expr, tr : Tree) : NodeGen[Expr] = 
-    label(ForYield(_, enums, body, tr))
-
-  private def nSelect(expr : Expr, sel : TermName, tr : Tree) : NodeGen[Expr] = 
-    label(Select(_, expr, sel, tr))
-
-  private def nThis(qualifier : TypeName, tr : Tree) : NodeGen[Expr] = 
-    label(This(_, qualifier, tr))
-
-  private def nTuple(comps : List[Expr], tuple : Tree) : NodeGen[Expr] = 
-    label(Tuple(_, comps, tuple))
-
-  private def nReturnUnit(tr : Tree) : NodeGen[Expr] =
-    label(ReturnUnit(_, tr))
-
-  private def nReturn(expr : Expr, tr : Tree) : NodeGen[Expr] =
-    label(Return(_, expr, tr))
-
-  private def nBlock(exprs : List[Expr], tr : Tree) : NodeGen[Expr] =
-    label(Block(_, exprs, tr))
-
-  private def nOther(tr : Tree) : NodeGen[Expr] =
-    label(Other(_, tr))
-
-*/
 
   private def collectMethod(t : Tree) : NodeGen[Unit] =
     if (t.symbol != null && t.symbol.isMethod)
@@ -821,7 +766,7 @@ object Expr {
   }*/
 
   def runNodeGen[A](m : NodeGen[A]) : String \/ (St, A) = {
-    val startSt : St = St(PLabel.stream, SLabel.stream, DLabel.stream, Map(), Map(), Map(), Map(), List())
+    val startSt : St = St(PLabel.stream, SLabel.stream, DLabel.stream, Map(), Map(), Map(), Map(), List(), Map())
     m.run(startSt)
   }
 

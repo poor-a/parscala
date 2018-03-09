@@ -9,6 +9,7 @@ class ProgramGraph (
   , val expressions : ExprMap
   , val symbolTable : SymMap[DLabel]
   , val packages : List[tr.Defn.Package]
+  , val callTargets : Map[SLabel, List[Either[DLabel, SLabel]]]
   ) {
   def lookupDeclDefn(l : DLabel) : Option[Either[tr.Decl, tr.Defn]] =
     declarations.get(l).map(Left(_)) orElse definitions.get(l).map(Right(_))
