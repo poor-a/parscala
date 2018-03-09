@@ -8,7 +8,7 @@ import scala.meta
 import scalaz.{State, StateT, \/, Traverse, Monad, MonadState, MonadTrans, IndexedStateT}
 import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 
-import parscala.Control.{foldM, foldM_, mapM, forM, forM_}
+import parscala.Control.{foldM_, forM, forM_}
 import dot.{Dot, DotAttr, DotGraph, DotNode, DotEdge, Shape}
 
 class ExprTree (val root : Expr, val nodes : ExprMap)
@@ -17,95 +17,95 @@ sealed abstract class Expr {
   def label : SLabel
 }
 
-case class Literal(val l : SLabel, val sugared : meta.Lit) extends Expr {
+case class Literal(val l : SLabel, val sugared : meta.Lit, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class Ident(val l : SLabel, val s : Symbol) extends Expr {
+case class Ident(val l : SLabel, val symbols : List[Symbol], val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class Assign(val l : SLabel, val lhs : Reference, val rhs : Expr) extends Expr {
+case class Assign(val l : SLabel, val lhs : Expr, val rhs : Expr, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class App(val l : SLabel, val method : Expr, val args : List[List[Expr]], val funRef : DLabel) extends Expr {
+case class App(val l : SLabel, val method : Expr, val args : List[Expr], val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class AppInfix(val l : SLabel, val lhs : Expr, val method : Ident, val args : List[Expr], val funRef : DLabel) extends Expr {
+case class AppInfix(val l : SLabel, val lhs : Expr, val method : meta.Name, val args : List[Expr], val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class AppUnary(val l : SLabel, val method : Ident, val arg : Expr, val funRef : DLabel) extends Expr {
+case class AppUnary(val l : SLabel, val method : Ident, val arg : Expr, val funRef : DLabel, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class New(val l : SLabel, val tpe : meta.Type, val args : List[List[Expr]]) extends Expr {
+case class New(val l : SLabel, val tpe : meta.Type, val args : List[List[Expr]], val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class NewAnonymous(val l : SLabel, val template : Template) extends Expr {
+case class NewAnonymous(val l : SLabel, val template : Template, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class Select(val l : SLabel, val qualifier : Expr, val sel : Ident) extends Expr {
+case class Select(val l : SLabel, val qualifier : Expr, val sel : meta.Name, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class This(val l : SLabel, val qualifier : Ident) extends Expr {
+case class This(val l : SLabel, val qualifier : meta.Name, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class Super(val l : SLabel, val thisp : Ident, val superp : Ident) extends Expr {
+case class Super(val l : SLabel, val thisp : meta.Name, val superp : meta.Name, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class Tuple(val l : SLabel, val components : List[Expr]) extends Expr {
+case class Tuple(val l : SLabel, val components : List[Expr], val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class If(val l : SLabel, val pred : Expr, val thenE : Expr) extends Expr {
+case class If(val l : SLabel, val pred : Expr, val thenE : Expr, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class IfElse(val l : SLabel, val pred : Expr, val thenE : Expr, val elseE : Expr) extends Expr {
+case class IfElse(val l : SLabel, val pred : Expr, val thenE : Expr, val elseE : Expr, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class While(val l : SLabel, val pred : Expr, val body : Expr) extends Expr {
+case class While(val l : SLabel, val pred : Expr, val body : Expr, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class For(val l : SLabel, val enums : List[meta.Enumerator], val body : Expr) extends Expr {
+case class For(val l : SLabel, val enums : List[meta.Enumerator], val body : Expr, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class ForYield(val l : SLabel, val enums : List[meta.Enumerator], val body : Expr) extends Expr {
+case class ForYield(val l : SLabel, val enums : List[meta.Enumerator], val body : Expr, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class ReturnUnit(val l : SLabel) extends Expr {
+case class ReturnUnit(val l : SLabel, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class Return(val l : SLabel, val e : Expr) extends Expr {
+case class Return(val l : SLabel, val e : Expr, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class Throw(val l : SLabel, val e : Expr) extends Expr {
+case class Throw(val l : SLabel, val e : Expr, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class Block(val l : SLabel, val statements : List[Statement]) extends Expr {
+case class Block(val l : SLabel, val statements : List[Statement], val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class Lambda(val l : SLabel, val args : List[Expr], val body : Expr) extends Expr {
+case class Lambda(val l : SLabel, val args : List[Expr], val body : Expr, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
-case class Other(val l : SLabel, val expr : meta.Term) extends Expr {
+case class Other(val l : SLabel, val expr : meta.Term, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
@@ -122,51 +122,51 @@ final case class RefSelect(val expr : Select) extends Reference
 final case class RefAppUnary(val expr : AppUnary) extends Reference
 
 object Expr {
-/*
-  def nodeCata[A](nLiteral : (SLabel, Lit, Tree) => A,
-                  nIdent : (SLabel, Symbol, Tree) => A,
-                  nPatDef : (SLabel, Pat, Expr, Tree) => A,
-                  nAssign : (SLabel, Expr, Expr, Tree) => A,
-                  nApp : (SLabel, Expr, List[List[Expr]], DLabel, Tree) => A,
-                  nNew : (SLabel, Tree, List[List[Expr]], Tree) => A,
-                  nSelect : (SLabel, Expr, TermName, Tree) => A,
-                  nThis : (SLabel, TypeName, Tree) => A,
-                  nTuple : (SLabel, List[Expr], Tree) => A,
-                  nIf : (SLabel, Expr, Expr, Tree) => A,
-                  nIfElse : (SLabel, Expr, Expr, Expr, Tree) => A,
-                  nWhile : (SLabel, Expr, Expr, Tree) => A,
-                  nFor : (SLabel, List[Expr], Expr, Tree) => A,
-                  nForYield : (SLabel, List[Expr], Expr, Tree) => A,
-                  nReturnUnit : (SLabel, Tree) => A,
-                  nReturn : (SLabel, Expr, Tree) => A,
-                  nThrow : (SLabel, Expr, Tree) => A,
-                  nBlock : (SLabel, List[Expr], Tree) => A,
-                  nLambda : (SLabel, List[Expr], Expr, Tree) => A,
-                  nOther : (SLabel, Tree) => A,
-                  n : Expr) : A =
+  def cata[A](literal : (SLabel, meta.Lit, List[scalac.Type]) => A,
+              ident : (SLabel, List[Symbol], List[scalac.Type]) => A,
+              assign : (SLabel, Expr, Expr, List[scalac.Type]) => A,
+              app : (SLabel, Expr, List[Expr], List[scalac.Type]) => A,
+              appInfix : (SLabel, Expr, meta.Name, List[Expr], List[scalac.Type]) => A,
+              appUnary : (SLabel, meta.Name, Expr, List[scalac.Type]) => A,
+              new_ : (SLabel, meta.Type, List[List[Expr]], List[scalac.Type]) => A,
+              select : (SLabel, Expr, meta.Name, List[scalac.Type]) => A,
+              this_ : (SLabel, meta.Name, List[scalac.Type]) => A,
+              super_ : (SLabel, meta.Name, meta.Name, List[scalac.Type]) => A,
+              tuple : (SLabel, List[Expr], List[scalac.Type]) => A,
+              if_ : (SLabel, Expr, Expr, List[scalac.Type]) => A,
+              ifElse : (SLabel, Expr, Expr, Expr, List[scalac.Type]) => A,
+              while_ : (SLabel, Expr, Expr, List[scalac.Type]) => A,
+              for_ : (SLabel, List[meta.Enumerator], Expr, List[scalac.Type]) => A,
+              forYield : (SLabel, List[meta.Enumerator], Expr, List[scalac.Type]) => A,
+              returnUnit : (SLabel, List[scalac.Type]) => A,
+              return_ : (SLabel, Expr, List[scalac.Type]) => A,
+              throw_ : (SLabel, Expr, List[scalac.Type]) => A,
+              block : (SLabel, List[Statement], List[scalac.Type]) => A,
+              nOther : (SLabel, List[scalac.Type]) => A,
+              n : Expr) : A =
     n match {
-      case Literal(sl, lit, t) => nLiteral(sl, lit, t)
-      case Ident(sl, sym, t) => nIdent(sl, sym, t)
-      case PatDef(sl, pat, rhs, t) => nPatDef(sl, pat, rhs, t)
-      case Assign(sl, lhs, rhs, t) => nAssign(sl, lhs, rhs, t)
-      case App(sl, f, args, funRef, t) => nApp(sl, f, args, funRef, t)
-      case New(sl, ctr, args, t) => nNew(sl, ctr, args, t)
-      case Select(sl, qual, name, t) => nSelect(sl, qual, name, t)
-      case This(sl, qual, t) => nThis(sl, qual, t)
-      case Tuple(sl, comps, t) => nTuple(sl, comps, t)
-      case If(sl, pred, thenE, tr) => nIf(sl, pred, thenE, tr)
-      case IfElse(sl, pred, thenE, elseE, tr) => nIfElse(sl, pred, thenE, elseE, tr)
-      case While(sl, pred, body, tr) => nWhile(sl, pred, body, tr)
-      case For(sl, enums, body, tr) => nFor(sl, enums, body, tr)
-      case ForYield(sl, enums, body, tr) => nForYield(sl, enums, body, tr)
-      case ReturnUnit(sl, t) => nReturnUnit(sl, t)
-      case Return(sl, expr, t) => nReturn(sl, expr, t)
-      case Throw(sl, expr, t) => nThrow(sl, expr, t)
-      case Block(sl, exprs, t) => nBlock(sl, exprs, t)
-      case Lambda(sl, args, body, tr) => nLambda(sl, args, body, tr)
+      case Literal(sl, lit, t) => literal(sl, lit, t)
+      case Ident(sl, syms, t) => ident(sl, syms, t)
+      case Assign(sl, lhs, rhs, t) => assign(sl, lhs, rhs, t)
+      case App(sl, f, args, t) => app(sl, f, args, t)
+      case AppInfix(sl, lhs, op, rhs, t) => appInfix(sl, lhs, op, rhs, t)
+      case AppUnary(sl, op, rhs, t) => appUnary(sl, op, rhs, t)
+      case New(sl, cls, argss, t) => new_(sl, cls, argss, t)
+      case Select(sl, qual, name, t) => select(sl, qual, name, t)
+      case This(sl, qual, t) => this_(sl, qual, t)
+      case Tuple(sl, comps, t) => tuple(sl, comps, t)
+      case If(sl, pred, thenE, t) => if_(sl, pred, thenE, t)
+      case IfElse(sl, pred, thenE, elseE, t) => ifElse(sl, pred, thenE, elseE, t)
+      case While(sl, pred, body, t) => while_(sl, pred, body, t)
+      case For(sl, enums, body, t) => for_(sl, enums, body, t)
+      case ForYield(sl, enums, body, t) => forYield(sl, enums, body, t)
+      case ReturnUnit(sl, t) => returnUnit(sl, t)
+      case Return(sl, expr, t) => return_(sl, expr, t)
+      case Throw(sl, expr, t) => throw_(sl, expr, t)
+      case Block(sl, statements, t) => block(sl, statements, t)
       case Other(sl, expr) => nOther(sl, expr)
     }
-*/
+
   case class St
     ( pGen : PLabelGen
     , sGen : SLabelGen
@@ -301,71 +301,91 @@ object Expr {
       case _ => err
     }
 
+  def symbols(trees : List[Tree]) : List[Symbol] =
+    for (t <- trees; s = t.symbol; if s != null) yield s
+
   def genExpr2(sugared : meta.Term, ts : List[Tree]) : NodeGen[Expr] = {
-    import scalac.Quasiquote
+    val samePos : List[Tree] = ts.flatMap(searchSamePosition(sugared, _))
+    val types : List[scalac.Type] = samePos map (_.tpe)
+    def childSamePos(child : meta.Tree) : List[Tree] =
+      if (samePos.isEmpty)
+        ts.flatMap(searchSamePosition(child, _))
+      else
+        samePos.flatMap(searchSamePosition(child, _))
+
+    def resugarChild(child : meta.Term) : NodeGen[Expr] =
+      genExpr2(child, childSamePos(child))
 
     Control.exprCataMeta(
-        lit => singleton // literal
-                 (ts)
-                 (_ => label(Literal(_, lit)))
-                 (raiseError(s"Wrong number of matching asts. Got ${ts.length}, expected 1."))
-      , name => singleton // name
-                  (ts)
-                  (identifier => label(Ident(_, identifier.symbol)))
-                  (raiseError(s"Wrong number of matching asts. Got ${ts.length}, expected 1."))
+        lit => label(Literal(_, lit, types)) // literal
+      , name => label(Ident(_, symbols(ts), types)) // name
       , metaComponents => // tuple
-          ts match {
-            case List(q"(..$scalacComponents)") if scalacComponents.size >= 2 =>
-              for (components <- parscala.Control.zipWithM
-                                   ((metaComp : meta.Term, scalacComp : Tree) => genExpr2(metaComp, List(scalacComp)))
-                                   (metaComponents, scalacComponents)
-                                   (nodeGenMonadInstance);
-                   l <- genSLabel)
-              yield Tuple(l, components)
-            case List(_) =>
-              raiseError("The matching ast of a tuple is not a tuple.")
-            case List() =>
-              raiseError("There are no matching asts for a tuple.")
-            case _ =>
-              raiseError("There are more than one matching asts for a tuple.")
-          }
+          for (components <- forM(metaComponents)(resugarChild(_));
+               tuple <- label(Tuple(_, components, types)))
+          yield tuple
       , (metaType, _name, metaArgss) => // new
-          ts match {
-            case List(q"new $scalacType(...$scalacArgss)") =>
-              for (argss <- parscala.Control.zipWithM
-                                ((metaArgs : List[meta.Term], scalacArgs : List[Tree]) =>
-                                   parscala.Control.zipWithM
-                                     ((metaArg : meta.Term, scalacArg : Tree) =>
-                                        genExpr2(metaArg, List(scalacArg))
-                                     )
-                                     (metaArgs, scalacArgs)
-                                     (nodeGenMonadInstance)
-                                 )
-                                 (metaArgss, scalacArgss)
-                                 (nodeGenMonadInstance);
-                   l <- genSLabel)
-              yield New(l, metaType, argss)
-            case List(_) =>
-              raiseError("The matching ast of a new expression is not a new expression.")
-            case List() =>
-              raiseError("There are no matching asts for a new expression.")
-            case _ =>
-              raiseError("There are more than one matching asts for a new expression.")
-          }
-      , ??? // this
-      , ??? // select
-      , ??? // apply
-      , ??? // applyInfix
-      , ??? // if then
-      , ??? // if then else
-      , ??? // while
-      , ??? // for
-      , ??? // for yield
-      , ??? // assign
-      , ??? // return
-      , ??? // return expr
-      , ??? // block
-      , ??? // other
+          for (argss <- forM(metaArgss){args =>
+                   forM(args)(resugarChild(_))
+                 };
+               new_ <- label(New(_, metaType, argss, types)))
+          yield new_
+        // metaName should be inspected for symbols
+      , metaName => label(This(_, metaName, types)) // this
+        // metaName should be inspected for symbols
+      , (metaQualifier, metaName) => // select
+          for (qualifier <- resugarChild(metaQualifier);
+               select <- label(Select(_, qualifier, metaName, types)))
+          yield select
+      , (metaFun, metaArgs) => // apply
+          for (fun <- resugarChild(metaFun);
+               args <- forM(metaArgs)(resugarChild(_));
+               app <- label(App(_, fun, args, types)))
+          yield app
+        // metaOp should be inspected for symbols
+      , (metaArgLeft, metaOp, _metaTypeArgs, metaArgsRight) => // applyInfix
+          for (argLeft <- resugarChild(metaArgLeft);
+               argsRight <- forM(metaArgsRight)(resugarChild(_));
+               appInfix <- label(AppInfix(_, argLeft, metaOp, argsRight, types)))
+          yield appInfix
+      , (metaPred, metaThen) => // if then
+          for (pred <- resugarChild(metaPred);
+               then_ <- resugarChild(metaThen);
+               ifThen <- label(If(_, pred, then_, types)))
+          yield ifThen
+      , (metaPred, metaThen, metaElse) => // if then else
+          for (pred <- resugarChild(metaPred);
+               then_ <- resugarChild(metaThen);
+               else_ <- resugarChild(metaElse);
+               ifThenElse <- label(IfElse(_, pred, then_, else_, types)))
+          yield ifThenElse
+      , (metaPred, metaBody) => // while
+          for (pred <- resugarChild(metaPred);
+               body <- resugarChild(metaBody);
+               while_ <- label(While(_, pred, body, types)))
+          yield while_
+      , (metaEnums, metaBody) => // for
+          for (body <- resugarChild(metaBody);
+               for_ <- label(For(_, metaEnums, body, types)))
+          yield for_
+      , (metaEnums, metaOutput) => // for yield
+          for (output <- resugarChild(metaOutput);
+               forYield <- label(For(_, metaEnums, output, types)))
+          yield forYield
+      , (metaLhs, metaRhs) => // assign
+          for (lhs <- resugarChild(metaLhs);
+               rhs <- resugarChild(metaRhs);
+               assign <- label(Assign(_, lhs, rhs, types)))
+          yield assign
+      , () => label(ReturnUnit(_, types)) // return
+      , (metaExpr) => // return expr
+          for (expr <- resugarChild(metaExpr);
+               return_ <- label(Return(_, expr, types)))
+          yield return_
+      , (metaStats) => // block
+          for (stats <- forM(metaStats)(genStat(_, samePos));
+               block <- label(Block(_, stats, types)))
+          yield block
+      , (metaTerm) => label(Other(_, metaTerm, types)) // other
       , sugared
       )
   }
@@ -480,6 +500,24 @@ object Expr {
       case q"package $p { ..$stats }" if p.symbol.toString == "<empty>" => stats // TODO: is "<empty>" correct?
       case _ => List(t)
     }
+  }
+
+  private def searchSamePosition(metaTree : meta.Tree, t : Tree) : List[Tree] = {
+    def includes(p : scalac.Position, what : meta.Position) : Boolean =
+      p.isRange && (p.start <= what.start && what.end <= p.end)
+
+    def equals(p : scalac.Position, p2 : meta.Position) : Boolean =
+      p.isRange && (p.start == p2.start && p.end == p2.end)
+
+    if (includes(t.pos, metaTree.pos)) {
+      val samePosChildren : List[Tree] = t.children.flatMap(searchSamePosition(metaTree, _))
+      if (equals(t.pos, metaTree.pos))
+        t :: samePosChildren
+      else
+        samePosChildren
+    }
+    else
+      List()
   }
 
   private def overlapping(pos : meta.Position, desugared : List[Tree]) : List[Tree] =
@@ -819,7 +857,7 @@ object Expr {
             children)
 
     def formatExpr(n : Expr) : DotGen[DotNode] =
-      nodeCata(
+      cata(
           (l, lit, t) => // literal
             add(record(l, "Literal", t.toString), List())
         , (l, _, t) => // identifier reference

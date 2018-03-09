@@ -2,7 +2,6 @@ package parscala
 
 import parscala.{tree => tr}
 //import callgraph.{CallGraph,CallGraphBuilder}
-import parscala.dot
 
 class ProgramGraph (
     val declarations : DeclMap

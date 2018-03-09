@@ -42,14 +42,12 @@ object CallGraphBuilder {
       val const2 : (Any, Any) => CallGraph = Function.const2(empty)
       val const3 : (Any, Any, Any) => CallGraph = Function.const3(empty)
       val const4 : (Any, Any, Any, Any) => CallGraph = Function.const4(empty)
-      tr.Expr.nodeCata(
+      tr.Expr.cata(
           const3 // literal
         , const3 // identifier
-        , (_, _, rhs, _) => // pattern matching definition
-            collectCalls(rhs)
         , (_, lhs, rhs, _) => // assignment todo: add an update or setter edge if lhs is not a mutable variable
             collectCalls(lhs) ++ collectCalls(rhs)
-        , (_, fun, argss, funRef, _) => { // application
+        , (_, fun, argss, _) => { // application
             val callsInFun : CallGraph = collectCalls(fun)
             val callsInArgss : CallGraph = argss.flatten.foldLeft(empty)(
                 (acc, arg) => acc ++ collectCalls(arg)
