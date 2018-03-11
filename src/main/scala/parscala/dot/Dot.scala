@@ -11,6 +11,8 @@ import java.util.concurrent.TimeUnit
 import scala.io.{Source,Codec}
 import scala.collection.immutable.Traversable
 
+import scalaz.Show
+
 class DotNode(val name : String, val attrs : List[DotAttr]) {
   def !!(a : DotAttr) : DotNode = 
     new DotNode(name, a :: attrs)
@@ -34,6 +36,11 @@ object DotNode {
 
   def apply(id : SLabel) : DotNode = 
     new DotNode("node_%s".format(dotLegaliseId(id.toString)), List.empty)
+
+  def record[A](l : A, header : String, body : String)(implicit show : Show[A]) : DotNode =
+    (DotNode(show.shows(l)) 
+      !! DotAttr.shape(Shape.Record) 
+      !! DotAttr.labelWithPorts("{ %s - %s | %s }".format(l.toString, header, Dot.dotEscape(body))))
 }
 
 

@@ -31,16 +31,18 @@ object UseDefinition {
           val const3 : (Any, Any, Any) => Set[Assignment] = (_, _, _) => Set.empty
           val const4 : (Any, Any, Any, Any) => Set[Assignment] = (_, _, _, _) => Set.empty
           val const5 : (Any, Any, Any, Any, Any) => Set[Assignment] = (_, _, _, _, _) => Set.empty
-          tr.Expr.nodeCata(
+          tr.Expr.cata(
               const3 // literal
-            , (sl, symbol, _) => // identifier
-                reachingDefs filter { case (sym, assignment) => symbol == sym }
-            , const4 // pattern definition
+            , (sl, symbols, _) => // identifier
+                reachingDefs filter { case (sym, assignment @ _) => symbols contains sym }
             , const4 // assignment
-            , const5 // application
+            , const4 // application
+            , const5 // infix application
+            , const4 // unary application
             , const4 // new
             , const4 // selection
             , const3 // this
+            , const4 // super
             , const3 // tuple
             , const4 // if-then
             , const5 // if-then-else
@@ -51,8 +53,8 @@ object UseDefinition {
             , const3 // return with expr
             , const3 // throw
             , const3 // block
-            , const4 // lambda function
-            , const2 // expression
+//            , const4 // lambda function
+            , const3 // other expression
             , node)
     }
     new UseDefinition(rd.rd map{ case (k, v) => (k, useDefinitions(k, v)) })

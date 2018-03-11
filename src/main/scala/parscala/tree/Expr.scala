@@ -8,8 +8,8 @@ import scala.meta
 import scalaz.{State, StateT, \/, Traverse, Monad, MonadState, MonadTrans, IndexedStateT}
 import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 
-import parscala.Control.{foldM_, forM, forM_}
-import dot.{Dot, DotAttr, DotGraph, DotNode, DotEdge, Shape}
+import parscala.Control.{mapM, foldM_, forM, forM_}
+import dot.{DotAttr, DotGraph, DotNode, DotEdge}
 
 class ExprTree (val root : Expr, val nodes : ExprMap)
 
@@ -37,7 +37,7 @@ case class AppInfix(val l : SLabel, val lhs : Expr, val method : meta.Name, val 
   def label : SLabel = l
 }
 
-case class AppUnary(val l : SLabel, val method : Ident, val arg : Expr, val funRef : DLabel, val typ : List[scalac.Type]) extends Expr {
+case class AppUnary(val l : SLabel, val method : meta.Name, val arg : Expr, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
@@ -142,7 +142,7 @@ object Expr {
               return_ : (SLabel, Expr, List[scalac.Type]) => A,
               throw_ : (SLabel, Expr, List[scalac.Type]) => A,
               block : (SLabel, List[Statement], List[scalac.Type]) => A,
-              nOther : (SLabel, List[scalac.Type]) => A,
+              nOther : (SLabel, meta.Term, List[scalac.Type]) => A,
               n : Expr) : A =
     n match {
       case Literal(sl, lit, t) => literal(sl, lit, t)
@@ -154,6 +154,7 @@ object Expr {
       case New(sl, cls, argss, t) => new_(sl, cls, argss, t)
       case Select(sl, qual, name, t) => select(sl, qual, name, t)
       case This(sl, qual, t) => this_(sl, qual, t)
+      case Super(sl, thisp, superp, t) => super_(sl, thisp, superp, t)
       case Tuple(sl, comps, t) => tuple(sl, comps, t)
       case If(sl, pred, thenE, t) => if_(sl, pred, thenE, t)
       case IfElse(sl, pred, thenE, elseE, t) => ifElse(sl, pred, thenE, elseE, t)
@@ -164,7 +165,7 @@ object Expr {
       case Return(sl, expr, t) => return_(sl, expr, t)
       case Throw(sl, expr, t) => throw_(sl, expr, t)
       case Block(sl, statements, t) => block(sl, statements, t)
-      case Other(sl, expr) => nOther(sl, expr)
+      case Other(sl, expr, t) => nOther(sl, expr, t)
     }
 
   case class St
@@ -776,15 +777,14 @@ object Expr {
 
     val dotGenState : MonadState[DotGen, St] = IndexedStateT.stateMonad
 
+    def addNode(node : DotNode) : DotGen[DotNode] = add(node, List())
+
     def add(node : DotNode, edges : List[DotEdge]) : DotGen[DotNode] = 
       for (_ <- dotGenState.modify{ case (ns, es) => (node :: ns, edges ++ es) })
       yield node
 
     def addEdge(edge : DotEdge) : DotGen[Unit] =
       dotGenState.modify{ case (ns, es) => (ns, edge :: es) }
-
-    def record(l : SLabel, header : String, body : String) : DotNode =
-      DotNode(l.toString) !! DotAttr.shape(Shape.Record) !! DotAttr.labelWithPorts("{ %s - %s | %s }".format(l.toString, header, Dot.dotEscape(body)))
 
     def edge(source : DotNode, target : DotNode, label : String) : DotEdge =
       DotEdge(source, target) !! DotAttr.label(label)
@@ -804,55 +804,64 @@ object Expr {
     def formatExpr(n : Expr) : DotGen[DotNode] =
       cata(
           (l, lit, t) => // literal
-            add(record(l, "Literal", t.toString), List())
+            add(DotNode.record(l, "Literal", t.toString), List())
         , (l, _, t) => // identifier reference
-            add(record(l, "Identifier", t.toString), List())
-        , (l, pat, rhs, t) => // pattern definition
-            formatExpr(rhs) >>= (right => {
-            val patDef = record(l, "Pattern definition", pat.toString)
-            add(patDef, List(edge(patDef, right, "value")))
-            })
+            add(DotNode.record(l, "Identifier", t.toString), List())
         , (l, lhs, rhs, t) => // assignment
             formatExpr(lhs) >>= (left => 
             formatExpr(rhs) >>= (right => {
-              val as = record(l, "Assignment", t.toString())
+              val as = DotNode.record(l, "Assignment", t.toString())
               val lEdge = edge(as, left, "left")
               val rEdge = edge(as, right, "right")
               add(as, List(lEdge, rEdge))
             }))
-        , (l, m, argss, _, t) => // application
+        , (l, m, args, _t) => // application
             formatExpr(m) >>= ( method => 
-            mapM(mapM(formatExpr, _ : List[Expr]), argss) >>= (nodess => {
-              val app = record(l, "Application", t.toString())
-              val edgeToMethod = edge(app, method, "method")
-              deepEnum(app, nodess, "arg(%s, %s)".format(_, _)) >>
-              add(app, List(edgeToMethod))
+            mapM(formatExpr, args) >>= (nodes => {
+            val app = DotNode.record(l, "Application", "")
+            val edgeToMethod = edge(app, method, "method")
+            enum(app, nodes, "arg(%s)".format(_)) >>
+            add(app, List(edgeToMethod))
             }))
-        , (l, cls, argss, t) => // new
+        , (l, lhs, op, args, _t) => // infix application
+            formatExpr(lhs) >>= (lhsNode =>
+            mapM(formatExpr, args) >>= (nodes => {
+            val app = DotNode.record(l, "Infix application", op.toString)
+            addEdge(edge(app, lhsNode, "left"))
+            enum(app, nodes, "arg(%s)".format(_))
+            add(app, List())
+            }))
+        , (l, op, arg, _t) => // unary application
+            formatExpr(arg) >>= (argNode => {
+            add(argNode, List())
+            val app = DotNode.record(l, "Unary application", op.toString)
+            add(app, List(edge(app, argNode, "arg")))
+            })
+        , (l, class_, argss, t) => // new
             mapM(mapM(formatExpr, _ : List[Expr]), argss) >>= (nodess => {
-              val newE = record(l, "New", t.toString())
-              //val clsExpr = ???
+              val newE = DotNode.record(l, "New", class_.toString)
               deepEnum(newE, nodess, "arg(%s, %s)".format(_, _)) >>
               add(newE, List())
             })
         , (l, obj, termName, t) => // selection
             formatExpr(obj) >>= (o => {
-              //val termExpr = ???
-              val select = record(l, "Selection", t.toString())
+              val select = DotNode.record(l, "Selection", termName.toString())
               add(select, List(edge(select, o, "")))
             })
-        , (l, typeName, t) => // this
-            add(record(l, "This", t.toString()), List())
+        , (l, typeName, _t) => // this
+            addNode(DotNode.record(l, "This", typeName.toString))
+        , (l, thisp, superp, _t) => // super
+            addNode(DotNode.record(l, "Super", thisp.toString + " " + superp.toString))
         , (l, comps, t) => // tuple
             mapM(formatExpr, comps) >>= (nodes => {
-              val tuple = record(l, "Tuple", t.toString())
+              val tuple = DotNode.record(l, "Tuple", t.toString())
               enum(tuple, nodes,"comp(%s)".format(_))
               add(tuple, List())
             })
         , (l, pred, thenE, t) => // if-then
             formatExpr(pred) >>= (p =>
             formatExpr(thenE) >>= (th => {
-              val ifE = record(l, "If-then", "")
+              val ifE = DotNode.record(l, "If-then", "")
               add(ifE, List(edge(ifE, p, "predicate"),
                             edge(ifE, th, "then")))
             }))
@@ -860,7 +869,7 @@ object Expr {
             formatExpr(pred) >>= (p =>
             formatExpr(thenE) >>= (th =>
             formatExpr(elseE) >>= (el => {
-              val ifE = record(l, "If-then-else", "")
+              val ifE = DotNode.record(l, "If-then-else", "")
               add(ifE, List(edge(ifE, p, "predicate"),
                             edge(ifE, th, "then"),
                             edge(ifE, el, "else")))
@@ -868,54 +877,60 @@ object Expr {
         , (l, pred, body, t) => // while loop
             formatExpr(pred) >>= (p =>
             formatExpr(body) >>= (b => {
-              val whileE = record(l, "While loop", "")
+              val whileE = DotNode.record(l, "While loop", "")
               add(whileE, List(edge(whileE, p, "predicate"), 
                                edge(whileE, b, "body")))
             }))
         , (l, enums, body, t) => // for loop
-            mapM(formatExpr, enums) >>= (nodes =>
+//            mapM(formatExpr, enums) >>= (nodes =>
             formatExpr(body) >>= (b => {
-              val forE = record(l, "For loop", "")
-              enum(forE, nodes, "enum(%s)".format(_)) >>
+              val forE = DotNode.record(l, "For loop", "")
+//              enum(forE, nodes, "enum(%s)".format(_)) >>
               add(forE, List(edge(forE, b, "body")))
-            }))
+//            }))
+            })
         , (l, enums, body, t) => // for-yield loop
-            mapM(formatExpr, enums) >>= (nodes =>
+//            mapM(formatExpr, enums) >>= (nodes =>
             formatExpr(body) >>= (b => {
-              val forE = record(l, "For-yield loop", "")
-              enum(forE, nodes, "enum(%s)".format(_)) >>
+              val forE = DotNode.record(l, "For-yield loop", "")
+//              enum(forE, nodes, "enum(%s)".format(_)) >>
               add(forE, List(edge(forE, b, "yield")))
-            }))
+//            }))
+            })
         , (l, t) => { // return
-            val returnE = record(l, "Return", "")
+            val returnE = DotNode.record(l, "Return", "")
             add(returnE, List())
           }
         , (l, expr, t) => // return with expr
             formatExpr(expr) >>= (e => {
-              val returnE = record(l, "Return", "")
+              val returnE = DotNode.record(l, "Return", "")
               add(returnE, List(edge(returnE, e, "return")))
             })
         , (l, expr, t) => // throw
             formatExpr(expr) >>= (e => {
-              val throwE = record(l, "Throw", "")
+              val throwE = DotNode.record(l, "Throw", "")
               add(throwE, List(edge(throwE, e, "throw")))
             })
         , (l, stmts, _) => // block
-            mapM(formatExpr, stmts) >>= (nodes => {
-              val b = record(l, "Block", "")
-              enum(b, nodes, "expr(%s)".format(_)) >>
-              add(b, List())
-            })
-        , (l, args, body, _) => // lambda function
+            for (nodes <- mapM[DotGen, Statement, DotNode]((stmt : Statement) =>  ???
+
+                              ,( stmts : List[Statement])
+                              );
+                 b : DotNode = DotNode.record(l, "Block", "");
+                 _ <- enum(b, nodes, "expr(%s)".format(_));
+                 node <- add(b, List()))
+             yield node
+/*        , (l, args, body, _) => // lambda function
             mapM(formatExpr, args) >>= (nodes => {
               formatExpr(body) >>= (b => {
-                val lambda = record(l, "Lambda", "")
+                val lambda = DotNode.record(l, "Lambda", "")
                 enum(lambda, nodes, "arg(%s)".format(_)) >>
                 add(lambda, List(edge(lambda, b, "body")))
               })
             })
-        , (l, expr) => { // other expression
-            val e = record(l, "Expression", expr.toString())
+*/
+        , (l, expr, _t) => { // other expression
+            val e = DotNode.record(l, "Expression", expr.toString())
             add(e, List())
           }
         , n

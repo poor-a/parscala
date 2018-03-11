@@ -23,24 +23,26 @@ object LiveVariablesAnalysis {
           val const3 : (Any, Any, Any) => Set[LV] = (_, _, _) => live
           val const4 : (Any, Any, Any, Any) => Set[LV] = (_, _, _, _) => live
           val const5 : (Any, Any, Any, Any, Any) => Set[LV] = (_, _, _, _, _) => live
-          tr.Expr.nodeCata(
+          tr.Expr.cata(
               const3 // literal
-            , (_, symbol, _) => // identifier
-                live + symbol
-            , (_, pat, _, _) => { // pattern definition
-                live -- tr.Pat.identifiers(pat)
-            }
+            , (_, symbols, _) => // identifier
+                live ++ symbols
+//            , (_, pat, _, _) => { // pattern definition
+//                live -- tr.Pat.identifiers(pat)
+//            }
             , (_, lhs, _, _) => // assignment
-                tr.Expr.nodeCata(
+                tr.Expr.cata(
                     const3 // literal
-                  , (_, symbol, _) => // identifier
-                      live - symbol
-                  , const4 // pattern definition
+                  , (_, symbols, _) => // identifier
+                      live -- symbols
                   , const4 // assignment
-                  , const5 // application
+                  , const4 // application
+                  , const5 // infix application
+                  , const4 // unary application
                   , const4 // new
                   , const4 // selection
                   , const3 // this
+                  , const4 // super
                   , const3 // tuple
                   , const4 // if-then
                   , const5 // if-then-else
@@ -51,13 +53,16 @@ object LiveVariablesAnalysis {
                   , const3 // return with expr
                   , const3 // throw
                   , const3 // block
-                  , const4 // lambda expression
-                  , const2 // expr
+//                  , const4 // lambda expression
+                  , const3 // other expression
                   , lhs)
-            , const5 // application
+            , const4 // application
+            , const5 // infix application
+            , const4 // unary application
             , const4 // new
             , const4 // selection
             , const3 // this
+            , const4 // super
             , const3 // tuple
             , const4 // if-then
             , const5 // if-then-else
@@ -68,8 +73,8 @@ object LiveVariablesAnalysis {
             , const3 // return with expr
             , const3 // throw
             , const3 // block
-            , const4 // lambda expression
-            , const2 // expression
+//            , const4 // lambda expression
+            , const3 // other expression
             , node)
     }
 
@@ -129,9 +134,9 @@ object LiveVariablesAnalysis {
                     tLastExitLV <- analysis.get(tLast);
                     sFirstExitLV <- analysis.get(sFirst)
                    )
-               yield (t, tLast, sFirst, tLastExitLV, sFirstExitLV)
+               yield (t, sFirst, tLastExitLV, sFirstExitLV)
       st match {
-        case Some((targetBlock, tLast, sFirst, tExitLV, sExitLV)) =>
+        case Some((targetBlock, sFirst, tExitLV, sExitLV)) =>
           val sEntryLV : Set[LV] = transfer(sFirst, sExitLV)
           if (!(sEntryLV subsetOf tExitLV)) {
             val analUpdated : LVMap = updateBlockLV(updateNodeLV)(targetBlock, sEntryLV, analysis)
@@ -165,6 +170,6 @@ object LiveVariablesAnalysis {
  * See Flemming Nielson, Hanne Riis Nielson, Chris Hankin:
  * 'Principles of Program Analysis' section 2.1
  */
-class LiveVariablesAnalysis private (val lv : LiveVariablesAnalysis.LVMap, cfg : cf.CFGraph) {
+class LiveVariablesAnalysis private (val lv : LiveVariablesAnalysis.LVMap, val cfg : cf.CFGraph) {
   def get : SLabel => Option[Set[LiveVariablesAnalysis.LV]] = lv.get
 }

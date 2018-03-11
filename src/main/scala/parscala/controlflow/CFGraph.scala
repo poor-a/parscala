@@ -6,7 +6,8 @@ import scala.language.higherKinds
 import scalaz.{State, EitherT, Hoist, MonadState, \/-}
 import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 
-import parscala.Control.foldM
+import parscala.Control.{foldM, forM}
+
 import parscala.{tree => tr}
 
 abstract class O // Open
@@ -30,7 +31,7 @@ object CFGraph {
       copy(blocks = this.blocks + (b.entryLabel -> b))
   }
 
-  private type Methods = Map[Either[SLabel, DLabel], (BLabel, BLabel)]
+  private type Methods = Map[MLabel, (BLabel, BLabel)]
   private type CFGGen[A] = State[St, A]
   private type CFGAnalyser[A] = EitherT[CFGGen, Unit, A]
 
@@ -108,9 +109,16 @@ object CFGraph {
   private def emptyBlock[M[_]](implicit monadSt : MonadState[M, St]) : M[Block[Node, C, O]] = 
     genBLabel >>= (l => monadSt.pure(emptyBlockWithLabel(l)))
 
-  private def methodStartEnd(method : Either[SLabel, DLabel]) : CFGAnalyser[Option[(BLabel, BLabel)]] =
-    for (methods <- liftM(State.gets[St, Methods](_.methods)))
-    yield methods.get(method)
+  private def methodStartEnd(method : MLabel) : CFGAnalyser[Option[(BLabel, (BLabel, Done))]] =
+    for (methods <- liftM(State.gets[St, Methods](_.methods));
+         blocks <- liftM(State.gets[St, Map[BLabel, Block[Node, C, C]]](_.blocks)))
+    yield for (startEnd <- methods.get(method);
+               b <- blocks.get(startEnd._2);
+               done <- (Block.lastNode(b) match { 
+                         case n : Done => Some(n)
+                         case _ => None
+                       }))
+          yield (startEnd._1, (startEnd._2, done))
 
   // private def addReturnPoint(method : Either[SLabel, DLabel], returnPoint : BLabel) : CFGAnalyser[Unit] =
   //   liftM(State.gets[St, Map[BLabel, Block[Node, C, C]]](_.blocks)) >>= (blocks =>
@@ -121,13 +129,13 @@ object CFGraph {
   //               methodEnd => {
   //                 def addReturn()
 
-  private def analyseMethod(method : Either[SLabel, DLabel])(implicit mSt : MonadState[CFGAnalyser, St], monadTrans : Hoist[({type λ[M[_], A] = EitherT[M, Unit, A]})#λ]) : CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = {
+  private def analyseMethod(method : MLabel)(implicit mSt : MonadState[CFGAnalyser, St], monadTrans : Hoist[({type λ[M[_], A] = EitherT[M, Unit, A]})#λ]) : CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = {
     val const3 : (Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const3(mSt.pure(None))
     val const6 : (Any, Any, Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const6(mSt.pure(None))
     val const7 : (Any, Any, Any, Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const7(mSt.pure(None))
     mSt.gets(_.pgraph) >>= (programgraph =>
     method match {
-      case Right(dLabel) =>
+      case Left(dLabel) =>
         programgraph.lookupDeclDefn(dLabel) match {
           case Some(Left(decl)) => 
             tr.Decl.cata( const6 // var
@@ -175,7 +183,7 @@ object CFGraph {
           case None =>
             { println("no such method: " + method); mSt.pure(None)}
         }
-      case Left(expr @ _) =>
+      case Right(expr @ _) =>
         emptyBlock >>= (start =>
         emptyBlock >>= (end =>
         close(start, Jump(end.entryLabel)) >> {
@@ -188,20 +196,67 @@ object CFGraph {
   }
 
 //  private implicit val unitMonoidInstance : Monoid[Unit] = Monoid.instance((_, _) => (), ())
+
+  private def cfgMethodCall(callExpr : SLabel, b : Block[Node, C, O]) : CFGAnalyser[Block[Node, C, O]] = {
+    implicit val cfgAnalyser : MonadState[CFGAnalyser, St] = cfgASt
+    val callMethods : List[(BLabel, (BLabel, Done))] => CFGAnalyser[Block[Node, C, O]] = startEnds =>
+              genBLabel >>= (returnPoint => {
+              forM[CFGAnalyser, (BLabel, (BLabel, Done)), (BLabel, BLabel)](startEnds){ case (start, (end, done)) => {
+                    val doneWithNewReturn : Block[Node, C, C] = BCat(BFirst(Label(end)), BLast(done.addSucc(returnPoint)))
+                    modifySt{ st => ((), st.copy(blocks = st.blocks.updated(end, doneWithNewReturn)) )} >> {
+                    cfgAnalyser.pure((start, end))
+                    }}
+              } >>= {startEnds => {
+              val (startPoints, endPoints) : (List[BLabel], List[BLabel]) = startEnds.unzip
+              val call : Call = Call(callExpr, startPoints, returnPoint)
+              close(b, call) >>
+              cfgAnalyser.pure(singleton(Return(returnPoint, endPoints, call)))
+              }}})
+
+          lazy val unknownMethod : CFGAnalyser[(BLabel, (BLabel, Done))] =
+            emptyBlock >>= (start =>
+            emptyBlock >>= (end =>
+            close(start, Jump(end.entryLabel)) >> {
+            val done : Done = Done(List())
+            close(end, done) >> 
+            cfgAnalyser.pure((start.entryLabel, (end.entryLabel, done)))
+            }))
+
+          cfgAnalyser.gets(_.pgraph) >>= (pgraph => {
+          val funRefs : CFGAnalyser[List[(BLabel, (BLabel, Done))]] = 
+            pgraph.callTargets.get(callExpr) match {
+            case None | Some(List()) =>
+              cfgAnalyser.map(unknownMethod)(List(_))
+            case Some(callTargets @ _ :: _) =>
+              val getStartEnd : MLabel => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = 
+                callTarget =>
+                  methodStartEnd(callTarget) >>= (mStartEnd =>
+                  mStartEnd match {
+                    case Some(_) => cfgAnalyser.pure(mStartEnd)
+                    case None => analyseMethod(callTarget)(cfgAnalyser, cfgATrans)
+                  })
+              val listTraverse : scalaz.Traverse[List] = scalaz.std.list.listInstance
+              val optionApplicative : scalaz.Applicative[Option] = scalaz.std.option.optionInstance
+              cfgAnalyser.map(forM(callTargets)(getStartEnd))(listTraverse.sequence(_)(optionApplicative)) >>= (mStartEnds =>
+                mStartEnds match {
+                  case None => raiseError()
+                  case Some(startEnds) => cfgAnalyser.pure(startEnds)
+                }
+              )
+            }
+          funRefs >>= callMethods
+          })
+  }
     
   private def cfgStmts
     ( node : tr.Expr, b : Block[Node, C, O] )
     ( implicit m : MonadState[CFGAnalyser, St] ) 
     : CFGAnalyser[Block[Node, C, O]] = {
 
-    def callMethod(afterArgs : Block[Node,C, O], start : BLabel, end : BLabel) : CFGAnalyser[Block[Node, C, O]] =
-      genBLabel >>= (returnPoint => {
-      val call = Call(l, start, returnPoint)
-      close(afterArgs, call) >>
-      cfgASt.pure(singleton(Return(returnPoint, end, call)))
-      })
-  
-    tr.Expr.nodeCata(
+    def foldArgs(init : Block[Node, C, O], args : List[tr.Expr]) : CFGAnalyser[Block[Node, C, O]] =
+      foldM((acc : Block[Node, C, O], x : tr.Expr) => cfgStmts(x, acc), init, args)
+
+    tr.Expr.cata(
         (l, _, _) => { // literal
           val literal = Expr(l)
           m.pure(append(b, literal))
@@ -210,49 +265,26 @@ object CFGraph {
           val identifier = Expr(l)
           m.pure(append(b, identifier))
         }
-      , (l, _, rhs, _) => // pattern definition
-          m.map(cfgStmts(rhs, b))(append(_, Expr(l)))
       , (l, _, rhs, _) => // assignment
           m.map(cfgStmts(rhs, b))(append(_, Expr(l)))
       , (l, fun, args, _) => // application
           cfgStmts(fun, b) >>= (afterFun =>
-          foldM((acc : Block[Node, C, O], x : tr.Expr) => cfgStmts(x, acc), afterFun, args.flatten) >>= (afterArgs => {
-          m.gets(_.pgraph) >>= (pgraph => {
-          pgraph.callTargets.get(l) match {
-            case None =>
-              emptyBlock >>= (start =>
-              emptyBlock >>= (end =>
-              close(start, Jump(end.entryLabel)) >> {
-              val done = Done(List())
-              close(end, done) >> 
-              callMethod(afterArgs, start, end)
-              }))
-            case Some(funRef) =>
-              methodStartEnd(funRef) >>= (mStartEnd =>
-              mStartEnd match {
-                case Some((start, end)) =>
-                  callMethod(afterArgs, start, end)
-                case None =>
-                  analyseMethod(funRef)(cfgASt, cfgATrans) >>= (mStartEnd2 =>
-                  mStartEnd2 match {
-                    case Some((start, (end, done))) =>
-                      genBLabel >>= (returnPoint => {
-                      val call = Call(l, start, returnPoint)
-                      close(afterArgs, call) >> {
-                      val doneWithNewReturn : Block[Node, C, C] = BCat(BFirst(Label(end)), BLast(done.addSucc(returnPoint)))
-                      modifySt{ st => ((), st.copy(blocks = st.blocks.updated(end, doneWithNewReturn)) )} >> {
-                      cfgASt.pure(singleton(Return(returnPoint, end, call)))
-                      }}})
-                    case None =>
-                      raiseError()
-                  }
-              )})}})})
-          )
-      , (l, constr, args, _) => // new
-          m.map(foldM((acc : Block[Node, C, O], x : tr.Expr) => cfgStmts(x, acc), b, args.flatten)(m))(append(_, Expr(l)))
+          foldArgs(afterFun, args) >>= (afterArgs =>
+          cfgMethodCall(l, afterArgs)))
+      , (l, lhs, _op, args, _) => // infix application
+          cfgStmts(lhs, b) >>= (afterLhs =>
+          foldArgs(afterLhs, args) >>= (afterArgs =>
+          cfgMethodCall(l, afterArgs)))
+      , (l, _op, arg, _) => // unary application
+          cfgStmts(arg, b) >>= (afterArg =>
+          cfgMethodCall(l, afterArg))
+      , (l, class_, argss, _) => // new
+          m.map(foldM((acc : Block[Node, C, O], x : tr.Expr) => cfgStmts(x, acc), b, argss.flatten)(m))(append(_, Expr(l)))
       , (l, expr, tname, _) => // selection
           m.map(cfgStmts(expr, b))(append(_, Expr(l)))
       , (l, _, _) => // qualified this
+          m.pure(append(b, Expr(l)))
+      , (l, _, _, _) => // qualified super
           m.pure(append(b, Expr(l)))
       , (l, components, t) => // tuple
           m.map(foldM((acc : Block[Node, C, O], x : tr.Expr) => cfgStmts(x, acc), b, components)(m))(append(_, Expr(l)))
@@ -326,11 +358,18 @@ object CFGraph {
           liftM(getAbruptNext) >>= (abruptNext =>
           close(append(afterExpr, Expr(l)), Jump(abruptNext)) >>
           raiseError()))
-      , (l, exprs, _) => // block
-          foldM((acc : Block[Node, C, O], x : tr.Expr) => cfgStmts(x, acc), b, exprs)
-      , (l, args, body, _) => // lambda function
-          m.pure(append(b, Expr(l)))
-      , (l, _) => // other expression
+      , (l, statements, _) => // block
+          foldM(
+              (acc : Block[Node, C, O], stmt : tr.Statement) =>
+                stmt.fold(
+                    _ => m.pure(acc)
+                  , _ => m.pure(acc)
+                  , expr => cfgStmts(expr, acc)
+                  )
+            , b
+            , statements
+            )
+      , (l, _, _) => // other expression
           m.pure(append(b, Expr(l)))
       , node)
 /*

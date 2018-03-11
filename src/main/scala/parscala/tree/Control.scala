@@ -52,6 +52,8 @@ object Control {
       case _ => other(t)
     }
 
+/*
+
   /**
    * Catamorphism over expression syntax trees of the Scala compiler.
    * 
@@ -116,6 +118,7 @@ object Control {
         block(stmts)
       case _ => other(t)
   }
+*/
 
   /**
    * Catamorphism over scala.meta declaration syntax trees.
@@ -133,6 +136,7 @@ object Control {
       case d @ meta.Decl.Type(mods, name, tparams, bounds) => type_(mods, name, tparams, bounds)(d)
     }
 
+/*
   /**
    * Catamorphism over Scala compiler declaration syntax trees.
    * 
@@ -179,6 +183,8 @@ object Control {
       case q"package object $name extends { ..$_ } with ..$_ { $_ => ..$defs }" => packageOD(name.toString, t.symbol, defs)
       case q"package $name { ..$topStmts }" => packageD(name.toString, t.symbol, topStmts)
     }
+
+*/
 
   def defnCataMeta[A]( val_ : (List[meta.Mod], List[meta.Pat], Option[meta.Type], meta.Term) => meta.Defn.Val => A
                      , var_ : (List[meta.Mod], List[meta.Pat], Option[meta.Type], Option[meta.Term]) => meta.Defn.Var => A
@@ -255,6 +261,7 @@ object Control {
       case pq"_" => underP()
       case _ => otherP(t)
     }
+
 
   /**
    * Catamorphism over literals.

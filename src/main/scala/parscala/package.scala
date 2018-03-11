@@ -32,4 +32,6 @@ package object parscala {
   type DeclMap = Map[DLabel, tree.Decl]
   type SymMap[A] = Map[Symbol, A]
   type SymbolTable = SymMap[DLabel]
+
+  type MLabel = Either[DLabel, SLabel]
 }

@@ -3,6 +3,8 @@ package callgraph
 
 import parscala.{tree => tr}
 
+import scalaz.Either3
+
 class CallGraph(val methods : Set[Either[tr.Decl.Method, tr.Defn.Method]], val calls : Set[Edge]) {
   def ++(other : CallGraph) : CallGraph = {
     new CallGraph(methods ++ other.methods, calls ++ other.calls)
@@ -14,17 +16,17 @@ class CallGraph(val methods : Set[Either[tr.Decl.Method, tr.Defn.Method]], val c
   def addMethod(m : tr.Decl.Method) : CallGraph =
     new CallGraph(methods + Left(m), calls)
 
-  def call(m : tr.Defn.Method) : Set[Either[tr.Decl.Method, tr.Defn.Method]] =
+  def call(m : tr.Defn.Method) : Set[Either3[tr.Decl.Method, tr.Defn.Method, tr.Expr]] =
     for (e <- calls; if (e.caller == m)) yield e.callee
 
-  private def calledBy(m : Either[tr.Decl.Method, tr.Defn.Method]) : Set[tr.Defn.Method] =
+  private def calledBy(m : Either3[tr.Decl.Method, tr.Defn.Method, tr.Expr]) : Set[tr.Defn.Method] =
     for (e <- calls; if (e.callee == m)) yield e.caller
 
   def calledBy(m : tr.Defn.Method) : Set[tr.Defn.Method] =
-    calledBy(Right(m))
+    calledBy(Either3.middle3(m))
 
   def calledBy(m : tr.Decl.Method) : Set[tr.Defn.Method] =
-    calledBy(Left(m))
+    calledBy(Either3.left3(m))
 }
 
 object CallGraphBuilder {
@@ -42,31 +44,50 @@ object CallGraphBuilder {
       val const2 : (Any, Any) => CallGraph = Function.const2(empty)
       val const3 : (Any, Any, Any) => CallGraph = Function.const3(empty)
       val const4 : (Any, Any, Any, Any) => CallGraph = Function.const4(empty)
+      val const5 : (Any, Any, Any, Any, Any) => CallGraph = Function.const5(empty)
       tr.Expr.cata(
           const3 // literal
         , const3 // identifier
         , (_, lhs, rhs, _) => // assignment todo: add an update or setter edge if lhs is not a mutable variable
             collectCalls(lhs) ++ collectCalls(rhs)
-        , (_, fun, argss, _) => { // application
+        , (l, fun, args, _) => { // application
             val callsInFun : CallGraph = collectCalls(fun)
-            val callsInArgss : CallGraph = argss.flatten.foldLeft(empty)(
+            val callsInArgs : CallGraph = args.foldLeft(empty)(
                 (acc, arg) => acc ++ collectCalls(arg)
               )
-            val callsInSubtrees : CallGraph = callsInArgss ++ callsInFun
-            val calleeIsDecl : Option[CallGraph] = 
-              for (decl <- pgraph.declarations.get(funRef);
-                   callee <- tr.Decl.asMethod(decl).map(Left(_)))
-              yield new CallGraph(Set(callee), Set(Edge(method, callee)))
-            lazy val calleeIsDefn : Option[CallGraph] = 
-              for (defn <- pgraph.definitions.get(funRef);
-                   callee <- tr.Defn.asMethod(defn).map(Right(_)))
-              yield new CallGraph(Set(callee), Set(Edge(method, callee)))
+            val callsInSubtrees : CallGraph = callsInArgs ++ callsInFun
+            pgraph.callTargets.get(l) match {
+              case None => callsInSubtrees
+              case Some(funRefs) => {
+                val edges : Set[Edge] = 
+                  funRefs.foldLeft(Set[Edge]()){
+                    (acc : Set[Edge], funRef : MLabel) => acc ++ funRef.fold(
+                        (dl : DLabel) => {
+                          val calleeIsDecl : Option[Set[Edge]] =
+                            for (decl <- pgraph.declarations.get(dl);
+                                 callee <- tr.Decl.asMethod(decl).map(Either3.left3(_)))
+                            yield Set(Edge(method, callee))
+                          lazy val calleeIsDefn : Option[Set[Edge]] = 
+                            for (defn <- pgraph.definitions.get(dl);
+                                 callee <- tr.Defn.asMethod(defn).map(Either3.middle3(_)))
+                          yield Set(Edge(method, callee))
             
-            scalaz.std.option.cata(calleeIsDecl orElse calleeIsDefn)(
-                calleeAndEdge => callsInSubtrees ++ calleeAndEdge
-              , callsInSubtrees
-              )
+                          (calleeIsDecl orElse calleeIsDefn).getOrElse(Set[Edge]())
+                        }
+                      , (sl : SLabel) => {
+                          val mEdge : Option[Set[Edge]] =
+                            for (expr <- pgraph.expressions.get(sl))
+                            yield Set(Edge(method, Either3.right3(expr)))
+                          mEdge.getOrElse(Set[Edge]())
+                        }
+                  )
+                }
+                callsInSubtrees ++ new CallGraph(Set(Right(method)), edges)
+              }
+            }
           }
+        , const5 // infix application
+        , const4 // unary application
         , (_, _, argss, _) => // new todo: add edge to constructor
             argss.flatten.foldLeft(empty)(
                 (acc, arg) => acc ++ collectCalls(arg)
@@ -74,6 +95,7 @@ object CallGraphBuilder {
         , (_, obj, _, _) => // selection
             collectCalls(obj)
         , const3 // this
+        , const4 // super
         , (_, components, _) => // tuple
             components.foldLeft(empty)(
                 (acc, component) => acc ++ collectCalls(component)
@@ -89,13 +111,15 @@ object CallGraphBuilder {
             collectCalls(pred) ++
             collectCalls(body)
         , (_, enumerators, outputExpr, _) => // for loop
-            enumerators.foldLeft(empty)(
-                (acc, enum) => acc ++ collectCalls(enum)
-              ) ++ collectCalls(outputExpr)
+//            enumerators.foldLeft(empty)(
+//                (acc, enum) => acc ++ collectCalls(enum)
+//              ) ++ collectCalls(outputExpr)
+            collectCalls(outputExpr)
         , (_, enumerators, outputExpr, _) => // for-yield loop
-            enumerators.foldLeft(empty)(
-                (acc, enum) => acc ++ collectCalls(enum)
-              ) ++ collectCalls(outputExpr)
+//            enumerators.foldLeft(empty)(
+//                (acc, enum) => acc ++ collectCalls(enum)
+//              ) ++ collectCalls(outputExpr)
+            collectCalls(outputExpr)
         , const2 // return statement
         , (_, value, _) => // return value statement
             collectCalls(value)
@@ -103,10 +127,14 @@ object CallGraphBuilder {
             collectCalls(exception)
         , (_, statements, _) => // block
             statements.foldLeft(empty)(
-                (acc, stmt) => acc ++ collectCalls(stmt)
+                (acc, stmt) => 
+                  stmt.fold(_ => acc // declaration
+                           ,_ => acc // definition
+                           ,expr => acc ++ collectCalls(expr) // expression
+                           )
               )
-        , const4 // lambda
-        , const2 // other expression
+//        , const4 // lambda
+        , const3 // other expression
         , ast
         )
     }

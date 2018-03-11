@@ -23,22 +23,25 @@ object ReachingDefinition {
           val const3 : (Any, Any, Any) => RD = (_, _, _) => rd
           val const4 : (Any, Any, Any, Any) => RD = (_, _, _, _) => rd
           val const5 : (Any, Any, Any, Any, Any) => RD = (_, _, _, _, _) => rd
-          tr.Expr.nodeCata(
+          tr.Expr.cata(
               const3 // literal
             , const3 // identifier
-            , (sl, pat, _, _) => // pattern definition
+/*            , (sl, pat, _, _) => // pattern definition
                 rd ++ (tr.Pat.identifiers(pat).map(symbol => (symbol, sl)).toSet)
+*/
             , (sl, lhs, _, _) => // assignment
-                tr.Expr.nodeCata(
+                tr.Expr.cata(
                     const3 // literal
-                  , (_, symbol, _) => // identifier
-                      rd.filter { x : (Symbol, SLabel) => x._1 != symbol }.+((symbol, sl))
-                  , const4 // pattern definition
+                  , (_, symbols, _) => // identifier
+                      rd.filter { case (s : Symbol, _ : SLabel) => ! (symbols contains s) } ++ (symbols map ((_, sl)))
                   , const4 // assignment
-                  , const5 // application
+                  , const4 // application
+                  , const5 // infix application
+                  , const4 // unary application
                   , const4 // new
                   , const4 // selection
                   , const3 // this
+                  , const4 // super
                   , const3 // tuple
                   , const4 // if-then
                   , const5 // if-then-else
@@ -49,13 +52,16 @@ object ReachingDefinition {
                   , const3 // return with expr
                   , const3 // throw
                   , const3 // block
-                  , const4 // lambda expression
-                  , const2 // expr
+//                  , const4 // lambda expression
+                  , const3 // other expression
                   , lhs)
-            , const5 // application
+            , const4 // application
+            , const5 // infix application
+            , const4 // unary application
             , const4 // new
             , const4 // selection
             , const3 // this
+            , const4 // super
             , const3 // tuple
             , const4 // if-then
             , const5 // if-then-else
@@ -66,8 +72,8 @@ object ReachingDefinition {
             , const3 // return with expr
             , const3 // throw
             , const3 // block
-            , const4 // lambda expression
-            , const2 // expression
+//            , const4 // lambda expression
+            , const3 // other expression
             , node
             )
     }

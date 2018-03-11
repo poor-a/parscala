@@ -24,16 +24,16 @@ case class Expr(val expr : SLabel) extends Node[O,O] {
  * @param expr The method application expression in the program.
  * @param m The method to be invoked.
  */
-case class Call(val expr : SLabel, val m : BLabel, val returnPoint : BLabel) extends Node[O,C] {
+case class Call(val expr : SLabel, val ms : List[BLabel], val returnPoint : BLabel) extends Node[O,C] {
   override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
-  override def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List((m, EdgeLabel.NoLabel))
+  override def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = ms.map((_, EdgeLabel.NoLabel))
 }
 
 /**
  * Represents a return point. The execution continues from here after
  * the execution of the called method.
  */
-case class Return(l : BLabel, from : BLabel, call : Call) extends Node[C,O] {
+case class Return(l : BLabel, from : List[BLabel], call : Call) extends Node[C,O] {
   override def entryLabel(implicit evidence : C =:= C) : BLabel = l
   override def successors(implicit evidence : O =:= C) : List[(BLabel, EdgeLabel.TagType)] = ???
 }
@@ -72,8 +72,8 @@ object Node {
   def cata[A](label_ : (BLabel) => A,
               pattern_ : (PLabel, BLabel, BLabel) => A,
               expr_ : (SLabel) => A,
-              call_ : (SLabel, BLabel, BLabel) => A,
-              return_ : (BLabel, BLabel, Call) => A,
+              call_ : (SLabel, List[BLabel], BLabel) => A,
+              return_ : (BLabel, List[BLabel], Call) => A,
               cond_ : (SLabel, BLabel, BLabel) => A,
               branch_ : (BLabel, BLabel) => A,
               jump_ : (BLabel) => A,
@@ -83,8 +83,8 @@ object Node {
       case Label(bl) => label_(bl)
       case Pattern(sl, success, failure) => pattern_(sl, success, failure)
       case Expr(sl) => expr_(sl)
-      case Call(expr, method, returnPoint) => call_(expr, method, returnPoint)
-      case Return(l, from, call) => return_(l, from, call)
+      case Call(expr, methods, returnPoint) => call_(expr, methods, returnPoint)
+      case Return(l, methods, call) => return_(l, methods, call)
       case Cond(sl, t, f) => cond_(sl, t, f)
       case Branch(succ1, succ2) => branch_(succ1, succ2)
       case Jump(target) => jump_(target)
@@ -98,7 +98,7 @@ object Node {
     }
 
   def OCCata[A](pattern_ : (PLabel, BLabel, BLabel) => A,
-                call_ : (SLabel, BLabel, BLabel) => A,
+                call_ : (SLabel, List[BLabel], BLabel) => A,
                 cond_ : (SLabel, BLabel, BLabel) => A,
                 branch_ : (BLabel, BLabel) => A,
                 jump_ : (BLabel) => A,
@@ -106,7 +106,7 @@ object Node {
                 n : Node[O,C]) : A = 
     n match {
       case Pattern(sl, success, failure) => pattern_(sl, success, failure)
-      case Call(expr, method, returnPoint) => call_(expr, method, returnPoint)
+      case Call(expr, methods, returnPoint) => call_(expr, methods, returnPoint)
       case Cond(sl, t, f) => cond_(sl, t, f)
       case Branch(succ1, succ2) => branch_(succ1, succ2)
       case Jump(target) => jump_(target)

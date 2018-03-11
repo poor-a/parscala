@@ -10,8 +10,17 @@ object CallGraphVisualiser {
     DotNode(name) !! List(DotAttr.shape(Shape.Rectangle), DotAttr.label(name))
   }
 
-  private def formatEdge(e : Edge) : DotEdge =
-    DotEdge(formatMethod(Right(e.caller)), formatMethod(e.callee))
+  private def formatExpr(expr : tr.Expr) : DotNode =
+    DotNode.record(expr.label, "Expression", expr.toString)
+
+  private def formatEdge(e : Edge) : DotEdge = {
+    val callee : DotNode = e.callee.fold(
+        (m : tr.Decl.Method) => formatMethod(Left(m))  // method definition
+      , (m : tr.Defn.Method) => formatMethod(Right(m)) // method declaration
+      , (e : tr.Expr) => formatExpr(e)                 // expression
+    )
+    DotEdge(formatMethod(Right(e.caller)), callee)
+  }
 
   def format(g : CallGraph) : DotGraph = {
     println("call graph: " + g.methods + " " + g.calls)
