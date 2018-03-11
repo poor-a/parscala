@@ -472,7 +472,7 @@ object Expr {
   def resugar(sugared : meta.Source, desugared : Tree) : NodeGen[Unit] = {
     val metaStats : List[meta.Stat] = sugared.stats
     val scalacStats : List[Tree] = dropAnonymousPackage(desugared)
-    forM_(metaStats){ stat => genStat(stat, overlapping(stat.pos, scalacStats)) }
+    forM_(metaStats){ stat => genStat(stat, scalacStats.flatMap(searchSamePosition(stat, _))) }
   }
 
   def genStat(sugared : meta.Stat, ts : List[Tree]) : NodeGen[Statement] =
@@ -557,7 +557,7 @@ object Expr {
                              })
                 yield class_
             case List(_) =>
-              raiseError("The matching ast for the class definition " + name + " is not a class.")
+              raiseError("The matching ast for the class definition " + name + " is not a class. ")
             case List() =>
               raiseError("There are no matching asts for the class definition " + name + ".")
             case _ =>
@@ -912,10 +912,14 @@ object Expr {
               add(throwE, List(edge(throwE, e, "throw")))
             })
         , (l, stmts, _) => // block
-            for (nodes <- mapM[DotGen, Statement, DotNode]((stmt : Statement) =>  ???
-
-                              ,( stmts : List[Statement])
-                              );
+            for (nodes <- mapM[DotGen, Statement, DotNode](
+                              (stmt : Statement) =>
+                                stmt.fold((decl : Decl) => dotGenState.pure(DotNode.record(decl.label, "Declaration", ""))
+                                         ,(defn : Defn) => dotGenState.pure(DotNode.record(defn.label, "Definition", ""))
+                                         ,(e : Expr) => formatExpr(e)
+                                         )
+                            , stmts
+                            );
                  b : DotNode = DotNode.record(l, "Block", "");
                  _ <- enum(b, nodes, "expr(%s)".format(_));
                  node <- add(b, List()))

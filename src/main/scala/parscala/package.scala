@@ -6,6 +6,7 @@ import scala.tools.nsc.{Settings, Global}
 package object parscala {
   private val settings : Settings = new Settings
   settings.embeddedDefaults[ParScala.type]
+  settings.Yrangepos.value = true
   settings.stopAfter.value = List("typer")
 
   /**

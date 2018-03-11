@@ -102,8 +102,8 @@ object DFGraph {
             case _                        => edges
           }
         }
-      , (_label, _lhs, _op, _args, _) => ??? // infix application
-      , (_label, _op, _arg, _) => ??? // unary application
+      , (_label, _lhs, _op, _args, _) => Set[Edge]() // infix application TODO
+      , (_label, _op, _arg, _) => Set[Edge]() // unary application TODO
       , (label, _, argss, _) => // new
           argss.flatMap(args => args.map( arg => traverse(arg, ud) + ((arg.label -> label, D())) )).foldLeft(Set.empty[Edge])(_ union (_))
       , (label, obj, _, _) => // select
@@ -118,9 +118,9 @@ object DFGraph {
           traverse(cond, ud) union traverse(tBranch, ud) union traverse(fBranch, ud)
       , (_, cond, body, _) => // while loop
           traverse(cond, ud) union traverse(body, ud)
-      , (_, enumerators, body, _) => ??? // for loop
+      , (_, enumerators, body, _) => traverse(body, ud) // for loop TODO
 //          enumerators.foldLeft(Set.empty[Edge])( (acc, enum) => traverse(enum, ud) ) union traverse(body, ud)
-      , (_, enumerators, body, _) => ??? // for-yield loop
+      , (_, enumerators, body, _) => traverse(body, ud) // for-yield loop TODO
 //          enumerators.foldLeft(Set.empty[Edge])( (acc, enum) => traverse(enum, ud) ) union traverse(body, ud)
       , const2(Set.empty[Edge]) // return statement
       , (label, expr, _) => // return expr statement
