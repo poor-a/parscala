@@ -496,46 +496,33 @@ object Expr {
 
   def genDefn(sugared : meta.Defn, ts : List[Tree]) : NodeGen[Defn] =
     Control.defnCataMeta(
-        (_mods, pats, _oDeclType, metaRhs) => valDef => // value
-          scalaz.std.option.cata(valsVarsGettersSetters(ts))(
-            { case (vals @ val_ :: _, getters) =>
-                putDefn(genDLabel()){ l => {
-                    val symbols : List[Symbol] = vals.map(_.symbol)
-                    for( _ <- forM_(symbols)(addSymbol(_, l));
-                         scalac.ValDef(_, _, _, scalacRhs) = val_;
-                         rhs <- genExpr2(metaRhs, List(scalacRhs)))
-                    yield Defn.Val(l, pats, symbols.toSet, rhs, valDef, vals, getters)
-                    }
-                  }
-              case _ =>
-                raiseError("Matching asts of the value definition " + valDef + " do not contain value definitions.")
+        (_mods, pats, _oDeclType, metaRhs) => _ => // value
+          putDefn(genDLabel()){ l => {
+              val symbols : List[Symbol] = vals.map(_.symbol)
+                for( _ <- forM_(symbols)(addSymbol(_, l));
+                     scalac.ValDef(_, _, _, scalacRhs) = val_;
+                     rhs <- genExpr2(metaRhs, List(scalacRhs)))
+                yield Defn.Val(l, pats, symbols.toSet, rhs)
             }
-            , raiseError("Matching asts of the value definition " + valDef + " contain asts other than value definitions and getters.")
-            )
-      , (_mods, pats, _oDeclType, oMetaRhs) => varDef => // variable
-          scalaz.std.option.cata(valsVarsGettersSetters(ts))(
-            { case (vars @ var_ :: _, gettersSetters) =>
-                putDefn(genDLabel()){ l => {
-                    val optionTraverse : Traverse[Option] = scalaz.std.option.optionInstance
-                    val symbols : List[Symbol] = vars.map(_.symbol)
-                    for( _ <- forM_(symbols)(addSymbol(_, l));
-                         scalac.ValDef(_, _, _, scalacRhs) = var_;
-                         oRhs <- optionTraverse.traverse(oMetaRhs)(metaRhs => genExpr2(metaRhs, List(scalacRhs))))
-                    yield Defn.Var(l, pats, symbols.toSet, oRhs, varDef, vars, gettersSetters)
-                  }
-                }
-             case _ =>
-               raiseError("Matching asts of the value definition " + varDef + " do not contain value definitions.")
+          }
+      , (_mods, pats, _oDeclType, oMetaRhs) => _ => // variable
+          putDefn(genDLabel()){ l => {
+              val optionTraverse : Traverse[Option] = scalaz.std.option.optionInstance
+              val symbols : List[Symbol] = vars.map(_.symbol)
+              for( _ <- forM_(symbols)(addSymbol(_, l));
+                scalac.ValDef(_, _, _, scalacRhs) = var_;
+                oRhs <- optionTraverse.traverse(oMetaRhs)(metaRhs => genExpr2(metaRhs, List(scalacRhs))))
+                yield Defn.Var(l, pats, symbols.toSet, oRhs)
             }
-            , raiseError("Matching asts of the value definition " + varDef + " contain asts other than value definitions and getters.")
-            )
-      , (_mods, name, _typeParams, paramss, oDeclType, metaBody) => defn => // method
+          }
+      , (_mods, name, _typeParams, paramss, oDeclType, metaBody) => _ => // method
+          putDefn(genDLabel(desugared.symbol)){ l =>
+            for (body <- genExpr2(metaBody, List(scalacBody)))
+            yield Defn.Method(l, desugared.symbol, name, paramss, body, defn, desugared)
+          }
           ts match {
             case List(desugared @ scalac.DefDef(_, _, _, _, _, scalacBody)) =>
-              putDefn(genDLabel(desugared.symbol)){ l =>
-                for (body <- genExpr2(metaBody, List(scalacBody)))
-                yield Defn.Method(l, desugared.symbol, name, paramss, body, defn, desugared)
-              }
+
             case List(_) =>
               raiseError("The matching ast for the method definition " + name + " is not a method.")
             case List() =>
