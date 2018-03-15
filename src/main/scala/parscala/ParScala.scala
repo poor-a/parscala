@@ -33,9 +33,9 @@ object ParScala {
             )
     tr.Expr.runNodeGen(genDecls) match {
       case \/-((st, _)) =>
-        (new ProgramGraph(st.decls, st.defns, st.exprs, st.symbols, st.packages, st.callTargets), None)
+        (new ProgramGraph(st.decls, st.defns, st.exprs, st.symbols, st.topLevels, st.callTargets), None)
       case -\/(err) =>
-        (new ProgramGraph(Map(), Map(), Map(), Map(),  List(), Map()), Some(err))
+        (new ProgramGraph(Map(), Map(), Map(), Map(), List(), Map()), Some(err))
     }
   }
 

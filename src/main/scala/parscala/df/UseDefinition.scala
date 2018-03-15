@@ -33,7 +33,7 @@ object UseDefinition {
           val const5 : (Any, Any, Any, Any, Any) => Set[Assignment] = (_, _, _, _, _) => Set.empty
           tr.Expr.cata(
               const3 // literal
-            , (sl, symbols, _) => // identifier
+            , (sl, _, symbols, _) => // identifier
                 reachingDefs filter { case (sym, assignment @ _) => symbols contains sym }
             , const4 // assignment
             , const4 // application

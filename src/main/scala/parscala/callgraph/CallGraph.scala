@@ -47,7 +47,7 @@ object CallGraphBuilder {
       val const5 : (Any, Any, Any, Any, Any) => CallGraph = Function.const5(empty)
       tr.Expr.cata(
           const3 // literal
-        , const3 // identifier
+        , const4 // identifier
         , (_, lhs, rhs, _) => // assignment todo: add an update or setter edge if lhs is not a mutable variable
             collectCalls(lhs) ++ collectCalls(rhs)
         , (l, fun, args, _) => { // application

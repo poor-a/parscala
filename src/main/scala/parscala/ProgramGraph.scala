@@ -8,14 +8,19 @@ class ProgramGraph (
   , val definitions : DefnMap
   , val expressions : ExprMap
   , val symbolTable : SymMap[DLabel]
-  , val packages : List[tr.Defn.Package]
+  , val topLevels : List[Either[tr.Decl, tr.Defn]]
   , val callTargets : Map[SLabel, List[Either[DLabel, SLabel]]]
   ) {
   def lookupDeclDefn(l : DLabel) : Option[Either[tr.Decl, tr.Defn]] =
     declarations.get(l).map(Left(_)) orElse definitions.get(l).map(Right(_))
 
   def toDot : dot.DotGraph =
-    packages.foldLeft(dot.DotGraph("Program graph", List(), List())){ (g, pkg) => g + tree.Defn.toDot(pkg) }
+    topLevels.foldLeft(dot.DotGraph("Program graph", List(), List())){
+      (g, declOrDefn) => g + declOrDefn.fold(
+                                (decl : tr.Decl) => tr.Decl.toDot(decl)
+                              , (defn : tr.Defn) => tr.Defn.toDot(defn)
+                              )
+    }
 }
 
 /*

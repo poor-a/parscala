@@ -6,7 +6,7 @@ import parscala.dot._
 
 object CallGraphVisualiser {
   private def formatMethod(m : Either[tr.Decl.Method, tr.Defn.Method]) : DotNode = {
-    val name : String = m.fold(_.symbol, _.symbol).fullName.toString
+    val name : String = m.fold(_.symbols, _.symbols).map(_.fullName).toString
     DotNode(name) !! List(DotAttr.shape(Shape.Rectangle), DotAttr.label(name))
   }
 

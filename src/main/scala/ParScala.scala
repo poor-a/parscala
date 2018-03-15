@@ -74,14 +74,20 @@ object ParScala {
               if (c.showCallGraph) {
                 MainWindow.showCallGraph(CallGraphBuilder.fullCallGraph(pgraph))
               }
-              val classes : List[tree.Defn.Class] = pgraph.packages flatMap (_.classes)
+              val classes : List[tree.Defn.Class] = parscala.Control.catSomes(
+                pgraph.topLevels map (_.fold(
+                                          (decl : tree.Decl) => None
+                                        , (defn : tree.Defn) => tree.Defn.asClass(defn)
+                                        )
+                                     )
+              )
               println(s"classes (${classes.size}): ${classes.mkString(", ")}")
               val methods : List[Either[tree.Decl.Method, tree.Defn.Method]] = classes flatMap (_.methods)
               println(s"methods: ${methods.mkString(", ")}")
               scalaz.std.option.cata(c.method)(
                   mName => {
                     val oMethod : Option[Either[tree.Decl.Method, tree.Defn.Method]] = 
-                      methods.find(m => m.fold(_.symbol, _.symbol).fullName == mName)
+                      methods.find(m => m.fold(_.symbols, _.symbols).map(_.fullName) contains mName)
                     oMethod match {
                       case Some(Right(method)) => {
                         println("found method")

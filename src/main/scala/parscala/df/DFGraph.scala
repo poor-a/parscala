@@ -89,7 +89,7 @@ object DFGraph {
     def const4[A](x : A) : (Any, Any, Any, Any) => A = (_, _, _, _) => x
     tree.Expr.cata(
         const3(Set())  // literal
-      , (label, _symbols, _) => { // identifier
+      , (label, _, _symbols, _) => { // identifier
           ud(label).map { case (sym @ _, assignment) => ((assignment -> label), F()) }}
       , (label, _, rhs, _) => // assignment
           traverse(rhs, ud) + ((rhs.label -> label, F()))

@@ -25,7 +25,7 @@ object LiveVariablesAnalysis {
           val const5 : (Any, Any, Any, Any, Any) => Set[LV] = (_, _, _, _, _) => live
           tr.Expr.cata(
               const3 // literal
-            , (_, symbols, _) => // identifier
+            , (_, _, symbols, _) => // identifier
                 live ++ symbols
 //            , (_, pat, _, _) => { // pattern definition
 //                live -- tr.Pat.identifiers(pat)
@@ -33,7 +33,7 @@ object LiveVariablesAnalysis {
             , (_, lhs, _, _) => // assignment
                 tr.Expr.cata(
                     const3 // literal
-                  , (_, symbols, _) => // identifier
+                  , (_, _, symbols, _) => // identifier
                       live -- symbols
                   , const4 // assignment
                   , const4 // application

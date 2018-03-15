@@ -12,49 +12,49 @@ sealed abstract class Decl {
 }
 
 object Decl {
-  case class Var(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], sugared : meta.Decl.Var, desugared : List[scalac.ValDef], gettersSetters : List[Tree]) extends Decl {
+  case class Var(val l : DLabel, pats : List[meta.Pat], symbols : List[Symbol]) extends Decl {
     def label : DLabel = l
 
-    override def toString : String = sugared.toString
+    override def toString : String = pats.toString
   }
 
-  case class Val(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], sugared : meta.Decl.Val, desugared : List[scalac.ValDef], gettersSetters : List[Tree]) extends Decl {
+  case class Val(val l : DLabel, pats : List[meta.Pat], symbols : List[Symbol]) extends Decl {
     def label : DLabel = l
 
-    override def toString : String = sugared.toString
+    override def toString : String = pats.toString
   }
 
-  case class Method(val l : DLabel, symbol : Symbol, name : meta.Term.Name, argss : List[List[meta.Term.Param]], sugared : meta.Decl.Def, desugared : scalac.DefDef) extends Decl {
+  case class Method(val l : DLabel, symbols : List[Symbol], name : meta.Term.Name, argss : List[List[meta.Term.Param]]) extends Decl {
     def label : DLabel = l
 
-    override def toString : String = symbol.toString
+    override def toString : String = name.toString
   }
 
-  case class Type(l : DLabel, symbol : Symbol, name : meta.Type.Name, params : List[meta.Type.Param], bounds : meta.Type.Bounds, sugared : meta.Decl.Type, desugared : scalac.TypeDef) extends Decl {
+  case class Type(l : DLabel, symbols : List[Symbol], name : meta.Type.Name, params : List[meta.Type.Param], bounds : meta.Type.Bounds) extends Decl {
+    override def label : DLabel = l
+
+    override def toString : String = name.toString
+  }
+
+  case class Import(l : DLabel, sugared : meta.Import) extends Decl {
     override def label : DLabel = l
 
     override def toString : String = sugared.toString
   }
 
-  case class Import(l : DLabel, sugared : meta.Import, desugared : scalac.Import) extends Decl {
-    override def label : DLabel = l
-
-    override def toString : String = sugared.toString
-  }
-
-  def cata[A]( fVal : (DLabel, List[meta.Pat], Set[Symbol], meta.Decl.Val, List[scalac.ValDef], List[Tree]) => A
-             , fVar : (DLabel, List[meta.Pat], Set[Symbol], meta.Decl.Var, List[scalac.ValDef], List[Tree]) => A
-             , fMethod : (DLabel, Symbol, meta.Term.Name, List[List[meta.Term.Param]], meta.Decl.Def, scalac.DefDef) => A
-             , fType : (DLabel, Symbol, meta.Type.Name, List[meta.Type.Param], meta.Type.Bounds, meta.Decl.Type, scalac.TypeDef) => A
-             , fImport : (DLabel, meta.Import, scalac.Import) => A
+  def cata[A]( fVal : (DLabel, List[meta.Pat], List[Symbol]) => A
+             , fVar : (DLabel, List[meta.Pat], List[Symbol]) => A
+             , fMethod : (DLabel, List[Symbol], meta.Term.Name, List[List[meta.Term.Param]]) => A
+             , fType : (DLabel, List[Symbol], meta.Type.Name, List[meta.Type.Param], meta.Type.Bounds) => A
+             , fImport : (DLabel, meta.Import) => A
              , decl : Decl
              ) : A =
     decl match {
-      case Var(l, pats, symbols, sugared, desugared, gettersSetters) => fVar(l, pats, symbols, sugared, desugared, gettersSetters)
-      case Val(l, pats, symbols, sugared, desugared, gettersSetters) => fVal(l, pats, symbols, sugared, desugared, gettersSetters)
-      case Method(l, sym, name, argss, sugared, desugared) => fMethod(l, sym, name, argss, sugared, desugared)
-      case Type(l, sym, name, params, bounds, sugared, desugared) => fType(l, sym, name, params, bounds, sugared, desugared)
-      case Import(l, sugared, desugared) => fImport(l, sugared, desugared)
+      case Var(l, pats, symbols) => fVar(l, pats, symbols)
+      case Val(l, pats, symbols) => fVal(l, pats, symbols)
+      case Method(l, sym, name, argss) => fMethod(l, sym, name, argss)
+      case Type(l, sym, name, params, bounds) => fType(l, sym, name, params, bounds)
+      case Import(l, sugared) => fImport(l, sugared)
     }
 
   def kindCata[A]( val_ : Val => A
@@ -85,42 +85,53 @@ object Decl {
    *  @returns root and its children with edges of the tree
    */
   private def toTree(decl : Decl) : (dot.DotNode, dot.DotGraph) =
-    cata( (l, _pats, _symbols, sugared, _desugared, _gettersSetters) => { // value
-            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(sugared.toString)
+    cata( (l, _pats, _symbols) => { // value
+            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(decl.toString)
             (root, dot.DotGraph("", List(root), List()))
           }
-        , (l, _pats, _symbols, sugared, _desugared, _gettersSetters) => { // variable
-            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(sugared.toString)
+        , (l, _pats, _symbols) => { // variable
+            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(decl.toString)
             (root, dot.DotGraph("", List(root), List()))
           }
-        , (l, symbol, _name, _argss, _sugared, _desugared) => { // method
-            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(symbol.toString)
+        , (l, symbol, _name, _argss) => { // method
+            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(decl.toString)
             (root, dot.DotGraph("", List(root), List()))
           }
-        , (l, symbol, _name, _params, _bounds, _sugared, _desugared) => { // type
-            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(symbol.toString)
+        , (l, symbol, _name, _params, _bounds) => { // type
+            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(decl.toString)
             (root, dot.DotGraph("", List(root), List()))
           }
-        , (l, sugared, _desugared) => { // import
-            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(sugared.toString)
+        , (l, sugared) => { // import
+            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(decl.toString)
             (root, dot.DotGraph("", List(root), List()))
           }
         , decl
         )
 
+  def isTopLevel(d : Decl) : Boolean = {
+    val cTrue : (Any) => Boolean = Function.const(true)
+    val cFalse : (Any) => Boolean = Function.const(false)
+    kindCata(
+        cFalse // val
+      , cFalse // var
+      , cFalse // method
+      , cFalse // type
+      , cTrue  // import
+      , d
+      )
+  }
+
   def isMethod(d : Decl) : Boolean =
     asMethod(d).nonEmpty
 
   def asMethod(d : Decl) : Option[Method] = {
-    val c3None : (Any, Any, Any) => Option[Method] = Function.const3(None)
-    val c6None : (Any, Any, Any, Any, Any, Any) => Option[Method] = Function.const6(None)
-    val c7None : (Any, Any, Any, Any, Any, Any, Any) => Option[Method] = Function.const7(None)
-    Decl.cata(
-        c6None // value
-      , c6None // variable
-      , (_, _, _, _, _, _) => Some(d.asInstanceOf[Method]) // method
-      , c7None // type
-      , c3None // import
+    val cNone : (Any) => Option[Method] = Function.const(None)
+    Decl.kindCata(
+        cNone   // value
+      , cNone   // variable
+      , Some(_) // method
+      , cNone   // type
+      , cNone   // import
       , d
       )
   }

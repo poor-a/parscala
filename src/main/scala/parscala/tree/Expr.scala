@@ -21,7 +21,7 @@ case class Literal(val l : SLabel, val sugared : meta.Lit, val typ : List[scalac
   def label : SLabel = l
 }
 
-case class Ident(val l : SLabel, val symbols : List[Symbol], val typ : List[scalac.Type]) extends Expr {
+case class Ident(val l : SLabel, val name : String, val symbols : List[Symbol], val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 }
 
@@ -123,7 +123,7 @@ final case class RefAppUnary(val expr : AppUnary) extends Reference
 
 object Expr {
   def cata[A](literal : (SLabel, meta.Lit, List[scalac.Type]) => A,
-              ident : (SLabel, List[Symbol], List[scalac.Type]) => A,
+              ident : (SLabel, String, List[Symbol], List[scalac.Type]) => A,
               assign : (SLabel, Expr, Expr, List[scalac.Type]) => A,
               app : (SLabel, Expr, List[Expr], List[scalac.Type]) => A,
               appInfix : (SLabel, Expr, meta.Name, List[Expr], List[scalac.Type]) => A,
@@ -146,7 +146,7 @@ object Expr {
               n : Expr) : A =
     n match {
       case Literal(sl, lit, t) => literal(sl, lit, t)
-      case Ident(sl, syms, t) => ident(sl, syms, t)
+      case Ident(sl, name, syms, t) => ident(sl, name, syms, t)
       case Assign(sl, lhs, rhs, t) => assign(sl, lhs, rhs, t)
       case App(sl, f, args, t) => app(sl, f, args, t)
       case AppInfix(sl, lhs, op, rhs, t) => appInfix(sl, lhs, op, rhs, t)
@@ -176,7 +176,7 @@ object Expr {
     , symbols : SymbolTable
     , decls : DeclMap
     , defns : DefnMap
-    , packages : List[Defn.Package]
+    , topLevels : List[Either[Decl, Defn]]
     , callTargets : Map[SLabel, List[Either[DLabel, SLabel]]]
     )
 
@@ -247,24 +247,24 @@ object Expr {
       case _ => err
     }
 
-  def symbols(trees : List[Tree]) : List[Symbol] =
+  def symbolsOf(trees : List[Tree]) : List[Symbol] =
     for (t <- trees; s = t.symbol; if s != null) yield s
 
-  def genExpr2(sugared : meta.Term, ts : List[Tree]) : NodeGen[Expr] = {
+  def genExpr(sugared : meta.Term, ts : List[Tree]) : NodeGen[Expr] = {
     val samePos : List[Tree] = ts.flatMap(searchSamePosition(sugared, _))
     val types : List[scalac.Type] = samePos map (_.tpe)
-    def childSamePos(child : meta.Tree) : List[Tree] =
+    val childSamePos : meta.Tree => List[Tree] =
       if (samePos.isEmpty)
-        ts.flatMap(searchSamePosition(child, _))
+        child => ts.flatMap(searchSamePosition(child, _))
       else
-        samePos.flatMap(searchSamePosition(child, _))
+        child => samePos.flatMap(searchSamePosition(child, _))
 
     def resugarChild(child : meta.Term) : NodeGen[Expr] =
-      genExpr2(child, childSamePos(child))
+      genExpr(child, childSamePos(child))
 
     Control.exprCataMeta(
         lit => label(Literal(_, lit, types)) // literal
-      , name => label(Ident(_, symbols(ts), types)) // name
+      , name => label(Ident(_, name, symbolsOf(ts), types)) // name
       , metaComponents => // tuple
           for (components <- forM(metaComponents)(resugarChild(_));
                tuple <- label(Tuple(_, components, types)))
@@ -423,14 +423,28 @@ object Expr {
   private def putDecl[D <: Decl](genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[D]) : NodeGen[D] =
     for (l <- genLabel;
          decl <- f(l);
-         _ <- modifySt { st => (decl, st.copy(decls = st.decls + (l -> decl))) }
+         _ <- modifySt { st => (decl, st.copy( decls = st.decls + (l -> decl)
+                                             , topLevels = if (Decl.isTopLevel(decl))
+                                                             Left(decl) :: st.topLevels
+                                                           else
+                                                             st.topLevels
+                                             )
+                               )
+                       }
          )
     yield decl
 
   private def putDefn[D <: Defn](genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[D]) : NodeGen[D] =
     for (l <- genLabel;
          defn <- f(l);
-         _ <- modifySt { st => (defn, st.copy(defns = st.defns + (l -> defn))) }
+         _ <- modifySt { st => (defn, st.copy( defns = st.defns + (l -> defn)
+                                             , topLevels = if (Defn.isTopLevel(defn))
+                                                             Right(defn) :: st.topLevels
+                                                           else
+                                                             st.topLevels
+                                             )
+                               )
+                       }
          )
     yield defn
 
@@ -439,14 +453,6 @@ object Expr {
       stateInstance.pure(())
     else
       raiseError(msg)
-
-  private def dropAnonymousPackage(t : Tree) : List[Tree] = {
-    import scalac.Quasiquote
-    t match {
-      case q"package $p { ..$stats }" if p.symbol.toString == "<empty>" => stats // TODO: is "<empty>" correct?
-      case _ => List(t)
-    }
-  }
 
   private def searchSamePosition(metaTree : meta.Tree, t : Tree) : List[Tree] = {
     def includes(p : scalac.Position, what : meta.Position) : Boolean =
@@ -466,19 +472,15 @@ object Expr {
       List()
   }
 
-  private def overlapping(pos : meta.Position, desugared : List[Tree]) : List[Tree] =
-    desugared.filter{ tr => pos.start <= tr.pos.end && tr.pos.start <= pos.end }
-
   def resugar(sugared : meta.Source, desugared : Tree) : NodeGen[Unit] = {
     val metaStats : List[meta.Stat] = sugared.stats
-    val scalacStats : List[Tree] = dropAnonymousPackage(desugared)
-    forM_(metaStats){ stat => genStat(stat, scalacStats.flatMap(searchSamePosition(stat, _))) }
+    forM_(metaStats){ stat => genStat(stat, searchSamePosition(stat, desugared)) }
   }
 
   def genStat(sugared : meta.Stat, ts : List[Tree]) : NodeGen[Statement] =
     Control.metaStatKindCata(
         term => // term
-          stateInstance.map(genExpr2(term, ts))(Statement.fromExpr(_))
+          stateInstance.map(genExpr(term, ts))(Statement.fromExpr(_))
       , decl =>  // decl
           stateInstance.map(genDecl(decl, ts))(Statement.fromDecl(_))
       , defn => // definition
@@ -494,33 +496,41 @@ object Expr {
       , sugared
       )
 
-  def genDefn(sugared : meta.Defn, ts : List[Tree]) : NodeGen[Defn] =
+  def genDefn(sugared : meta.Defn, ts : List[Tree]) : NodeGen[Defn] = {
+    val samePos : List[Tree] = ts.flatMap(searchSamePosition(sugared, _))
+
+    val childSamePos : meta.Tree => List[Tree] =
+      if (samePos.isEmpty)
+        child => ts.flatMap(searchSamePosition(child, _))
+      else
+        child => samePos.flatMap(searchSamePosition(child, _))
+
+    val symbols : List[Symbol] = symbolsOf(ts)
+
     Control.defnCataMeta(
         (_mods, pats, _oDeclType, metaRhs) => _ => // value
           putDefn(genDLabel()){ l => {
-              val symbols : List[Symbol] = vals.map(_.symbol)
-                for( _ <- forM_(symbols)(addSymbol(_, l));
-                     scalac.ValDef(_, _, _, scalacRhs) = val_;
-                     rhs <- genExpr2(metaRhs, List(scalacRhs)))
-                yield Defn.Val(l, pats, symbols.toSet, rhs)
+              for( _ <- forM_(symbols)(addSymbol(_, l));
+                   rhs <- genExpr(metaRhs, childSamePos(metaRhs)))
+              yield Defn.Val(l, pats, symbols, rhs)
             }
           }
       , (_mods, pats, _oDeclType, oMetaRhs) => _ => // variable
           putDefn(genDLabel()){ l => {
               val optionTraverse : Traverse[Option] = scalaz.std.option.optionInstance
-              val symbols : List[Symbol] = vars.map(_.symbol)
               for( _ <- forM_(symbols)(addSymbol(_, l));
-                scalac.ValDef(_, _, _, scalacRhs) = var_;
-                oRhs <- optionTraverse.traverse(oMetaRhs)(metaRhs => genExpr2(metaRhs, List(scalacRhs))))
-                yield Defn.Var(l, pats, symbols.toSet, oRhs)
+                   oRhs <- optionTraverse.traverse(oMetaRhs)(metaRhs => genExpr(metaRhs, childSamePos(metaRhs))))
+              yield Defn.Var(l, pats, symbols, oRhs)
             }
           }
       , (_mods, name, _typeParams, paramss, oDeclType, metaBody) => _ => // method
-          putDefn(genDLabel(desugared.symbol)){ l =>
-            for (body <- genExpr2(metaBody, List(scalacBody)))
-            yield Defn.Method(l, desugared.symbol, name, paramss, body, defn, desugared)
+          putDefn(genDLabel()){ l =>
+            for (_ <- forM_(symbols)(addSymbol(_, l));
+                 body <- genExpr(metaBody, childSamePos(metaBody)))
+            yield Defn.Method(l, symbols, name, paramss, body)
           }
-          ts match {
+//          raiseError(s"Found ${symbols.length} matching symbols for method definition $name.")
+/*          ts match {
             case List(desugared @ scalac.DefDef(_, _, _, _, _, scalacBody)) =>
 
             case List(_) =>
@@ -530,19 +540,20 @@ object Expr {
             case _ =>
               raiseError("There are more than one matching asts for the method definition " + name + ".")
           }
-      , (_mods, _name, _typeParams, _paramss, _oDeclType, _metaBody) => _macroDef => // macro
+*/
+      , (_mods, _name, _typeParams, _paramss, _oDeclType, _metaBody) => _ => // macro
           raiseError("Macros are not supported yet.")
-      , (_mods, _name, _typeParams, _metaBody) => _typeDef => // type
+      , (_mods, _name, _typeParams, _metaBody) => _ => // type
           raiseError("Type definitions are not supported yet.")
-      , (_mods, name, _typeParams, _constructor, metaBody) => classDef => // class
-          ts match {
-            case List(desugared @ scalac.ClassDef(_, _, _, scalacBody)) =>
-              for (_ <- check(!desugared.symbol.asClass.isTrait, "The matching ast for the class definition " + name + " is a trait.");
-                   class_ <- putDefn(genDLabel(desugared.symbol)){ l =>
-                               for (statements <- resugarTemplate(metaBody, scalacBody))
-                               yield Defn.Class(l, desugared.symbol, name, statements, classDef, desugared)
-                             })
-                yield class_
+      , (_mods, name, _typeParams, _constructor, metaBody) => _ => // class
+          putDefn(genDLabel()){ l =>
+           for (_ <- forM_(symbols)(addSymbol(_, l));
+                statements <- resugarTemplate(metaBody, ts))
+           yield Defn.Class(l, symbols, name, statements)
+          }
+//              raiseError(s"Found ${symbols.length} matching symbols and ${ts.length} matching asts for class definition $name.")
+/*          ts match {
+            case List(scalac.ClassDef(_, _, _, scalacBody)) =>
             case List(_) =>
               raiseError("The matching ast for the class definition " + name + " is not a class. ")
             case List() =>
@@ -550,29 +561,33 @@ object Expr {
             case _ =>
               raiseError("There are more than one matching asts for the class definition " + name + ".")
           }
-      , (_mods, name, _typeParams, _constructor, metaBody) => traitDef => // trait
-          ts match {
-            case List(desugared @ scalac.ClassDef(_, _, _, scalacBody)) =>
-              for (_ <- check(desugared.symbol.asClass.isTrait, "The matching ast for the trait definition " + name + " is a class.");
-                   trait_ <- putDefn(genDLabel(desugared.symbol)){ l =>
-                               for (statements <- resugarTemplate(metaBody, scalacBody))
-                               yield Defn.Trait(l, desugared.symbol, name, statements, traitDef, desugared)
-                             })
-              yield trait_
+*/ 
+      , (_mods, name, _typeParams, _constructor, metaBody) => _ => // trait
+          putDefn(genDLabel()){ l =>
+            for (_ <- forM_(symbols)(addSymbol(_, l));
+                 statements <- resugarTemplate(metaBody, ts))
+            yield Defn.Trait(l, symbols, name, statements)
+          }
+//              raiseError(s"Found ${symbols.length} matching symbols and ${ts.length} matching asts for trait definition $name.")
+/*
+            case List(scalac.ClassDef(_, _, _, scalacBody)) =>
             case List(_) =>
               raiseError("The matching ast for the trait definition " + name + " is not a trait.")
             case List() =>
               raiseError("There are no matching asts for the trait definition " + name + ".")
             case _ =>
               raiseError("There are more than one matching asts for the trait definition " + name + ".")
+*/
+      , (_mods, name, metaBody) => _ => // object
+          putDefn(genDLabel()){ l =>
+            for(_ <- forM_(symbols)(addSymbol(_, l));
+                statements <- resugarTemplate(metaBody, ts))
+            yield Defn.Object(l, symbols, name, statements)
           }
-      , (_mods, name, metaBody) => objectDef => // object
-          ts match {
-            case List(desugared @ scalac.ModuleDef(scalacMods @ _, scalacName @ _, scalacBody)) =>
-              putDefn(genDLabel(desugared.symbol)){ l =>
-                for(statements <- resugarTemplate(metaBody, scalacBody))
-                yield Defn.Object(l, desugared.symbol, name, statements, objectDef, desugared)
-              }
+//              raiseError(s"Found ${symbols.length} matching symbols and ${ts.length} matching asts for object definition $name.")
+/*          ts match {
+            case List(scalac.ModuleDef(scalacMods @ _, scalacName @ _, scalacBody)) =>
+
             case List(_) =>
               raiseError("The matching ast for the object definition " + name + " is not an object.")
             case List() =>
@@ -580,54 +595,66 @@ object Expr {
             case _ =>
               raiseError("There are more than one matching asts for the object definition " + name + ".")
           }
+*/
       , sugared
       )
-
-  def resugarTemplate(sugared : meta.Template, desugared : scalac.Template) : NodeGen[List[Statement]] = {
-    val metaStatements : List[meta.Stat] = sugared.stats
-    val scalac.Template(_, _, scalacStatements : List[Tree]) = desugared
-    val listTraverse : Traverse[List] = scalaz.std.list.listInstance
-    nodeGenMonadInstance.traverse(metaStatements){ statement => genStat(statement, overlapping(statement.pos, scalacStatements)) }(listTraverse)
   }
 
-  def genPkg(sugared : meta.Pkg, ts : List[Tree]) : NodeGen[Defn.Package] =
-    ts match {
-      case List(tr @ scalac.PackageDef(_, scalacStats)) =>
-        putDefn(genDLabel(tr.symbol)){ l =>
-          for (statements <- forM(sugared.stats)( stat => genStat(stat, overlapping(stat.pos, scalacStats)) ))
-          yield Defn.Package(l, tr.symbol, tr.symbol.fullName, statements, sugared, tr)
-        }
+  /**
+   * 't' need not represent a template. It suffices if it has a Template descendant.
+   */
+  def resugarTemplate(sugared : meta.Template, ts : List[Tree]) : NodeGen[List[Statement]] = {
+    val metaStatements : List[meta.Stat] = sugared.stats
+    val listTraverse : Traverse[List] = scalaz.std.list.listInstance
+    nodeGenMonadInstance.traverse(metaStatements){ statement => genStat(statement, ts.flatMap(searchSamePosition(statement, _))) }(listTraverse)
+  }
+
+  def genPkg(sugared : meta.Pkg, ts : List[Tree]) : NodeGen[Defn.Package] = {
+    val symbols : List[Symbol] = symbolsOf(ts)
+    putDefn(genDLabel()){ l =>
+      for ( _ <- forM_(symbols)(addSymbol(_, l));
+            statements <- forM(sugared.stats)( stat => genStat(stat, ts.flatMap(searchSamePosition(stat, _))) ))
+      yield Defn.Package(l, symbols, sugared.ref, statements)
+    }
+  //  raiseError(s"Found ${symbols.length} matching symbols and ${ts.length} matching asts for package definition ${sugared.ref}.")
+/*
+      case List(scalac.PackageDef(_, scalacStats)) =>
+
       case List(_) =>
         raiseError("The matching desugared ast for the package " + sugared.name + " is not a package definition.")
       case List() =>
         raiseError("There are no matching desugared asts for the package " + sugared.name + ".")
       case _ =>
         raiseError("There are more than one matching desugared asts for the package " + sugared.name + ".")
+*/
+  }
+
+  def genImport(sugared : meta.Import, ts : List[Tree]) : NodeGen[Decl.Import] = {
+    val symbols : List[Symbol] = symbolsOf(ts)
+    putDecl(genDLabel()){ l =>
+      for (_ <- forM_(symbols)(addSymbol(_, l)))
+      yield Decl.Import(l, sugared)
     }
-
-
-  def genImport(sugared : meta.Import, ts : List[Tree]) : NodeGen[Decl.Import] =
-    ts match {
-      case List(desugared : scalac.Import) =>
-        putDecl(genDLabel(desugared.symbol)){ l =>
-          stateInstance.pure(Decl.Import(l, sugared, desugared))
-        }
-      case List(_) =>
+/*      case List(_) =>
         raiseError("The matching desugared ast of the import declaration " + sugared + " is not an import declaration.")
       case List() =>
         raiseError("There are no matching desugared asts for the import declaration " + sugared + ".")
       case _ =>
         raiseError("There are more than one matching desugared asts for the import declaration " + sugared + ".")
-    }
+*/
+  }
 
   def genPkgObj(sugared : meta.Pkg.Object, ts : List[Tree]) : NodeGen[Defn.PackageObject] = {
     val meta.Pkg.Object(_, name, metaBody) = sugared
-    ts match {
+    val symbols : List[Symbol] = symbolsOf(ts)
+    putDefn(genDLabel()){ l =>
+      for (_ <- forM_(symbols)(addSymbol(_, l));
+           body <- resugarTemplate(metaBody, ts))
+      yield Defn.PackageObject(l, symbols, name, body)
+    }
+/*    ts match {
       case List(scalac.PackageDef(_, List(desugared @ scalac.ModuleDef(_, _, scalacBody)))) =>
-        putDefn(genDLabel(desugared.symbol)){ l =>
-          for (body <- resugarTemplate(metaBody, scalacBody))
-          yield Defn.PackageObject(l, desugared.symbol, name, body, sugared, desugared)
-        }
+
       case List(_) =>
         raiseError("The matching desugared ast of the package object definition " + name + " is not a package object definition.")
       case List() =>
@@ -635,54 +662,32 @@ object Expr {
       case _ =>
         raiseError("There are more than one matching desugared asts for the package object definition " + name + ".")
     }
-  }
-
-    // the first component has either only values or only variables but not both
-  private def valsVarsGettersSetters(ts : List[Tree]) : Option[(List[scalac.ValDef], List[scalac.DefDef])] = {
-    val optionMonad : Monad[Option] = scalaz.std.option.optionInstance
-    val listFoldable : scalaz.Foldable[List] = scalaz.std.list.listInstance
-    listFoldable.foldRightM(ts, (List[scalac.ValDef](), List[scalac.DefDef]())){ case (tr, (vs, getset)) =>
-      tr match {
-        case v : scalac.ValDef => Some((v :: vs, getset))
-        case d : scalac.DefDef => Some((vs, d :: getset))
-        case _ => None
-      }
-    } (optionMonad)
+*/
   }
 
   def genDecl(sugared : meta.Decl, ts : List[Tree]) : NodeGen[Decl] = {
+    val symbols : List[Symbol] = symbolsOf(ts)
     Control.declCataMeta(
-        (mods, pats) => valDecl => // val
-          scalaz.std.option.cata(valsVarsGettersSetters(ts))(
-            { case (vals, gettersSetters) =>
-                putDecl(genDLabel()){ l => for (
-                    _ <- check(gettersSetters.isEmpty, "For a value declaration statement, there is a matching getter or a setter.");
-                    _ <- forM_(ts){ t => addSymbol(t.symbol, l) };
-                    symbols : Set[Symbol] = ts.map(_.symbol).toSet
-                  ) yield
-                    Decl.Val(l, pats, symbols, valDecl, vals, gettersSetters)
-                }
-            }
-            , raiseError("For a value declaration statement, there is a matching desugared ast which is not a value declaration.")
-            )
-      , (mods, pats) => varDecl => // var
-          scalaz.std.option.cata(valsVarsGettersSetters(ts))(
-            { case (vars, gettersSetters) =>
-                putDecl(genDLabel()){ l => for (
-                    _ <- forM(ts){ t => addSymbol(t.symbol, l) };
-                    symbols : Set[Symbol] = ts.map(_.symbol).toSet
-                  ) yield
-                    Decl.Var(l, pats, symbols, varDecl, vars, gettersSetters)
-                }
-            }
-            , raiseError("For a variable declaration statement, there is a matching desugared ast which is not a variable declaration nor is a method.")
-            )
-      , (_mods, name, _typeParams, argss) => defDecl => // method
+        (mods, pats) => _ => // val
+          putDecl(genDLabel()){ l =>
+            for (_ <- forM_(symbols)(addSymbol(_, l)))
+            yield Decl.Val(l, pats, symbols)
+          }
+//            , raiseError("For a value declaration statement, there is a matching desugared ast which is not a value declaration.")
+      , (mods, pats) => _ => // var
+          putDecl(genDLabel()){ l => 
+            for (_ <- forM(symbols)(addSymbol(_, l)))
+            yield Decl.Var(l, pats, symbols)
+          }
+          //raiseError("For a variable declaration statement, there is a matching desugared ast which is not a variable declaration nor is a method.")
+      , (_mods, name, _typeParams, argss) => _ => // method
+          putDecl(genDLabel()){ l =>
+            for (_ <- forM_(symbols)(addSymbol(_, l)))
+            yield Decl.Method(l, symbols, name, argss)
+          }
+/*
           ts match {
             case List(tr : scalac.DefDef) =>
-              putDecl(genDLabel(tr.symbol)){ l =>
-                stateInstance.pure(Decl.Method(l, tr.symbol, name, argss, defDecl, tr))
-              }
             case List(_) =>
               raiseError("The matching desugared ast of a method declaration is not a method declaration.")
             case List() =>
@@ -690,12 +695,15 @@ object Expr {
             case _ =>
               raiseError("There are more than one desugared asts for declaration of method " + name + ".")
           }
-      , (mods, name, typeParams, bounds) => typeDecl =>  // type
+*/
+      , (mods, name, typeParams, bounds) => _ =>  // type
+          putDecl(genDLabel()){ l =>
+            for(_ <- forM_(symbols)(addSymbol(_, l)))
+            yield Decl.Type(l, symbols, name, typeParams, bounds)
+          }
+/*
           ts match {
             case List(tr : scalac.TypeDef) =>
-              putDecl(genDLabel(tr.symbol)){ l => 
-                stateInstance.pure(Decl.Type(l, tr.symbol, name, typeParams, bounds, typeDecl, tr))
-              }
             case List(_) =>
               raiseError("The matching desugared ast of a type declaration is not a type declaration.")
             case List() =>
@@ -703,6 +711,7 @@ object Expr {
             case _ =>
               raiseError("There are more than one sugared asts for declaration of type " + name + ".")
           }
+*/
       , sugared
       )
   }
@@ -791,9 +800,9 @@ object Expr {
     def formatExpr(n : Expr) : DotGen[DotNode] =
       cata(
           (l, lit, t) => // literal
-            add(DotNode.record(l, "Literal", t.toString), List())
-        , (l, _, t) => // identifier reference
-            add(DotNode.record(l, "Identifier", t.toString), List())
+            add(DotNode.record(l, "Literal", s"${lit.toString}, types: ${t.toString}"), List())
+        , (l, ident, _, t) => // identifier reference
+            add(DotNode.record(l, "Identifier", s"${ident.toString}, types: ${t.toString}"), List())
         , (l, lhs, rhs, t) => // assignment
             formatExpr(lhs) >>= (left => 
             formatExpr(rhs) >>= (right => {

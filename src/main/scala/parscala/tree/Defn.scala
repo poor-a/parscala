@@ -8,56 +8,56 @@ sealed abstract class Defn {
 }
 
 object Defn {
-  case class Var(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], oRhs : Option[Expr]) extends Defn {
+  case class Var(val l : DLabel, pats : List[meta.Pat], symbols : List[Symbol], oRhs : Option[Expr]) extends Defn {
     def label : DLabel = l
 
-    override def toString : String = sugared.toString
+    override def toString : String = symbols.toString
   }
 
-  case class Val(val l : DLabel, pats : List[meta.Pat], symbols : Set[Symbol], rhs : Expr) extends Defn {
+  case class Val(val l : DLabel, pats : List[meta.Pat], symbols : List[Symbol], rhs : Expr) extends Defn {
     def label : DLabel = l
 
-    override def toString : String = sugared.toString
+    override def toString : String = symbols.toString
   }
 
-  case class Method(val l : DLabel, symbol : Symbol, name : meta.Term.Name, argss : List[List[meta.Term.Param]], body : Expr) extends Defn {
+  case class Method(val l : DLabel, symbols : List[Symbol], name : meta.Term.Name, argss : List[List[meta.Term.Param]], body : Expr) extends Defn {
     def label : DLabel = l
 
-    override def toString : String = symbol.toString
+    override def toString : String = symbols.map(_.fullName).toString
   }
 
-  case class Class(val l : DLabel, symbol : Symbol, name : meta.Type.Name, stats : List[Statement]) extends Defn {
+  case class Class(val l : DLabel, symbols : List[Symbol], name : meta.Type.Name, stats : List[Statement]) extends Defn {
     def label : DLabel = l
 
-    override def toString : String = symbol.toString
+    override def toString : String = symbols.toString
 
     def methods : List[Either[Decl.Method, Method]] = filterMethods(stats)
   }
 
-  case class Trait(val l : DLabel, symbol : Symbol, name : meta.Type.Name, stats : List[Statement]) extends Defn {
+  case class Trait(val l : DLabel, symbols : List[Symbol], name : meta.Type.Name, stats : List[Statement]) extends Defn {
     def label : DLabel = l
 
-    override def toString : String = symbol.toString
+    override def toString : String = symbols.toString
 
     def methods : List[Either[Decl.Method, Method]] = filterMethods(stats)
   }
 
-  case class Object(val l : DLabel, symbol : Symbol, name : meta.Term.Name, stats : List[Statement]) extends Defn{
+  case class Object(val l : DLabel, symbols : List[Symbol], name : meta.Term.Name, stats : List[Statement]) extends Defn{
     def label : DLabel = l
 
-    override def toString : String = symbol.toString
+    override def toString : String = symbols.toString
   }
 
-  case class PackageObject(val l : DLabel, symbol : Symbol, name : meta.Term.Name, stats : List[Statement]) extends Defn {
+  case class PackageObject(val l : DLabel, symbols : List[Symbol], name : meta.Term.Name, stats : List[Statement]) extends Defn {
     def label : DLabel = l
 
-    override def toString : String = symbol.toString
+    override def toString : String = symbols.toString
   }
 
-  case class Package(val l : DLabel, symbol : Symbol, name : String, stats : List[Statement]) extends Defn {
+  case class Package(val l : DLabel, symbols : List[Symbol], name : meta.Term.Ref, stats : List[Statement]) extends Defn {
     def label : DLabel = l
 
-    override def toString : String = symbol.toString
+    override def toString : String = symbols.toString
 
     def classes : List[Class] = {
       def asClass(defn : Defn) : Option[Class] =
@@ -90,25 +90,25 @@ object Defn {
     })
   }
 
-  def cata[A]( fVal : (DLabel, List[meta.Pat], Set[Symbol], Expr) => A
-             , fVar : (DLabel, List[meta.Pat], Set[Symbol], Option[Expr]) => A
-             , fMethod : (DLabel, Symbol, meta.Term.Name, List[List[meta.Term.Param]], Expr) => A
-             , fClass : (DLabel, Symbol, meta.Type.Name, List[Statement]) => A
-             , fTrait : (DLabel, Symbol, meta.Type.Name, List[Statement]) => A
-             , fObject : (DLabel, Symbol, meta.Term.Name, List[Statement]) => A
-             , fPObject : (DLabel, Symbol, meta.Term.Name, List[Statement]) => A
-             , fPackage : (DLabel, Symbol, String, List[Statement]) => A
+  def cata[A]( fVal : (DLabel, List[meta.Pat], List[Symbol], Expr) => A
+             , fVar : (DLabel, List[meta.Pat], List[Symbol], Option[Expr]) => A
+             , fMethod : (DLabel, List[Symbol], meta.Term.Name, List[List[meta.Term.Param]], Expr) => A
+             , fClass : (DLabel, List[Symbol], meta.Type.Name, List[Statement]) => A
+             , fTrait : (DLabel, List[Symbol], meta.Type.Name, List[Statement]) => A
+             , fObject : (DLabel, List[Symbol], meta.Term.Name, List[Statement]) => A
+             , fPObject : (DLabel, List[Symbol], meta.Term.Name, List[Statement]) => A
+             , fPackage : (DLabel, List[Symbol], meta.Term.Ref, List[Statement]) => A
              , defn : Defn
              ) : A =
     defn match {
       case Var(l, pats, symbols, rhs) => fVar(l, pats, symbols, rhs)
-      case Val(l, pats, symbols, rhs, sugared, desugared, gettersSetters) => fVal(l, pats, symbols, rhs)
+      case Val(l, pats, symbols, rhs) => fVal(l, pats, symbols, rhs)
       case Method(l, sym, name, argss, body) => fMethod(l, sym, name, argss, body)
-      case Class(l, sym, name, stats) => fClass(l, sym, name, stats, sugared, desugared)
-      case Trait(l, sym, name, stats) => fTrait(l, sym, name, stats, sugared, desugared)
-      case Object(l, sym, name, stats) => fObject(l, sym, name, stats, sugared, desugared)
-      case PackageObject(l, sym, name, stats) => fPObject(l, sym, name, stats, sugared, desugared)
-      case Package(l, sym, name, stats) => fPackage(l, sym, name, stats, sugared, desugared)
+      case Class(l, sym, name, stats) => fClass(l, sym, name, stats)
+      case Trait(l, sym, name, stats) => fTrait(l, sym, name, stats)
+      case Object(l, sym, name, stats) => fObject(l, sym, name, stats)
+      case PackageObject(l, sym, name, stats) => fPObject(l, sym, name, stats)
+      case Package(l, sym, name, stats) => fPackage(l, sym, name, stats)
     }
 
   def kindCata[A]( val_ : Val => A
@@ -132,9 +132,31 @@ object Defn {
       case p : Package => package_(p)
     }
 
+  def isTopLevel(d : Defn) : Boolean = {
+    val cTrue : (Any) => Boolean = Function.const(true)
+    val cFalse : (Any) => Boolean = Function.const(false)
+    kindCata(
+        cFalse // val
+      , cFalse // var
+      , cFalse // method
+      , cTrue  // class
+      , cTrue  // trait
+      , cTrue  // object
+      , cTrue  // package object
+      , cTrue  // package
+      , d
+      )
+  }
+
   def asMethod(d : Defn) : Option[Method] =
     d match {
       case m : Method => Some(m)
+      case _ => None
+    }
+
+  def asClass(d : Defn) : Option[Class] =
+    d match {
+      case c : Class => Some(c)
       case _ => None
     }
 
