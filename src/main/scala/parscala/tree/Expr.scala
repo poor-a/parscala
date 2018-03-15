@@ -251,13 +251,13 @@ object Expr {
     for (t <- trees; s = t.symbol; if s != null) yield s
 
   def genExpr(sugared : meta.Term, ts : List[Tree]) : NodeGen[Expr] = {
-    val samePos : List[Tree] = ts.flatMap(searchSamePosition(sugared, _))
+    val samePos : List[Tree] = searchSamePosition(sugared, ts)
     val types : List[scalac.Type] = samePos map (_.tpe)
     val childSamePos : meta.Tree => List[Tree] =
       if (samePos.isEmpty)
-        child => ts.flatMap(searchSamePosition(child, _))
+        child => searchSamePosition(child, ts)
       else
-        child => samePos.flatMap(searchSamePosition(child, _))
+        child => searchSamePosition(child, samePos)
 
     def resugarChild(child : meta.Term) : NodeGen[Expr] =
       genExpr(child, childSamePos(child))
@@ -454,27 +454,44 @@ object Expr {
     else
       raiseError(msg)
 
-  private def searchSamePosition(metaTree : meta.Tree, t : Tree) : List[Tree] = {
+  private def searchSamePosition(metaTree : meta.Tree, roots : List[Tree]) : List[Tree] = {
     def includes(p : scalac.Position, what : meta.Position) : Boolean =
       p.isRange && (p.start <= what.start && what.end <= p.end)
 
     def equals(p : scalac.Position, p2 : meta.Position) : Boolean =
       p.isRange && (p.start == p2.start && p.end == p2.end)
 
-    if (includes(t.pos, metaTree.pos)) {
-      val samePosChildren : List[Tree] = t.children.flatMap(searchSamePosition(metaTree, _))
-      if (equals(t.pos, metaTree.pos))
-        t :: samePosChildren
+    def search(ts : List[Tree], visited : Set[Tree]) : (List[Tree], Set[Tree]) =
+      ts.foldLeft((List[Tree](), visited))(
+        (acc, t) => {
+          val ((found, visited2), searchChildren) : ((List[Tree], Set[Tree]), Boolean) = inspect(t, acc._2)
+          val acc2 : (List[Tree], Set[Tree]) = scalaz.std.tuple.tuple2Bitraverse.bimap(acc)(found ++ _, visited2 ++ _)
+          if (searchChildren)
+            scalaz.std.tuple.tuple2Bitraverse.leftMap(search(t.children, acc2._2))(acc2._1 ++ _)
+          else
+            acc2
+        }
+      )
+
+    def inspect(t : Tree, visited : Set[Tree]) : ((List[Tree], Set[Tree]), Boolean) =
+      if (includes(t.pos, metaTree.pos))
+        if (!(visited contains t)) {
+          if (equals(t.pos, metaTree.pos))
+            ((List(t), visited + t), true)
+          else
+            ((List(), visited + t), true)
+        }
+        else
+          ((List(), visited), false)
       else
-        samePosChildren
-    }
-    else
-      List()
+        ((List(), visited), false)
+
+    search(roots, Set[Tree]())._1
   }
 
   def resugar(sugared : meta.Source, desugared : Tree) : NodeGen[Unit] = {
     val metaStats : List[meta.Stat] = sugared.stats
-    forM_(metaStats){ stat => genStat(stat, searchSamePosition(stat, desugared)) }
+    forM_(metaStats){ stat => genStat(stat, searchSamePosition(stat, List(desugared))) }
   }
 
   def genStat(sugared : meta.Stat, ts : List[Tree]) : NodeGen[Statement] =
@@ -497,13 +514,13 @@ object Expr {
       )
 
   def genDefn(sugared : meta.Defn, ts : List[Tree]) : NodeGen[Defn] = {
-    val samePos : List[Tree] = ts.flatMap(searchSamePosition(sugared, _))
+    val samePos : List[Tree] = searchSamePosition(sugared, ts)
 
     val childSamePos : meta.Tree => List[Tree] =
       if (samePos.isEmpty)
-        child => ts.flatMap(searchSamePosition(child, _))
+        child => searchSamePosition(child, ts)
       else
-        child => samePos.flatMap(searchSamePosition(child, _))
+        child => searchSamePosition(child, ts)
 
     val symbols : List[Symbol] = symbolsOf(ts)
 
@@ -606,14 +623,14 @@ object Expr {
   def resugarTemplate(sugared : meta.Template, ts : List[Tree]) : NodeGen[List[Statement]] = {
     val metaStatements : List[meta.Stat] = sugared.stats
     val listTraverse : Traverse[List] = scalaz.std.list.listInstance
-    nodeGenMonadInstance.traverse(metaStatements){ statement => genStat(statement, ts.flatMap(searchSamePosition(statement, _))) }(listTraverse)
+    nodeGenMonadInstance.traverse(metaStatements){ statement => genStat(statement, searchSamePosition(statement, ts)) }(listTraverse)
   }
 
   def genPkg(sugared : meta.Pkg, ts : List[Tree]) : NodeGen[Defn.Package] = {
     val symbols : List[Symbol] = symbolsOf(ts)
     putDefn(genDLabel()){ l =>
       for ( _ <- forM_(symbols)(addSymbol(_, l));
-            statements <- forM(sugared.stats)( stat => genStat(stat, ts.flatMap(searchSamePosition(stat, _))) ))
+            statements <- forM(sugared.stats)( stat => genStat(stat, searchSamePosition(stat, ts)) ))
       yield Defn.Package(l, symbols, sugared.ref, statements)
     }
   //  raiseError(s"Found ${symbols.length} matching symbols and ${ts.length} matching asts for package definition ${sugared.ref}.")
