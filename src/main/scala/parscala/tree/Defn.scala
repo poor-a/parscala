@@ -177,11 +177,11 @@ object Defn {
       cata(
           (l, pats, _symbols, rhs) => // val
             for (right <- Expr.toDotGen(rhs);
-                 val_ <- DotGen.node(DotNode.record(l, "Val", pats.toString));
+                 val_ <- DotGen.node(DotNode.record(l, "Val", pats.mkString(", ")));
                  _ <- DotGen.edge(val_, right, "rhs"))
             yield val_
         , (l, pats, _symbols, oRhs) => // var
-            for (var_ <- DotGen.node(DotNode.record(l, "Var", pats.toString));
+            for (var_ <- DotGen.node(DotNode.record(l, "Var", pats.mkString(", ")));
                  optionTraverse : scalaz.Traverse[Option] = scalaz.std.option.optionInstance;
                  _ <- optionTraverse.traverse[DotGen.DotGen, Expr, Unit](oRhs)(rhs =>
                         for (right <- Expr.toDotGen(rhs);
@@ -192,7 +192,7 @@ object Defn {
             yield var_
         , (l, _symbols, name, argss, body) => // method
             for (b <- Expr.toDotGen(body);
-                 args = argss.map(_.map(_.name).mkString("(",")",", ")).mkString("");
+                 args = argss.map(_.map(_.name).mkString("(",", ", ")")).mkString("");
                  m <- DotGen.node(DotNode.record(l, "Method", s"${name.toString}$args"));
                  _ <- DotGen.edge(m, b, "body"))
             yield m

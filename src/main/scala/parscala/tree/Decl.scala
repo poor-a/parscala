@@ -87,7 +87,7 @@ object Decl {
         , (l, pats, _symbols) => // variable
             DotGen.node(DotNode.record(l, "Var", pats.mkString(", ")))
         , (l, _symbol, name, argss) => { // method
-            val args = argss.map(_.map(_.name).mkString("(",")", ", ")).mkString("")
+            val args = argss.map(_.map(_.name).mkString("(", ", ", ")")).mkString("")
             DotGen.node(DotNode.record(l, "Method", s"$name$args"))
           }
         , (l, _symbol, name, _params, _bounds) => // type

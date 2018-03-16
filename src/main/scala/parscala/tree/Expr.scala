@@ -786,15 +786,19 @@ object Expr {
 
   def toDot(n : Expr) : DotGraph = {
     val (nodes, edges) = DotGen.exec(toDotGen(n))
-    DotGraph("", nodes.reverse, edges)
+    DotGraph("", nodes, edges)
   }
 
   def toDotGen(n : Expr) : DotGen.DotGen[DotNode] = {
       cata(
-          (l, lit, t) => // literal
-            DotGen.node(DotNode.record(l, "Literal", s"${lit.toString}, types: ${t.toString}"))
-        , (l, ident, _, t) => // identifier reference
-            DotGen.node(DotNode.record(l, "Identifier", s"${ident.toString}, types: ${t.toString}"))
+          (l, lit, t) => { // literal
+            val types : String = t.mkString(" or ")
+            DotGen.node(DotNode.record(l, "Literal", s"${lit.toString}, types: $types"))
+          }
+        , (l, ident, _, t) => { // identifier reference
+            val types : String = t.mkString(" or ")
+            DotGen.node(DotNode.record(l, "Identifier", s"${ident.toString}, types: $types"))
+          }
         , (l, lhs, rhs, t) => // assignment
             for (left <- toDotGen(lhs);
                  right <- toDotGen(rhs);
