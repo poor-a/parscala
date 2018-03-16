@@ -4,7 +4,7 @@ package parscala
  * Label type for patterns
  */
 class PLabel (val l : Int) extends AnyVal {
-  override def toString : String = l.toString
+  override def toString : String = s"PLabel_${l.toString}"
 }
 
 /**

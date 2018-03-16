@@ -7,7 +7,7 @@ import scalaz.syntax.ShowSyntax
  * Label type for (sub)expressions and statements
  */
 class SLabel (val l : Int) extends AnyVal {
-  override def toString : String = l.toString
+  override def toString : String = s"SLabel_${l.toString}"
 }
 
 /**
