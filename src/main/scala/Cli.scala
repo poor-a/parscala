@@ -17,6 +17,13 @@ class Cli {
      .required(false)
      .build()
 
+  private[this] val showAst : cli.Option = 
+    cli.Option.builder("ast")
+     .longOpt("show-ast")
+     .desc("show the abstract syntax tree in a window")
+     .required(false)
+     .build()
+
   private[this] val showCalls : cli.Option = 
     cli.Option.builder("c")
      .longOpt("show-calls")
@@ -72,7 +79,7 @@ class Cli {
      .build()  
 
   private val options : cli.Options = {
-    val options = List(method, showCfg, showCalls, showDataflow, dotOutput, files, dirs, classpath, help)
+    val options = List(method, showAst, showCfg, showCalls, showDataflow, dotOutput, files, dirs, classpath, help)
     options.foldLeft(new cli.Options){(acc, o) => acc.addOption(o)}
   }
 
@@ -90,6 +97,7 @@ class Cli {
     try {
       val result = parser.parse(options, args)
       Right(new Config(Option(result.getOptionValue(method.getOpt)),
+                       result.hasOption(showAst.getOpt),
                        result.hasOption(showCfg.getOpt),
                        result.hasOption(showCalls.getOpt),
                        result.hasOption(showDataflow.getOpt),

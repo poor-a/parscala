@@ -13,6 +13,7 @@ import java.nio.file.{Path, Paths, Files, StandardOpenOption, FileAlreadyExistsE
 
 case class Config (
   val method : Option[String],
+  val showAst : Boolean,
   val showCfg : Boolean,
   val showCallGraph : Boolean,
   val showDataflowGraph : Boolean,
@@ -71,6 +72,8 @@ object ParScala {
               oErr foreach { err => println("ERROR: " + err) }
               println("decls: " + pgraph.declarations)
               println("defns: " + pgraph.definitions)
+              if (c.showAst)
+                MainWindow.showDotWithTitle(pgraph.toDot, "AST")
               if (c.showCallGraph) {
                 MainWindow.showCallGraph(CallGraphBuilder.fullCallGraph(pgraph))
               }
@@ -120,7 +123,7 @@ object ParScala {
                         println("Method %s is not found.".format(mName))
                     }
                   }
-                , Console.err.println("No method is specified. Try using -m")
+                , ()
                 )
             }
           } 
