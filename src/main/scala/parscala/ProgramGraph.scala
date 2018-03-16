@@ -1,5 +1,7 @@
 package parscala
 
+import parscala.Control.{forM, mapM_}
+import parscala.dot.{DotNode, DotEdge, DotGen, DotGraph}
 import parscala.{tree => tr}
 //import callgraph.{CallGraph,CallGraphBuilder}
 
@@ -14,13 +16,22 @@ class ProgramGraph (
   def lookupDeclDefn(l : DLabel) : Option[Either[tr.Decl, tr.Defn]] =
     declarations.get(l).map(Left(_)) orElse definitions.get(l).map(Right(_))
 
-  def toDot : dot.DotGraph =
-    topLevels.foldLeft(dot.DotGraph("Program graph", List(), List())){
-      (g, declOrDefn) => g + declOrDefn.fold(
-                                (decl : tr.Decl) => tr.Decl.toDot(decl)
-                              , (defn : tr.Defn) => tr.Defn.toDot(defn)
-                              )
-    }
+  def toDot : dot.DotGraph = {
+    val (nodes, edges) : (List[DotNode], List[DotEdge]) = DotGen.exec(
+      for (nodes <- forM(topLevels)(
+              (declOrDefn : Either[tr.Decl, tr.Defn]) => 
+                declOrDefn.fold(
+                    (decl : tr.Decl) => tr.Decl.toDotGen(decl)
+                  , (defn : tr.Defn) => tr.Defn.toDotGen(defn)
+                  )
+            );
+          root <- DotGen.node(DotNode.record("root", "Root", "")(scalaz.std.string.stringInstance));
+          _ <- mapM_((n : DotNode) => DotGen.edge(root, n, ""), nodes))
+      yield ()
+    )
+        
+    DotGraph("program_graph", nodes, edges)
+  }
 }
 
 /*

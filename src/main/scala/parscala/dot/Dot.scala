@@ -34,7 +34,7 @@ object DotNode {
   def apply(id : String) : DotNode =
     new DotNode("node_%s".format(dotLegaliseId(id)), List.empty)
 
-  def apply(id : SLabel) : DotNode = 
+  def apply(id : SLabel) : DotNode =
     new DotNode("node_%s".format(dotLegaliseId(id.toString)), List.empty)
 
   def record[A](l : A, header : String, body : String)(implicit show : Show[A]) : DotNode =
@@ -42,7 +42,6 @@ object DotNode {
       !! DotAttr.shape(Shape.Record) 
       !! DotAttr.labelWithPorts("{ %s - %s | %s }".format(l.toString, header, Dot.dotEscape(body))))
 }
-
 
 class DotAttr(val key : String, val value : String) {
   override def toString : String = 
@@ -108,9 +107,6 @@ object DotEdge {
 }
 
 class DotGraph(val name : String, val blocks : Traversable[DotNode], val edges : Traversable[DotEdge], val attrs : List[DotAttr]) {
-  def +(g : DotGraph) : DotGraph =
-    new DotGraph(name, g.blocks ++ blocks, g.edges ++ edges, g.attrs ++ attrs)
-
   def addEdges(es : Traversable[DotEdge]) : DotGraph = {
     new DotGraph(name, blocks, es ++ edges, attrs)
   }
@@ -122,9 +118,6 @@ class DotGraph(val name : String, val blocks : Traversable[DotNode], val edges :
 object DotGraph {
   def apply(name : String, blocks : Traversable[DotNode], edges : Traversable[DotEdge]) : DotGraph =
     new DotGraph(name, blocks, edges, List.empty)
-
-  def empty(name : String) : DotGraph =
-    new DotGraph(name, List.empty, List.empty, List.empty)
 }
 
 object Dot {

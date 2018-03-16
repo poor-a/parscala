@@ -5,11 +5,11 @@ import scala.language.higherKinds
 
 import scala.meta
 
-import scalaz.{State, StateT, \/, Traverse, Monad, MonadState, MonadTrans, IndexedStateT}
+import scalaz.{StateT, \/, Traverse, Monad, MonadState, MonadTrans, IndexedStateT}
 import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 
-import parscala.Control.{mapM, foldM_, forM, forM_}
-import dot.{DotAttr, DotGraph, DotNode, DotEdge}
+import parscala.Control.{mapM, forM, forM_}
+import dot.{DotGraph, DotNode, DotGen}
 
 class ExprTree (val root : Expr, val nodes : ExprMap)
 
@@ -785,185 +785,132 @@ object Expr {
   }
 
   def toDot(n : Expr) : DotGraph = {
-    type St = (List[DotNode], List[DotEdge])
-    type DotGen[A] = State[St, A]
+    val (nodes, edges) = DotGen.exec(toDotGen(n))
+    DotGraph("", nodes.reverse, edges)
+  }
 
-    val dotGenState : MonadState[DotGen, St] = IndexedStateT.stateMonad
-
-    def addNode(node : DotNode) : DotGen[DotNode] = add(node, List())
-
-    def add(node : DotNode, edges : List[DotEdge]) : DotGen[DotNode] = 
-      for (_ <- dotGenState.modify{ case (ns, es) => (node :: ns, edges ++ es) })
-      yield node
-
-    def addEdge(edge : DotEdge) : DotGen[Unit] =
-      dotGenState.modify{ case (ns, es) => (ns, edge :: es) }
-
-    def edge(source : DotNode, target : DotNode, label : String) : DotEdge =
-      DotEdge(source, target) !! DotAttr.label(label)
-
-    def enum(parent : DotNode, children : List[DotNode], eLabelTemplate : String => String) : DotGen[Unit] = 
-      foldM_[DotGen, Int, DotNode]((i : Int, child : DotNode) =>
-                for (_ <- addEdge(edge(parent, child, eLabelTemplate(i.toString)))) yield i + 1,
-             0,
-             children)
-
-    def deepEnum(parent : DotNode, children : List[List[DotNode]], eLabelTemplate : (String, String) => String) : DotGen[Unit] =
-      foldM_[DotGen, Int, List[DotNode]]((i, chldrn) =>
-                for (_ <- enum(parent, chldrn, eLabelTemplate(i.toString, _))) yield i + 1,
-            0,
-            children)
-
-    def formatExpr(n : Expr) : DotGen[DotNode] =
+  def toDotGen(n : Expr) : DotGen.DotGen[DotNode] = {
       cata(
           (l, lit, t) => // literal
-            add(DotNode.record(l, "Literal", s"${lit.toString}, types: ${t.toString}"), List())
+            DotGen.node(DotNode.record(l, "Literal", s"${lit.toString}, types: ${t.toString}"))
         , (l, ident, _, t) => // identifier reference
-            add(DotNode.record(l, "Identifier", s"${ident.toString}, types: ${t.toString}"), List())
+            DotGen.node(DotNode.record(l, "Identifier", s"${ident.toString}, types: ${t.toString}"))
         , (l, lhs, rhs, t) => // assignment
-            formatExpr(lhs) >>= (left => 
-            formatExpr(rhs) >>= (right => {
-              val as = DotNode.record(l, "Assignment", t.toString())
-              val lEdge = edge(as, left, "left")
-              val rEdge = edge(as, right, "right")
-              add(as, List(lEdge, rEdge))
-            }))
+            for (left <- toDotGen(lhs);
+                 right <- toDotGen(rhs);
+                 as <- DotGen.node(DotNode.record(l, "Assignment", t.toString()));
+                 _ <- DotGen.edge(as, left, "left");
+                 _ <- DotGen.edge(as, right, "right"))
+            yield as
         , (l, m, args, _t) => // application
-            formatExpr(m) >>= ( method => 
-            mapM(formatExpr, args) >>= (nodes => {
-            val app = DotNode.record(l, "Application", "")
-            val edgeToMethod = edge(app, method, "method")
-            enum(app, nodes, "arg(%s)".format(_)) >>
-            add(app, List(edgeToMethod))
-            }))
+            for (method <- toDotGen(m);
+                 nodes <- mapM(toDotGen, args);
+                 app <- DotGen.node(DotNode.record(l, "Application", ""));
+                 _ <- DotGen.edge(app, method, "method");
+                 _ <- DotGen.enum(app, nodes, "arg(%s)".format(_)))
+            yield app
         , (l, lhs, op, args, _t) => // infix application
-            formatExpr(lhs) >>= (lhsNode =>
-            mapM(formatExpr, args) >>= (nodes => {
-            val app = DotNode.record(l, "Infix application", op.toString)
-            addEdge(edge(app, lhsNode, "left"))
-            enum(app, nodes, "arg(%s)".format(_))
-            add(app, List())
-            }))
+            for (lhsNode <- toDotGen(lhs);
+                 nodes <- mapM(toDotGen, args);
+                 app <- DotGen.node(DotNode.record(l, "Infix application", op.toString));
+                 _ <- DotGen.edge(app, lhsNode, "left");
+                 _ <- DotGen.enum(app, nodes, "arg(%s)".format(_)))
+            yield app
         , (l, op, arg, _t) => // unary application
-            formatExpr(arg) >>= (argNode => {
-            add(argNode, List())
-            val app = DotNode.record(l, "Unary application", op.toString)
-            add(app, List(edge(app, argNode, "arg")))
-            })
+            for (argNode <- toDotGen(arg);
+                 app <- DotGen.node(DotNode.record(l, "Unary application", op.toString));
+                 _ <- DotGen.edge(app, argNode, "arg"))
+            yield app
         , (l, class_, argss, t) => // new
-            mapM(mapM(formatExpr, _ : List[Expr]), argss) >>= (nodess => {
-              val newE = DotNode.record(l, "New", class_.toString)
-              deepEnum(newE, nodess, "arg(%s, %s)".format(_, _)) >>
-              add(newE, List())
-            })
+            for (newE <- DotGen.node(DotNode.record(l, "New", class_.toString));
+                 nodess <- mapM(mapM(toDotGen, _ : List[Expr]), argss);
+                 _ <- DotGen.deepEnum(newE, nodess, "arg(%s, %s)".format(_, _)))
+            yield newE
         , (l, obj, termName, t) => // selection
-            formatExpr(obj) >>= (o => {
-              val select = DotNode.record(l, "Selection", termName.toString())
-              add(select, List(edge(select, o, "")))
-            })
+            for (o <- toDotGen(obj);
+                 select <- DotGen.node(DotNode.record(l, "Selection", termName.toString()));
+                 _ <- DotGen.edge(select, o, ""))
+            yield select
         , (l, typeName, _t) => // this
-            addNode(DotNode.record(l, "This", typeName.toString))
+            DotGen.node(DotNode.record(l, "This", typeName.toString))
         , (l, thisp, superp, _t) => // super
-            addNode(DotNode.record(l, "Super", thisp.toString + " " + superp.toString))
+            DotGen.node(DotNode.record(l, "Super", thisp.toString + " " + superp.toString))
         , (l, comps, t) => // tuple
-            mapM(formatExpr, comps) >>= (nodes => {
-              val tuple = DotNode.record(l, "Tuple", t.toString())
-              enum(tuple, nodes,"comp(%s)".format(_))
-              add(tuple, List())
-            })
+            for (nodes <- mapM(toDotGen, comps);
+                 tuple <- DotGen.node(DotNode.record(l, "Tuple", t.toString()));
+                 _ <- DotGen.enum(tuple, nodes,"comp(%s)".format(_)))
+            yield tuple
         , (l, pred, thenE, t) => // if-then
-            formatExpr(pred) >>= (p =>
-            formatExpr(thenE) >>= (th => {
-              val ifE = DotNode.record(l, "If-then", "")
-              add(ifE, List(edge(ifE, p, "predicate"),
-                            edge(ifE, th, "then")))
-            }))
+            for (p <- toDotGen(pred);
+                 then_ <- toDotGen(thenE);
+                 ifE <- DotGen.node(DotNode.record(l, "If-then", ""));
+                 _ <- DotGen.edge(ifE, p, "predicate");
+                 _ <- DotGen.edge(ifE, then_, "then"))
+            yield ifE
         , (l, pred, thenE, elseE, t) => // if-then-else
-            formatExpr(pred) >>= (p =>
-            formatExpr(thenE) >>= (th =>
-            formatExpr(elseE) >>= (el => {
-              val ifE = DotNode.record(l, "If-then-else", "")
-              add(ifE, List(edge(ifE, p, "predicate"),
-                            edge(ifE, th, "then"),
-                            edge(ifE, el, "else")))
-            })))
+            for (p <- toDotGen(pred);
+                 then_ <- toDotGen(thenE);
+                 else_ <- toDotGen(elseE);
+                 ifE <- DotGen.node(DotNode.record(l, "If-then-else", ""));
+                 _ <- DotGen.edge(ifE, p, "predicate");
+                 _ <- DotGen.edge(ifE, then_, "then");
+                 _ <- DotGen.edge(ifE, else_, "else"))
+            yield ifE
         , (l, pred, body, t) => // while loop
-            formatExpr(pred) >>= (p =>
-            formatExpr(body) >>= (b => {
-              val whileE = DotNode.record(l, "While loop", "")
-              add(whileE, List(edge(whileE, p, "predicate"), 
-                               edge(whileE, b, "body")))
-            }))
+            for (p <- toDotGen(pred);
+                 b <- toDotGen(body);
+                 whileE <- DotGen.node(DotNode.record(l, "While loop", ""));
+                 _ <- DotGen.edge(whileE, p, "predicate");
+                 _ <- DotGen.edge(whileE, b, "body"))
+            yield whileE
         , (l, enums, body, t) => // for loop
-//            mapM(formatExpr, enums) >>= (nodes =>
-            formatExpr(body) >>= (b => {
-              val forE = DotNode.record(l, "For loop", "")
-//              enum(forE, nodes, "enum(%s)".format(_)) >>
-              add(forE, List(edge(forE, b, "body")))
-//            }))
-            })
+            for (b <- toDotGen(body);
+                 forE <- DotGen.node(DotNode.record(l, "For loop", ""));
+                 _ <- DotGen.edge(forE, b, "body"))
+            yield forE
         , (l, enums, body, t) => // for-yield loop
-//            mapM(formatExpr, enums) >>= (nodes =>
-            formatExpr(body) >>= (b => {
-              val forE = DotNode.record(l, "For-yield loop", "")
-//              enum(forE, nodes, "enum(%s)".format(_)) >>
-              add(forE, List(edge(forE, b, "yield")))
-//            }))
-            })
-        , (l, t) => { // return
-            val returnE = DotNode.record(l, "Return", "")
-            add(returnE, List())
-          }
+            for (b <- toDotGen(body);
+                 forE <- DotGen.node(DotNode.record(l, "For-yield loop", ""));
+                 _ <- DotGen.edge(forE, b, "yield"))
+            yield forE
+        , (l, t) => // return
+            DotGen.node(DotNode.record(l, "Return", ""))
         , (l, expr, t) => // return with expr
-            formatExpr(expr) >>= (e => {
-              val returnE = DotNode.record(l, "Return", "")
-              add(returnE, List(edge(returnE, e, "return")))
-            })
+            for (e <- toDotGen(expr);
+                 returnE <- DotGen.node(DotNode.record(l, "Return", ""));
+                 _ <- DotGen.edge(returnE, e, "return"))
+            yield returnE
         , (l, expr, t) => // throw
-            formatExpr(expr) >>= (e => {
-              val throwE = DotNode.record(l, "Throw", "")
-              add(throwE, List(edge(throwE, e, "throw")))
-            })
+            for (e <- toDotGen(expr);
+                 throwE <- DotGen.node(DotNode.record(l, "Throw", ""));
+                 _ <- DotGen.edge(throwE, e, "throw"))
+            yield throwE
         , (l, stmts, _) => // block
-            for (nodes <- mapM[DotGen, Statement, DotNode](
+            for (nodes <- mapM[DotGen.DotGen, Statement, DotNode](
                               (stmt : Statement) =>
-                                stmt.fold((decl : Decl) => dotGenState.pure(DotNode.record(decl.label, "Declaration", ""))
-                                         ,(defn : Defn) => dotGenState.pure(DotNode.record(defn.label, "Definition", ""))
-                                         ,(e : Expr) => formatExpr(e)
+                                stmt.fold((decl : Decl) => Decl.toDotGen(decl)
+                                         ,(defn : Defn) => Defn.toDotGen(defn)
+                                         ,(e : Expr) => toDotGen(e)
                                          )
                             , stmts
                             );
-                 b : DotNode = DotNode.record(l, "Block", "");
-                 _ <- enum(b, nodes, "expr(%s)".format(_));
-                 node <- add(b, List()))
-             yield node
+                 b <- DotGen.node(DotNode.record(l, "Block", ""));
+                 _ <- DotGen.enum(b, nodes, "expr(%s)".format(_)))
+             yield b
 /*        , (l, args, body, _) => // lambda function
-            mapM(formatExpr, args) >>= (nodes => {
-              formatExpr(body) >>= (b => {
+            mapM(toDotGen, args) >>= (nodes => {
+              toDotGen(body) >>= (b => {
                 val lambda = DotNode.record(l, "Lambda", "")
                 enum(lambda, nodes, "arg(%s)".format(_)) >>
                 add(lambda, List(edge(lambda, b, "body")))
               })
             })
 */
-        , (l, expr, _t) => { // other expression
-            val e = DotNode.record(l, "Expression", expr.toString())
-            add(e, List())
-          }
+        , (l, expr, _t) => // other expression
+            DotGen.node(DotNode.record(l, "Expression", expr.toString()))
         , n
         )
-
-    val (nodes, edges) = formatExpr(n).exec((List(), List()))
-    DotGraph("", nodes.reverse, edges)
   }
-/*
-  def resugar(root : Expr, transformer : Expr => NodeGen[Expr]) : NodeGen[Expr] = {
-    for (transformRes <- transformer(root))
-    yield transformRes match {
-      }
-  }
-*/
-  
 }
 
 sealed abstract class TransformResult[A]

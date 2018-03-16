@@ -2,6 +2,7 @@ package parscala
 package tree
 
 import parscala.dot
+import parscala.dot.{DotNode, DotGen}
 import scala.meta
 
 /**
@@ -75,36 +76,24 @@ object Decl {
   /** Converts a declaration into a graph.
    */
   def toDot(d : Decl) : dot.DotGraph = {
-    val (_, tree) = toTree(d)
-    dot.DotGraph("Program graph", List(), List()) + tree
+    val (nodes, edges) : (List[DotNode], List[dot.DotEdge]) = DotGen.exec(toDotGen(d))
+    dot.DotGraph("", nodes, edges)
   }
 
-  /** Helper function of toDot for generating dot nodes and edges
-   *  from a declaration.
-   *
-   *  @returns root and its children with edges of the tree
-   */
-  private def toTree(decl : Decl) : (dot.DotNode, dot.DotGraph) =
-    cata( (l, _pats, _symbols) => { // value
-            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(decl.toString)
-            (root, dot.DotGraph("", List(root), List()))
+  def toDotGen(decl : Decl) : dot.DotGen.DotGen[dot.DotNode] =
+    cata( 
+        (l, pats, _symbols) => // value
+          DotGen.node(DotNode.record(l, "Val", pats.mkString(", ")))
+        , (l, pats, _symbols) => // variable
+            DotGen.node(DotNode.record(l, "Var", pats.mkString(", ")))
+        , (l, _symbol, name, argss) => { // method
+            val args = argss.map(_.map(_.name).mkString("(",")", ", ")).mkString("")
+            DotGen.node(DotNode.record(l, "Method", s"$name$args"))
           }
-        , (l, _pats, _symbols) => { // variable
-            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(decl.toString)
-            (root, dot.DotGraph("", List(root), List()))
-          }
-        , (l, symbol, _name, _argss) => { // method
-            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(decl.toString)
-            (root, dot.DotGraph("", List(root), List()))
-          }
-        , (l, symbol, _name, _params, _bounds) => { // type
-            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(decl.toString)
-            (root, dot.DotGraph("", List(root), List()))
-          }
-        , (l, sugared) => { // import
-            val root : dot.DotNode = dot.DotNode(l.toString) !! dot.DotAttr.label(decl.toString)
-            (root, dot.DotGraph("", List(root), List()))
-          }
+        , (l, _symbol, name, _params, _bounds) => // type
+            DotGen.node(DotNode.record(l, "Type", name.toString))
+        , (l, sugared) => // import
+            DotGen.node(DotNode.record(l, "Import", sugared.toString))
         , decl
         )
 

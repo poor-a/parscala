@@ -1,7 +1,8 @@
 package parscala
 package tree
 
-import parscala.dot
+import parscala.Control.mapM
+import parscala.dot.{DotGen, DotNode, DotGraph}
 
 sealed abstract class Defn {
   def label : DLabel
@@ -101,7 +102,7 @@ object Defn {
              , defn : Defn
              ) : A =
     defn match {
-      case Var(l, pats, symbols, rhs) => fVar(l, pats, symbols, rhs)
+      case Var(l, pats, symbols, oRhs) => fVar(l, pats, symbols, oRhs)
       case Val(l, pats, symbols, rhs) => fVal(l, pats, symbols, rhs)
       case Method(l, sym, name, argss, body) => fMethod(l, sym, name, argss, body)
       case Class(l, sym, name, stats) => fClass(l, sym, name, stats)
@@ -160,6 +161,67 @@ object Defn {
       case _ => None
     }
 
-  def toDot(d : Defn) : dot.DotGraph =
-    dot.DotGraph("", List(), List())
+  def toDot(d : Defn) : DotGraph = {
+    val (nodes, edges) = DotGen.exec(toDotGen(d))
+    DotGraph("", nodes, edges)
+  }
+
+  def toDotGen(defn : Defn) : DotGen.DotGen[DotNode] = {
+    def formatStatement(stmt : Statement) : DotGen.DotGen[DotNode] =
+      stmt.fold(
+          (decl : Decl) => Decl.toDotGen(decl)
+        , (defn : Defn) => Defn.toDotGen(defn)
+        , (expr : Expr) => Expr.toDotGen(expr)
+        )
+
+      cata(
+          (l, pats, _symbols, rhs) => // val
+            for (right <- Expr.toDotGen(rhs);
+                 val_ <- DotGen.node(DotNode.record(l, "Val", pats.toString));
+                 _ <- DotGen.edge(val_, right, "rhs"))
+            yield val_
+        , (l, pats, _symbols, oRhs) => // var
+            for (var_ <- DotGen.node(DotNode.record(l, "Var", pats.toString));
+                 optionTraverse : scalaz.Traverse[Option] = scalaz.std.option.optionInstance;
+                 _ <- optionTraverse.traverse[DotGen.DotGen, Expr, Unit](oRhs)(rhs =>
+                        for (right <- Expr.toDotGen(rhs);
+                             _ <- DotGen.edge(var_, right, "rhs"))
+                        yield ()
+                      )
+                )
+            yield var_
+        , (l, _symbols, name, argss, body) => // method
+            for (b <- Expr.toDotGen(body);
+                 args = argss.map(_.map(_.name).mkString("(",")",", ")).mkString("");
+                 m <- DotGen.node(DotNode.record(l, "Method", s"${name.toString}$args"));
+                 _ <- DotGen.edge(m, b, "body"))
+            yield m
+        , (l, _symbols, name, statements) => // class
+            for (stmts <- mapM(formatStatement, statements);
+                 class_ <- DotGen.node(DotNode.record(l, "Class", name.toString));
+                 _ <- DotGen.enum(class_, stmts, Function.const("")))
+            yield class_
+        , (l, _symbols, name, statements) => // trait
+            for (stmts <- mapM(formatStatement, statements);
+                 trait_ <- DotGen.node(DotNode.record(l, "Trait", name.toString));
+                 _ <- DotGen.enum(trait_, stmts, Function.const("")))
+            yield trait_
+        , (l, _symbols, name, statements) => // object
+            for (stmts <- mapM(formatStatement, statements);
+                 object_ <- DotGen.node(DotNode.record(l, "Object", name.toString));
+                 _ <- DotGen.enum(object_, stmts, Function.const("")))
+            yield object_
+        , (l, _symbols, name, statements) => // package object
+            for (stmts <- mapM(formatStatement, statements);
+                 pobject <- DotGen.node(DotNode.record(l, "Package object", name.toString));
+                 _ <- DotGen.enum(pobject, stmts, Function.const("")))
+            yield pobject
+        , (l, _symbols, name, statements) => // package
+            for (stmts <- mapM(formatStatement, statements);
+                 package_ <- DotGen.node(DotNode.record(l, "Package", name.toString));
+                 _ <- DotGen.enum(package_, stmts, Function.const("")))
+            yield package_
+        , defn
+        )
+  }
 }
