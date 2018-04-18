@@ -32,7 +32,11 @@ object ParScala {
                         (Scalaz.listTraverseInst)
             )
     tr.Expr.runNodeGen(genDecls) match {
-      case \/-((st, _)) =>
+      case \/-((log, (st, _))) =>
+        if (!log.isEmpty) {
+          val l : String = log.mkString("\n")
+          println(s"During the AST building, we noticed the following:\n$l")
+        }
         (new ProgramGraph(st.decls, st.defns, st.exprs, st.symbols, st.topLevels, st.callTargets), None)
       case -\/(err) =>
         (new ProgramGraph(Map(), Map(), Map(), Map(), List(), Map()), Some(err))
