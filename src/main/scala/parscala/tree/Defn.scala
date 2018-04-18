@@ -175,13 +175,13 @@ object Defn {
         )
 
       cata(
-          (l, pats, _symbols, rhs) => // val
+          (l, pats, symbols, rhs) => // val
             for (right <- Expr.toDotGen(rhs);
-                 val_ <- DotGen.node(DotNode.record(l, "Val", pats.mkString(", ")));
+                 val_ <- DotGen.node(DotNode.record(l, "Val", pats.mkString(", ") + " : " + symbols.map(_.info).mkString(", ")));
                  _ <- DotGen.edge(val_, right, "rhs"))
             yield val_
-        , (l, pats, _symbols, oRhs) => // var
-            for (var_ <- DotGen.node(DotNode.record(l, "Var", pats.mkString(", ")));
+        , (l, pats, symbols, oRhs) => // var
+            for (var_ <- DotGen.node(DotNode.record(l, "Var", pats.mkString(", ") + " : " + symbols.map(_.info).mkString(", ")));
                  optionTraverse : scalaz.Traverse[Option] = scalaz.std.option.optionInstance;
                  _ <- optionTraverse.traverse[DotGen.DotGen, Expr, Unit](oRhs)(rhs =>
                         for (right <- Expr.toDotGen(rhs);
