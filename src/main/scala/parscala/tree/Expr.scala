@@ -263,13 +263,13 @@ object Expr {
     for (t <- trees; s = t.symbol; if s != null) yield s
 
   def genExpr(sugared : meta.Term, ts : List[Tree]) : NodeGen[Expr] = {
-    val samePos : List[Tree] = searchSamePosition(sugared, ts)
+    val samePos : List[Tree] = searchSamePosition(List(sugared.pos), ts)
     val types : List[scalac.Type] = samePos map (_.tpe)
     val childSamePos : meta.Tree => List[Tree] =
       if (samePos.isEmpty)
-        child => searchSamePosition(child, ts)
+        child => searchSamePosition(List(child.pos), ts)
       else
-        child => searchSamePosition(child, samePos)
+        child => searchSamePosition(List(child.pos), samePos)
 
     def resugarChild(child : meta.Term) : NodeGen[Expr] =
       genExpr(child, childSamePos(child))
@@ -382,7 +382,7 @@ object Expr {
     else
       raiseError(msg)
 
-  private def searchSamePosition(metaTree : meta.Tree, roots : List[Tree]) : List[Tree] = {
+  private def searchSamePosition(metaPoss : List[meta.Position], roots : List[Tree]) : List[Tree] = {
     def includes(p : scalac.Position, what : meta.Position) : Boolean =
       p.isRange && (p.start <= what.start && what.end <= p.end)
 
@@ -402,9 +402,9 @@ object Expr {
       )
 
     def inspect(t : Tree, visited : Set[Tree]) : ((List[Tree], Set[Tree]), Boolean) =
-      if (includes(t.pos, metaTree.pos))
+      if (metaPoss.exists(includes(t.pos, _)))
         if (!(visited contains t)) {
-          if (equals(t.pos, metaTree.pos))
+          if (metaPoss.exists(equals(t.pos, _)))
             ((List(t), visited + t), true)
           else
             ((List(), visited + t), true)
@@ -414,12 +414,16 @@ object Expr {
       else
         ((List(), visited), false)
 
-    search(roots, Set[Tree]())._1
+    val res = search(roots, Set[Tree]())._1
+    println("found " + res.length + " : ")
+    println(res.map(r => (r, r.pos)))
+    println("#####")
+    res
   }
 
   def resugar(sugared : meta.Source, desugared : Tree) : NodeGen[Unit] = {
     val metaStats : List[meta.Stat] = sugared.stats
-    forM_(metaStats){ stat => genStat(stat, searchSamePosition(stat, List(desugared))) }
+    forM_(metaStats){ stat => genStat(stat, searchSamePosition(List(stat.pos), List(desugared))) }
   }
 
   def genStat(sugared : meta.Stat, ts : List[Tree]) : NodeGen[Statement] =
@@ -442,22 +446,25 @@ object Expr {
       )
 
   def genDefn(sugared : meta.Defn, ts : List[Tree]) : NodeGen[Defn] = {
-    val samePos : List[Tree] = searchSamePosition(sugared, ts)
+    // used for definitions other than vals or vars
+    lazy val samePos : List[Tree] = searchSamePosition(List(sugared.pos), ts)
 
-    val childSamePos : meta.Tree => List[Tree] =
+    lazy val childSamePos : meta.Tree => List[Tree] =
       if (samePos.isEmpty)
-        child => searchSamePosition(child, ts)
+        child => searchSamePosition(List(child.pos), ts)
       else
-        child => searchSamePosition(child, ts)
+        child => searchSamePosition(List(child.pos), samePos)
 
     val symbols : List[Symbol] = symbolsOf(samePos)
 
     Control.defnCataMeta(
         (_mods, pats, _oDeclType, metaRhs) => _ => // value
           putDefn(genDLabel){ l => {
+              val mkPos : (Int, Int) => meta.Position = (start, end) => meta.Position.Range(sugared.pos.input, start, end)
+              val posToInspect : List[meta.Position] = mkPos(sugared.pos.start, pats.head.pos.end) :: pats.tail.init.map(_.pos) ++ List(mkPos(pats.last.pos.start, sugared.pos.end))
               val numVars : Int = pats.flatMap(Control.patNames).length
               for( _ <- m.whenM(symbols.length != numVars)
-                               (log(s"Number of variables ($numVars) and symbols (${symbols.length}) differ in definition of $pats at ${pats.head.pos}."));
+                               (log(s"Number of variables ($numVars) and symbols (${symbols.length}) differ in definition of $pats at ${sugared.pos}."));
                    _ <- m.unlessM(ts.forall{
                                  case scalac.ValDef(_, _, _, _) => true
                                  case _ => false
@@ -548,14 +555,14 @@ object Expr {
   def resugarTemplate(sugared : meta.Template, ts : List[Tree]) : NodeGen[List[Statement]] = {
     val metaStatements : List[meta.Stat] = sugared.stats
     val listTraverse : Traverse[List] = scalaz.std.list.listInstance
-    m.traverse(metaStatements){ statement => genStat(statement, searchSamePosition(statement, ts)) }(listTraverse)
+    m.traverse(metaStatements){ statement => genStat(statement, searchSamePosition(List(statement.pos), ts)) }(listTraverse)
   }
 
   def genPkg(sugared : meta.Pkg, ts : List[Tree]) : NodeGen[Defn.Package] = {
     val symbols : List[Symbol] = symbolsOf(ts)
     putDefn(genDLabel){ l =>
       for ( _ <- forM_(symbols)(addSymbol(_, l));
-            statements <- forM(sugared.stats)( stat => genStat(stat, searchSamePosition(stat, ts)) ))
+            statements <- forM(sugared.stats)( stat => genStat(stat, searchSamePosition(List(stat.pos), ts)) ))
       yield Defn.Package(l, symbols, sugared.ref, statements)
     }
   //  raiseError(s"Found ${symbols.length} matching symbols and ${ts.length} matching asts for package definition ${sugared.ref}.")
