@@ -14,12 +14,10 @@ object ParScala {
         cp => scalac.currentSettings.classpath.value = cp
       , ()
       )
-    val run = new scalac.Run()
-    run.compile(pathes.map(_.toString))
 
-    val desugaredAsts : Iterator[Tree] = run.units.map(_.body)
-    val sugaredSources : Iterator[meta.Parsed[meta.Source]] = pathes.toIterator.map(parseMeta)
-    val trees : Iterator[(Tree, meta.Source)] = desugaredAsts.zip(sugaredSources).flatMap { case (desugared, parseResult) =>
+    val desugaredAsts : List[Tree] = typeCheck(pathes.map(_.toString))
+    val sugaredSources : List[meta.Parsed[meta.Source]] = pathes.map(parseMeta)
+    val trees : List[(Tree, meta.Source)] = desugaredAsts.zip(sugaredSources).flatMap { case (desugared, parseResult) =>
       parseResult.fold(
           _ => List()
         , source =>
@@ -45,6 +43,13 @@ object ParScala {
 
   def parseMeta(path : nio.file.Path) : meta.Parsed[meta.Source] =
     meta.parsers.Parse.parseSource(inputs.Input.File(path), meta.dialects.Scala212)
+
+  def typeCheck(pathes : List[String]) : List[Tree] = {
+    val run = new scalac.Run()
+    run.compile(pathes)
+    run.units.map(_.body).toList
+  }
+
 
   def astOfExprWithSource(expr : String) : Option[(Tree, SourceFile)] = {
     import scalac.Quasiquote
