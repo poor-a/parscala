@@ -513,6 +513,7 @@ object Expr {
                           case _ => log(s"The matching ast for the method definition $name is not a method.")
                         }
                         (log(s"Found ${scope.length} matching asts for the method definition $name, expected 1."));
+                 symbols = symbolsOf(scope);
                  _ <- forM_(symbols)(addSymbol(_, l));
                  body <- genExpr(metaBody, childScope(samePos, scope)))
             yield Defn.Method(l, symbols, name, paramss, body)
@@ -522,45 +523,40 @@ object Expr {
       , (_mods, _name, _typeParams, _metaBody) => _ => // type
           raiseError("Type definitions are not supported yet.")
       , (_mods, name, _typeParams, _constructor, metaBody) => _ => // class
-          putDefn(genDLabel){ l =>
-            for (_ <- singleton(scope){
-                          case t : scalac.ClassDef => 
-                            (m.unlessM(t.symbol != null && t.symbol.isClass)
-                                      (log(s"The matching ast for the class definition $name is not a class.")))
-                          case _ => 
-                            log(s"The matching ast for the class definition $name is not a class.")
-                        }
-                        (log(s"Found ${scope.length} matching asts for the class definition $name, expected 1."));
-                _ <- forM_(symbols)(addSymbol(_, l));
-                statements <- resugarTemplate(metaBody, scope))
-           yield Defn.Class(l, symbols, name, statements)
+          putDefn(genDLabel){ l => {
+              val matchingClasses : List[Tree] = samePos.filter(t => t.symbol != null && t.symbol.isClass)
+              val symbols : List[Symbol] = symbolsOf(matchingClasses)
+              for (_ <- (m.unlessM(matchingClasses.length == 1)
+                          (log(s"Found ${matchingClasses.length} matching asts for the class definition $name, expected 1.")));
+                  _ <- forM_(symbols)(addSymbol(_, l));
+                  statements <- resugarTemplate(metaBody, matchingClasses))
+               yield Defn.Class(l, symbols, name, statements)
+            }
           }
       , (_mods, name, _typeParams, _constructor, metaBody) => _ => // trait
-          putDefn(genDLabel){ l =>
-            for (_ <- singleton(scope){
-                          case t : scalac.ClassDef => 
-                            (m.unlessM(t.symbol != null && !t.symbol.isClass)
-                                      (log(s"The matching ast for the trait definition $name is not a trait.")))
-                          case _ => 
-                            log(s"The matching ast for the trait definition $name is not a trait.")
-                        }
-                        (log(s"Found ${scope.length} matching asts for the trait definition $name, expected 1."));
-                 _ <- forM_(symbols)(addSymbol(_, l));
-                 statements <- resugarTemplate(metaBody, scope))
-            yield Defn.Trait(l, symbols, name, statements)
+          putDefn(genDLabel){ l => {
+              val matchingTraits : List[Tree] = samePos.filter(t => t.symbol != null && !t.symbol.isClass)
+              val symbols : List[Symbol] = symbolsOf(matchingTraits)
+              for (_ <- (m.unlessM(matchingTraits.length == 1)
+                          (log(s"Found ${matchingTraits.length} matching asts for the trait definition $name, expected 1.")));
+                   _ <- forM_(symbols)(addSymbol(_, l));
+                   statements <- resugarTemplate(metaBody, matchingTraits))
+              yield Defn.Trait(l, symbols, name, statements)
+            }
           }
       , (_mods, name, metaBody) => _ => // object
-          putDefn(genDLabel){ l =>
-            for(_ <- singleton(scope){
-                          case _ : scalac.ModuleDef =>
-                            m.pure(())
-                          case _ => 
-                            log(s"The matching ast for the object definition $name is not a object.")
-                        }
-                        (log(s"Found ${scope.length} matching asts for the object definition $name, expected 1."));
-                _ <- forM_(symbols)(addSymbol(_, l));
-                statements <- resugarTemplate(metaBody, scope))
-            yield Defn.Object(l, symbols, name, statements )
+          putDefn(genDLabel){ l => {
+              val matchingObjects : List[Tree] = samePos.filter{
+                  case _ : scalac.ModuleDef => true
+                  case _ => false
+                }
+              val symbols : List[Symbol] = symbolsOf(matchingObjects);
+              for (_ <- (m.unlessM(matchingObjects.length == 1)
+                          (log(s"Found ${matchingObjects.length} matching asts for the object definition $name, expected 1.")));
+                   _ <- forM_(symbols)(addSymbol(_, l));
+                   statements <- resugarTemplate(metaBody, matchingObjects))
+              yield Defn.Object(l, symbols, name, statements)
+            }
           }
       , sugared
       )
