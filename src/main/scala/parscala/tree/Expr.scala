@@ -445,59 +445,76 @@ object Expr {
       , sugared
       )
 
-  def genDefn(sugared : meta.Defn, ts : List[Tree]) : NodeGen[Defn] = {
+  def genDefn(sugared : meta.Defn, scope : List[Tree]) : NodeGen[Defn] = {
     // used for definitions other than vals or vars
-    lazy val samePos : List[Tree] = searchSamePosition(List(sugared.pos), ts)
+    lazy val samePos : List[Tree] = searchSamePosition(List(sugared.pos), scope)
 
-    lazy val childSamePos : meta.Tree => List[Tree] =
-      if (samePos.isEmpty)
-        child => searchSamePosition(List(child.pos), ts)
-      else
-        child => searchSamePosition(List(child.pos), samePos)
+    val childScope : (List[Tree], List[Tree]) => List[Tree] =
+      (samePos, ascdendantScope) =>
+        if (!samePos.isEmpty)
+          samePos
+        else
+          ascdendantScope
 
-    val symbols : List[Symbol] = symbolsOf(samePos)
+    lazy val symbols : List[Symbol] = symbolsOf(samePos)
 
     Control.defnCataMeta(
         (_mods, pats, _oDeclType, metaRhs) => _ => // value
           putDefn(genDLabel){ l => {
               val mkPos : (Int, Int) => meta.Position = (start, end) => meta.Position.Range(sugared.pos.input, start, end)
-              val posToInspect : List[meta.Position] = mkPos(sugared.pos.start, pats.head.pos.end) :: pats.tail.init.map(_.pos) ++ List(mkPos(pats.last.pos.start, sugared.pos.end))
+              // extends the first pattern's starting position and last pattern's ending position
+              val patternsPos : List[meta.Position] = pats match {
+                case List(pat) => List(mkPos(sugared.pos.start, sugared.pos.end))
+                case List(patFst, patSnd) => List(mkPos(sugared.pos.start, patFst.pos.end), mkPos(patSnd.pos.start, sugared.pos.end))
+                case _ => mkPos(sugared.pos.start, pats.head.pos.end) :: mkPos(pats.last.pos.start, sugared.pos.end) :: pats.tail.init.map(_.pos)
+              }
+              val valsSamePos : List[Tree] = searchSamePosition(patternsPos, scope)
+              val valsSymbols : List[Symbol] = symbolsOf(valsSamePos)
               val numVars : Int = pats.flatMap(Control.patNames).length
-              for( _ <- m.whenM(symbols.length != numVars)
-                               (log(s"Number of variables ($numVars) and symbols (${symbols.length}) differ in definition of $pats at ${sugared.pos}."));
-                   _ <- m.unlessM(ts.forall{
-                                 case scalac.ValDef(_, _, _, _) => true
-                                 case _ => false
-                               })(log(s"Not all desugared nodes are values in the definition of $pats."));
-                   _ <- forM_(symbols)(addSymbol(_, l));
-                   rhs <- genExpr(metaRhs, childSamePos(metaRhs)))
-              yield Defn.Val(l, pats, symbols, rhs)
+              for( _ <- m.whenM(valsSymbols.length != numVars)
+                               (log(s"Number of variables ($numVars) and symbols (${valsSymbols.length}) differ in definition of $pats at ${sugared.pos}."));
+                   _ <- m.unlessM(valsSamePos.forall{
+                                   case scalac.ValDef(_, _, _, _) => true
+                                   case t => {println("found " + t + "\n " + t.getClass); false}
+                                })(log(s"Not all desugared nodes are values in the definition of $pats."));
+                   _ <- forM_(valsSymbols)(addSymbol(_, l));
+                   rhs <- genExpr(metaRhs, childScope(valsSamePos, scope)))
+              yield Defn.Val(l, pats, valsSymbols, rhs)
             }
           }
       , (_mods, pats, _oDeclType, oMetaRhs) => _ => // variable
           putDefn(genDLabel){ l => {
+              val mkPos : (Int, Int) => meta.Position = (start, end) => meta.Position.Range(sugared.pos.input, start, end)
+              // extends the first pattern's starting position and last pattern's ending position
+              val patternsPos : List[meta.Position] = pats match {
+                case List(pat) => List(mkPos(sugared.pos.start, sugared.pos.end))
+                case List(patFst, patSnd) => List(mkPos(sugared.pos.start, patFst.pos.end), mkPos(patSnd.pos.start, sugared.pos.end))
+                case _ => mkPos(sugared.pos.start, pats.head.pos.end) :: mkPos(pats.last.pos.start, sugared.pos.end) :: pats.tail.init.map(_.pos)
+              }
+              val varsSamePos : List[Tree] = searchSamePosition(patternsPos, scope)
+              val varsSymbols : List[Symbol] = symbolsOf(varsSamePos)
               val optionTraverse : Traverse[Option] = scalaz.std.option.optionInstance
               val numVars : Int = pats.flatMap(Control.patNames).length
-              for( _ <- m.whenM(symbols.length != numVars)
+              for( _ <- m.whenM(varsSymbols.length != numVars)
                                (log(s"Number of variables ($numVars) and symbols (${symbols.length}) differ in definition of $pats."));
-                   _ <- m.unlessM(ts.forall{
-                                 case scalac.ValDef(_, _, _, _) => true
-                                 case _ => false
-                               })(log(s"Not all desugared nodes are values in the definition of $pats."));
-                   _ <- forM_(symbols)(addSymbol(_, l));
-                   oRhs <- optionTraverse.traverse(oMetaRhs)(metaRhs => genExpr(metaRhs, childSamePos(metaRhs))))
-              yield Defn.Var(l, pats, symbols, oRhs)
+                   _ <- m.unlessM(varsSamePos.forall{
+                                   case scalac.ValDef(_, _, _, _) => true
+                                   case _ => false
+                                 })(log(s"Not all desugared nodes are variables in the definition of $pats."));
+                   _ <- forM_(varsSymbols)(addSymbol(_, l));
+                   oRhs <- optionTraverse.traverse(oMetaRhs)(metaRhs => genExpr(metaRhs, childScope(varsSamePos, scope))))
+              yield Defn.Var(l, pats, varsSymbols, oRhs)
             }
           }
       , (_mods, name, _typeParams, paramss, oDeclType, metaBody) => _ => // method
           putDefn(genDLabel){ l =>
-            for (_ <- singleton(ts){
+            for (_ <- singleton(scope){
                           case _ : scalac.DefDef => m.pure(())
                           case _ => log(s"The matching ast for the method definition $name is not a method.")
                         }
-                        (log(s"Found ${ts.length} matching asts for the method definition $name, expected 1."));
+                        (log(s"Found ${scope.length} matching asts for the method definition $name, expected 1."));
                  _ <- forM_(symbols)(addSymbol(_, l));
-                 body <- genExpr(metaBody, childSamePos(metaBody)))
+                 body <- genExpr(metaBody, childScope(samePos, scope)))
             yield Defn.Method(l, symbols, name, paramss, body)
           }
       , (_mods, _name, _typeParams, _paramss, _oDeclType, _metaBody) => _ => // macro
@@ -506,44 +523,44 @@ object Expr {
           raiseError("Type definitions are not supported yet.")
       , (_mods, name, _typeParams, _constructor, metaBody) => _ => // class
           putDefn(genDLabel){ l =>
-           for (_ <- singleton(ts){
+            for (_ <- singleton(scope){
                           case t : scalac.ClassDef => 
                             (m.unlessM(t.symbol != null && t.symbol.isClass)
                                       (log(s"The matching ast for the class definition $name is not a class.")))
                           case _ => 
                             log(s"The matching ast for the class definition $name is not a class.")
                         }
-                        (log(s"Found ${ts.length} matching asts for the class definition $name, expected 1."));
+                        (log(s"Found ${scope.length} matching asts for the class definition $name, expected 1."));
                 _ <- forM_(symbols)(addSymbol(_, l));
-                statements <- resugarTemplate(metaBody, ts))
+                statements <- resugarTemplate(metaBody, scope))
            yield Defn.Class(l, symbols, name, statements)
           }
       , (_mods, name, _typeParams, _constructor, metaBody) => _ => // trait
           putDefn(genDLabel){ l =>
-            for (_ <- singleton(ts){
+            for (_ <- singleton(scope){
                           case t : scalac.ClassDef => 
                             (m.unlessM(t.symbol != null && !t.symbol.isClass)
                                       (log(s"The matching ast for the trait definition $name is not a trait.")))
                           case _ => 
                             log(s"The matching ast for the trait definition $name is not a trait.")
                         }
-                        (log(s"Found ${ts.length} matching asts for the trait definition $name, expected 1."));
+                        (log(s"Found ${scope.length} matching asts for the trait definition $name, expected 1."));
                  _ <- forM_(symbols)(addSymbol(_, l));
-                 statements <- resugarTemplate(metaBody, ts))
+                 statements <- resugarTemplate(metaBody, scope))
             yield Defn.Trait(l, symbols, name, statements)
           }
       , (_mods, name, metaBody) => _ => // object
           putDefn(genDLabel){ l =>
-            for(_ <- singleton(ts){
+            for(_ <- singleton(scope){
                           case _ : scalac.ModuleDef =>
                             m.pure(())
                           case _ => 
                             log(s"The matching ast for the object definition $name is not a object.")
                         }
-                        (log(s"Found ${ts.length} matching asts for the object definition $name, expected 1."));
+                        (log(s"Found ${scope.length} matching asts for the object definition $name, expected 1."));
                 _ <- forM_(symbols)(addSymbol(_, l));
-                statements <- resugarTemplate(metaBody, ts))
-            yield Defn.Object(l, symbols, name, statements)
+                statements <- resugarTemplate(metaBody, scope))
+            yield Defn.Object(l, symbols, name, statements )
           }
       , sugared
       )
@@ -552,10 +569,10 @@ object Expr {
   /**
    * Elements of 'ts' need not represent templates. It suffices if they have Template descendants.
    */
-  def resugarTemplate(sugared : meta.Template, ts : List[Tree]) : NodeGen[List[Statement]] = {
+  def resugarTemplate(sugared : meta.Template, scope : List[Tree]) : NodeGen[List[Statement]] = {
     val metaStatements : List[meta.Stat] = sugared.stats
     val listTraverse : Traverse[List] = scalaz.std.list.listInstance
-    m.traverse(metaStatements){ statement => genStat(statement, searchSamePosition(List(statement.pos), ts)) }(listTraverse)
+    m.traverse(metaStatements){ statement => genStat(statement, scope) }(listTraverse)
   }
 
   def genPkg(sugared : meta.Pkg, ts : List[Tree]) : NodeGen[Defn.Package] = {
