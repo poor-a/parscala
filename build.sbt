@@ -2,7 +2,7 @@ name := "ParScala"
 
 version := "0.1"
 
-scalaVersion := "2.12.4"
+scalaVersion := "2.12.6"
 
 logLevel := Level.Info
 
@@ -26,7 +26,6 @@ scalacOptions ++= Seq("-Xlint:_",
                       "-Ywarn-adapted-args",
                       "-opt:l:none",
                       "-target:jvm-1.8")
-
 
 enablePlugins(JavaAppPackaging)
 
