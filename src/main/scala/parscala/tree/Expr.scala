@@ -415,9 +415,6 @@ object Expr {
         ((List(), visited), false)
 
     val res = search(roots, Set[Tree]())._1
-    println("found " + res.length + " : ")
-    println(res.map(r => (r, r.pos)))
-    println("#####")
     res
   }
 
@@ -475,7 +472,7 @@ object Expr {
                                (log(s"Number of variables ($numVars) and symbols (${valsSymbols.length}) differ in definition of $pats at ${sugared.pos}."));
                    _ <- m.unlessM(valsSamePos.forall{
                                    case scalac.ValDef(_, _, _, _) => true
-                                   case t => {println("found " + t + "\n " + t.getClass); false}
+                                   case t => false
                                 })(log(s"Not all desugared nodes are values in the definition of $pats."));
                    _ <- forM_(valsSymbols)(addSymbol(_, l));
                    rhs <- genExpr(metaRhs, childScope(valsSamePos, scope)))

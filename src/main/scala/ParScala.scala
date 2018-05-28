@@ -70,8 +70,6 @@ object ParScala {
             } else {
               val (pgraph, oErr) : (ProgramGraph, Option[String]) = parscala.ParScala.analyse(scalaSourceFiles, c.classpath)
               oErr foreach { err => println("ERROR: " + err) }
-              println("decls: " + pgraph.declarations)
-              println("defns: " + pgraph.definitions)
               if (c.showAst)
                 MainWindow.showDotWithTitle(pgraph.toDot, "AST")
               if (c.showCallGraph) {
