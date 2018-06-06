@@ -118,6 +118,9 @@ class DotGraph(val name : String, val blocks : Traversable[DotNode], val edges :
 object DotGraph {
   def apply(name : String, blocks : Traversable[DotNode], edges : Traversable[DotEdge]) : DotGraph =
     new DotGraph(name, blocks, edges, List.empty)
+
+  def empty() : DotGraph = 
+    new DotGraph("", List.empty, List.empty, List.empty)
 }
 
 object Dot {

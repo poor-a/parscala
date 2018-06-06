@@ -25,7 +25,7 @@ object ParScala {
         )
     }
     val m : Monad[tr.Expr.NodeGen] = tr.Expr.nodeGenMonadInstance
-    val genDecls : tr.Expr.NodeGen[Unit] = 
+    val genDecls : tr.Expr.NodeGen[Unit] =
       m.void(m.sequence(trees.toList.map{ case (desugared, sugared) => tr.Expr.resugar(sugared, desugared) } )
                         (Scalaz.listTraverseInst)
             )
@@ -42,7 +42,8 @@ object ParScala {
   }
 
   def parseMeta(path : nio.file.Path) : meta.Parsed[meta.Source] =
-    meta.parsers.Parse.parseSource(inputs.Input.File(path), meta.dialects.Scala212)
+    // parsing again does not work with Input.File, as if scalameta caches input length
+    meta.parsers.Parse.parseSource(inputs.Input.Stream(java.nio.file.Files.newInputStream(path), java.nio.charset.Charset.forName("UTF-8")), meta.dialects.Scala212)
 
   def typeCheck(pathes : List[String]) : List[Tree] = {
     val run = new scalac.Run()

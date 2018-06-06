@@ -1,7 +1,8 @@
 import parscala._
-import parscala.callgraph.CallGraphBuilder
+import parscala.callgraph.{CallGraphBuilder, CallGraphVisualiser}
 import parscala.controlflow.{CFGraph, CFGPrinter}
 import parscala.df.{UseDefinition, DFGraph}
+import parscala.dot.DotGraph
 import parscala.file.DirectoryTraverser
 import parscala.tree
 
@@ -44,6 +45,51 @@ object ParScala {
     else
       Paths.get(path)
 
+  private def mkProgramGraph(scalaSourceFiles : List[Path], classpath : Option[String]) : ProgramGraph = {
+    val (pgraph, oErr) : (ProgramGraph, Option[String]) = parscala.ParScala.analyse(scalaSourceFiles, classpath)
+    oErr foreach { err => println("ERROR: " + err) }
+    pgraph
+  }
+
+  private def mkAst(pg : ProgramGraph) : DotGraph = pg.toDot
+
+  private def mkCallGraph(pg : ProgramGraph) : DotGraph =
+    CallGraphVisualiser.format(CallGraphBuilder.fullCallGraph(pg))
+
+  private def findMethod(name : String, pg : ProgramGraph) : Option[Either[tree.Decl.Method, tree.Defn.Method]] = {
+    val methods : List[Either[tree.Decl.Method, tree.Defn.Method]] = pg.classes.flatMap(_.methods)
+    println("methods: " + methods)
+    methods.find(_.fold(_.symbols, _.symbols).map(_.fullName) contains name)
+  }
+
+  private def onMethod[A](name : String, defn : tree.Defn.Method => A, decl : tree.Decl.Method => A, notFound : => A, pg : ProgramGraph) : A =
+    findMethod(name, pg) match {
+      case Some(Right(m)) => defn(m)
+      case Some(Left(m)) => decl(m)
+      case None => notFound
+    }
+
+  private def mkCfg(m : tree.Defn.Method, pg : ProgramGraph) : CFGraph =
+    CFGraph.fromExpression(m.body, pg)
+
+  private def mkDataflow(m : tree.Defn.Method, cfg : CFGraph) : DotGraph = {
+    val usedef : UseDefinition = UseDefinition.fromCFGraph(cfg)
+    val dataflow : DFGraph = DFGraph(m.body, usedef)
+    tree.Expr.toDot(m.body).addEdges(dataflow.toDotEdges)
+  }
+
+  private def noBody(name : String) : String =
+    s"The body of $name is not available."
+
+  private def noCfg(name : String) : String =
+    noBody(name) + " Could not generate the control flow graph."
+
+  private def noDataflow(name : String) : String =
+    noBody(name) + " Could not generate the data flow graph."
+
+  private def noMethod(name : String) : String =
+    s"Method $name is not found."
+
   def main(args : Array[String]) : Unit = {
     val cli = new Cli
     cli.parse(args) match {
@@ -68,60 +114,51 @@ object ParScala {
             if (scalaSourceFiles.isEmpty) {
               Console.err.println("No Scala files are found.")
             } else {
-              val (pgraph, oErr) : (ProgramGraph, Option[String]) = parscala.ParScala.analyse(scalaSourceFiles, c.classpath)
-              oErr foreach { err => println("ERROR: " + err) }
+              val analyse : () => ProgramGraph = () => mkProgramGraph(scalaSourceFiles, c.classpath)
+              val pgraph : ProgramGraph = analyse()
               if (c.showAst)
-                MainWindow.showDotWithTitle(pgraph.toDot, "AST")
+                MainWindow.showDotWithTitle(mkAst(pgraph), "AST", () => mkAst(analyse()))
               if (c.showCallGraph) {
-                MainWindow.showCallGraph(CallGraphBuilder.fullCallGraph(pgraph))
+                MainWindow.showDotWithTitle(mkCallGraph(pgraph), "Call graph", () => mkCallGraph(analyse()))
               }
-              val classes : List[tree.Defn.Class] = parscala.Control.catSomes(
-                pgraph.topLevels map (_.fold(
-                                          (decl : tree.Decl) => None
-                                        , (defn : tree.Defn) => tree.Defn.asClass(defn)
-                                        )
-                                     )
-              )
-              println(s"classes (${classes.size}): ${classes.mkString(", ")}")
-              val methods : List[Either[tree.Decl.Method, tree.Defn.Method]] = classes flatMap (_.methods)
-              println(s"methods: ${methods.mkString(", ")}")
               scalaz.std.option.cata(c.method)(
                   mName => {
-                    val oMethod : Option[Either[tree.Decl.Method, tree.Defn.Method]] = 
-                      methods.find(m => m.fold(_.symbols, _.symbols).map(_.fullName) contains mName)
+                    val oMethod : Option[Either[tree.Decl.Method, tree.Defn.Method]] = findMethod(mName, pgraph)
                     oMethod match {
-                      case Some(Right(method)) => {
-                        println("found method")
+                      case Some(Right(method)) =>
                         if (c.showCfg || c.showDataflowGraph || !c.dotOutput.isEmpty) {
-                          val body : tree.Expr = method.body
-                          val cfg = CFGraph.fromExpression(body, pgraph)
-                          if (c.showCfg)
-                            MainWindow.showDotWithTitle(CFGPrinter.formatGraph(cfg), "Control flow graph of %s".format(method.name))
+                          val cfg : CFGraph = mkCfg(method, pgraph)
+                          if (c.showCfg) {
+                            val refreshCfg : () => DotGraph = () => {
+                              val pg = analyse()
+                              onMethod(mName, m => CFGPrinter.formatGraph(mkCfg(m, pg)), _ => { println(noCfg(mName)); DotGraph.empty }, { println(noMethod(mName)); DotGraph.empty }, pg)
+                            }
+                            MainWindow.showDotWithTitle(CFGPrinter.formatGraph(cfg), "Control flow graph of %s".format(method.name), refreshCfg)
+                          }
                           if (c.showDataflowGraph) {
-                            val usedef : UseDefinition = UseDefinition.fromCFGraph(cfg)
-                            val dataflow : DFGraph = DFGraph(body, usedef)
-                            MainWindow.showDotWithTitle(tree.Expr.toDot(body).addEdges(dataflow.toDotEdges), 
-                                                        "Data flow graph of %s".format(method.name))
+                            val refreshDf : () => DotGraph = () => {
+                              val pg = analyse()
+                              onMethod(mName, m => mkDataflow(m, mkCfg(m, pg)), _ => { println(noDataflow(mName)); DotGraph.empty }, { println(noMethod(mName)); DotGraph.empty }, pg)
+                            }
+                            MainWindow.showDotWithTitle(mkDataflow(method, cfg), "Data flow graph of %s".format(method.name), refreshDf)
                           }
                           if (!c.dotOutput.isEmpty)
                             dumpDot(c.dotOutput.get, CFGPrinter.formatGraph(cfg))
                         }
-                      }
-                      case Some(Left(method)) => {
+                      case Some(Left(method)) =>
                         val what : String = 
                           if (c.showCfg || !c.dotOutput.isEmpty)
-                            "The body of %s is not available, could not generate the control flow graph.".format(method.name)
+                            noCfg(method.name.toString)
                           else if (c.showDataflowGraph)
-                            "The body of %s is not available, could not generate the data flow graph.".format(method.name)
+                            noDataflow(method.name.toString)
                           else
-                            "The body of %s is not available."
+                            noBody(method.name.toString)
                         Console.err.println(what)
-                      }
                       case None =>
-                        println("Method %s is not found.".format(mName))
+                        println(noMethod(mName))
                     }
                   }
-                , ()
+                , println("No method name is given. Specify one with -m <name>")
                 )
             }
           } 

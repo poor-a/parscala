@@ -16,6 +16,14 @@ class ProgramGraph (
   def lookupDeclDefn(l : DLabel) : Option[Either[tr.Decl, tr.Defn]] =
     declarations.get(l).map(Left(_)) orElse definitions.get(l).map(Right(_))
 
+  def classes : List[tree.Defn.Class] = parscala.Control.catSomes(
+      topLevels map (_.fold(
+          (decl : tree.Decl) => None
+        , (defn : tree.Defn) => tree.Defn.asClass(defn)
+        )
+      )
+    )
+
   def toDot : dot.DotGraph = {
     val (nodes, edges) : (List[DotNode], List[DotEdge]) = DotGen.exec(
       for (nodes <- forM(topLevels)(

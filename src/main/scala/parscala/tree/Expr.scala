@@ -480,12 +480,12 @@ object Expr {
           }
       , (_mods, name, _typeParams, paramss, oDeclType, metaBody) => _ => // method
           putDefn(genDLabel){ l =>
-            for (_ <- singleton(scope){
+            for (_ <- singleton(samePos){
                           case _ : scalac.DefDef => m.pure(())
                           case _ => log(s"The matching ast for the method definition $name is not a method.")
                         }
                         (log(s"Found ${scope.length} matching asts for the method definition $name, expected 1."));
-                 symbols = symbolsOf(scope);
+                 symbols = symbolsOf(samePos);
                  _ <- forM_(symbols)(addSymbol(_, l));
                  body <- genExpr(metaBody, childScope(samePos, scope)))
             yield Defn.Method(l, symbols, name, paramss, body)
