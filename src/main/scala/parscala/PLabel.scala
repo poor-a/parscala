@@ -5,6 +5,8 @@ package parscala
  */
 class PLabel (val l : Int) extends AnyVal {
   override def toString : String = s"PLabel_${l.toString}"
+
+  def toShortString : String = l.toString
 }
 
 /**

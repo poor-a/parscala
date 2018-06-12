@@ -185,15 +185,19 @@ object CFGraph {
             { println("no such method: " + method); mSt.pure(None)}
         }
       case Right(expr @ _) =>
-        emptyBlock >>= (start =>
-        emptyBlock >>= (end =>
-        close(start, Jump(end.entryLabel)) >> {
-        val done = Done(List())
-        close(end, done) >>
-        mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
-        }))
+        cfgASt.map(unknownMethod)(Some(_))
     }
     )
+  }
+
+  private def unknownMethod : CFGAnalyser[(BLabel, (BLabel, Done))] = {
+    implicit val st : MonadState[CFGAnalyser, St] = cfgASt
+    for (start <- emptyBlock;
+         end <- emptyBlock;
+         _ <- close(start, Jump(end.entryLabel));
+         done = Done(List());
+         _ <- close(end, done))
+    yield (start.entryLabel, (end.entryLabel, done))
   }
 
 //  private implicit val unitMonoidInstance : Monoid[Unit] = Monoid.instance((_, _) => (), ())
@@ -214,22 +218,13 @@ object CFGraph {
               cfgAnalyser.pure(singleton(Return(returnPoint, endPoints, call)))
               }}})
 
-          lazy val unknownMethod : CFGAnalyser[(BLabel, (BLabel, Done))] =
-            emptyBlock >>= (start =>
-            emptyBlock >>= (end =>
-            close(start, Jump(end.entryLabel)) >> {
-            val done : Done = Done(List())
-            close(end, done) >> 
-            cfgAnalyser.pure((start.entryLabel, (end.entryLabel, done)))
-            }))
-
           cfgAnalyser.gets(_.pgraph) >>= (pgraph => {
           val funRefs : CFGAnalyser[List[(BLabel, (BLabel, Done))]] = 
             pgraph.callTargets.get(callExpr) match {
-            case None | Some(List()) =>
+            case None | Some(List()) => 
               cfgAnalyser.map(unknownMethod)(List(_))
             case Some(callTargets @ _ :: _) =>
-              val getStartEnd : MLabel => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = 
+              val getStartEnd : MLabel => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] =
                 callTarget =>
                   methodStartEnd(callTarget) >>= (mStartEnd =>
                   mStartEnd match {
@@ -240,7 +235,7 @@ object CFGraph {
               val optionApplicative : scalaz.Applicative[Option] = scalaz.std.option.optionInstance
               cfgAnalyser.map(forM(callTargets)(getStartEnd))(listTraverse.sequence(_)(optionApplicative)) >>= (mStartEnds =>
                 mStartEnds match {
-                  case None => raiseError()
+                  case None => cfgAnalyser.map(unknownMethod)(List(_))
                   case Some(startEnds) => cfgAnalyser.pure(startEnds)
                 }
               )

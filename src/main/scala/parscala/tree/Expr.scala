@@ -19,22 +19,41 @@ sealed abstract class Expr {
 
 case class Literal(val l : SLabel, val sugared : meta.Lit, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
+
+  override def toString : String = sugared.toString
 }
 
 case class Ident(val l : SLabel, val name : String, val symbols : List[Symbol], val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
+
+  override def toString : String = name
 }
 
 case class Assign(val l : SLabel, val lhs : Expr, val rhs : Expr, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
+
+  override def toString : String = s"$lhs = $rhs"
 }
 
 case class App(val l : SLabel, val method : Expr, val args : List[Expr], val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
+
+  override def toString : String = {
+    val args_ : String = args.mkString("(",",",")")
+    s"$method$args_"
+  }
 }
 
 case class AppInfix(val l : SLabel, val lhs : Expr, val method : meta.Name, val args : List[Expr], val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
+
+  override def toString : String = {
+    val args_ : String = args match {
+      case List(arg) => arg.toString
+      case _ => args.mkString("(",",",")")
+    }
+    s"$lhs $method $args_"
+  }
 }
 
 case class AppUnary(val l : SLabel, val method : meta.Name, val arg : Expr, val typ : List[scalac.Type]) extends Expr {
@@ -236,6 +255,15 @@ object Expr {
   private def addSymbol(sym : Symbol, l : DLabel) : NodeGen[Unit] =
     modifySt { s => ((), s.copy(symbols = s.symbols + ((sym, l)))) }
 
+  private def addCallTarget(l : SLabel, callee : DLabel) : NodeGen[Unit] =
+    modifySt { s => ((), s.copy(callTargets = updateMap(s.callTargets, l, Left(callee) :: (_ : List[Either[DLabel, SLabel]]), List(Left(callee))))) }
+
+  private def updateMap[K,V](m : Map[K, V], k : K, f : V => V, e : => V) : Map[K, V] =
+    m.get(k) match {
+      case None => m.updated(k, e)
+      case Some(x) => m.updated(k, f(x))
+    }
+
   private def label(f : SLabel => Expr) : NodeGen[Expr] = 
     for (l <- genSLabel;
          n = f(l);
@@ -297,13 +325,18 @@ object Expr {
       , (metaFun, metaArgs) => // apply
           for (fun <- resugarChild(metaFun);
                args <- forM(metaArgs)(resugarChild(_));
-               app <- label(App(_, fun, args, types)))
+               app <- label(App(_, fun, args, types));
+               targets <- mapM(genDLabel, for (f <- childSamePos(metaFun); if f.symbol != null) yield f.symbol);
+               _ <- mapM((t : DLabel) => addCallTarget(app.label, t), targets))
           yield app
         // metaOp should be inspected for symbols
       , (metaArgLeft, metaOp, _metaTypeArgs, metaArgsRight) => // applyInfix
           for (argLeft <- resugarChild(metaArgLeft);
                argsRight <- forM(metaArgsRight)(resugarChild(_));
-               appInfix <- label(AppInfix(_, argLeft, metaOp, argsRight, types)))
+               appInfix <- label(AppInfix(_, argLeft, metaOp, argsRight, types));
+               desugaredSelects = searchSamePosition(meta.Position.Range(sugared.pos.input, metaArgLeft.pos.start, metaOp.pos.end), samePos);
+               targets <- mapM(genDLabel, for (f <- desugaredSelects; if f.symbol != null) yield f.symbol);
+               _ <- mapM((t : DLabel) => addCallTarget(appInfix.label, t), targets))
           yield appInfix
       , (metaPred, metaThen) => // if then
           for (pred <- resugarChild(metaPred);
@@ -366,6 +399,19 @@ object Expr {
     for (l <- genLabel;
          defn <- f(l);
          _ <- modifySt { st => (defn, st.copy( defns = st.defns + (l -> defn)
+                                             , topLevels = if (Defn.isTopLevel(defn))
+                                                             Right(defn) :: st.topLevels
+                                                           else
+                                                             st.topLevels
+                                             )
+                               )
+                       }
+         )
+    yield defn
+
+  private def putDefn[D <: Defn](m : NodeGen[D]) : NodeGen[D] =
+    for (defn <- m;
+         _ <- modifySt { st => (defn, st.copy( defns = st.defns + (defn.label -> defn)
                                              , topLevels = if (Defn.isTopLevel(defn))
                                                              Right(defn) :: st.topLevels
                                                            else
@@ -479,18 +525,20 @@ object Expr {
             }
           }
       , (_mods, name, _typeParams, paramss, oDeclType, metaBody) => _ => // method
-          putDefn(genDLabel){ l =>
-            for (_ <- singleton(samePos){
-                          case _ : scalac.DefDef => m.pure(())
-                          case _ => log(s"The matching ast for the method definition $name is not a method.")
-                        }
-                        (log(s"Found ${scope.length} matching asts for the method definition $name, expected 1."));
-                 symbols = symbolsOf(samePos);
-                 _ <- forM_(symbols)(addSymbol(_, l));
-                 body <- genExpr(metaBody, childScope(samePos, scope)))
-            yield Defn.Method(l, symbols, name, paramss, body)
-          }
-      , (_mods, _name, _typeParams, _paramss, _oDeclType, _metaBody) => _ => // macro
+          putDefn(for (l <- singleton(samePos){
+                              case t : scalac.DefDef => genDLabel(t.symbol)
+                              case _ => log(s"The matching ast for the method definition $name is not a method."); genDLabel
+                            }
+                            { log(s"Found ${scope.length} matching asts for the method definition $name, expected 1.");
+                              val symbols : List[Symbol] = symbolsOf(samePos);
+                              for (l <- genDLabel;
+                                   _ <- forM_(symbols)(addSymbol(_, l)))
+                              yield l
+                            };
+                       body <- genExpr(metaBody, childScope(samePos, scope)))
+                      yield Defn.Method(l, symbols, name, paramss, body)
+                 )
+       , (_mods, _name, _typeParams, _paramss, _oDeclType, _metaBody) => _ => // macro
           raiseError("Macros are not supported yet.")
       , (_mods, _name, _typeParams, _metaBody) => _ => // type
           raiseError("Type definitions are not supported yet.")
@@ -535,7 +583,6 @@ object Expr {
   }
 
   private def extractVarValSymbols(pats : List[meta.Pat], metaDef : meta.Defn, scope : List[Tree]) : List[Symbol] = {
-    val mkPos : (Int, Int) => meta.Position = (start, end) => meta.Position.Range(metaDef.pos.input, start, end)
     val extendStart : meta.Position => meta.Position =
       pos => meta.Position.Range(metaDef.pos.input, metaDef.pos.start, pos.end)
     val extendEnd : meta.Position => meta.Position =

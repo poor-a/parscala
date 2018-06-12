@@ -87,10 +87,10 @@ object CFGPrinter {
 
   private def formatNode(n : Node[_,_], nodes : ExprMap) : String = {
     def showExpr(expr : SLabel) : String = 
-      "%3s: %s".format(expr, scalaz.std.option.cata(nodes.get(expr))(node => Dot.dotEscape(node.toString()), "##Err##"))
+      "%3s: %s".format(expr.toShortString, scalaz.std.option.cata(nodes.get(expr))(node => Dot.dotEscape(node.toString()), "##Err##"))
 
     def blockHeader(l : BLabel) : String =
-      "Block " + l.toString
+      "Block " + l
 
     Node.cata(
         blockHeader // label

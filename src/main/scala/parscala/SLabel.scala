@@ -8,6 +8,8 @@ import scalaz.syntax.ShowSyntax
  */
 class SLabel (val l : Int) extends AnyVal {
   override def toString : String = s"SLabel_${l.toString}"
+
+  def toShortString : String = l.toString
 }
 
 /**
