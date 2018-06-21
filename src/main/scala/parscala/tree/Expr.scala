@@ -70,6 +70,8 @@ case class NewAnonymous(val l : SLabel, val template : Template, val typ : List[
 
 case class Select(val l : SLabel, val qualifier : Expr, val sel : meta.Name, val typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
+
+  override def toString : String = s"$qualifier.$sel"
 }
 
 case class This(val l : SLabel, val qualifier : meta.Name, val typ : List[scalac.Type]) extends Expr {
@@ -476,8 +478,8 @@ object Expr {
           stateInstance.map(genDecl(decl, ts))(Statement.fromDecl(_))
       , defn => // definition
           stateInstance.map(genDefn(defn, ts))(Statement.fromDefn(_))
-      , _ => // secondary constructor
-          raiseError("Secondary constructors are not supported yet.")
+      , sndctr => // secondary constructor
+          stateInstance.map(genCtor(sndctr, ts))(Statement.fromDefn(_))
       , pobj => // package object
           stateInstance.map(genPkgObj(pobj, ts))(Statement.fromDefn(_))
       , pkg => // package
@@ -527,21 +529,36 @@ object Expr {
       , (_mods, name, _typeParams, paramss, oDeclType, metaBody) => _ => // method
           putDefn(for (l <- singleton(samePos){
                               case t : scalac.DefDef => genDLabel(t.symbol)
-                              case _ => log(s"The matching ast for the method definition $name is not a method."); genDLabel
+                              case _ => log(s"The matching ast for method definition $name is not a method."); genDLabel
                             }
-                            { log(s"Found ${scope.length} matching asts for the method definition $name, expected 1.");
+                            { log(s"Found ${scope.length} matching asts for method definition $name, expected 1.");
                               val symbols : List[Symbol] = symbolsOf(samePos);
                               for (l <- genDLabel;
                                    _ <- forM_(symbols)(addSymbol(_, l)))
                               yield l
                             };
                        body <- genExpr(metaBody, childScope(samePos, scope)))
-                      yield Defn.Method(l, symbols, name, paramss, body)
+                  yield Defn.Method(l, symbols, name, paramss, body)
                  )
-       , (_mods, _name, _typeParams, _paramss, _oDeclType, _metaBody) => _ => // macro
-          raiseError("Macros are not supported yet.")
-      , (_mods, _name, _typeParams, _metaBody) => _ => // type
-          raiseError("Type definitions are not supported yet.")
+       , (_mods, name, _typeParams, paramss, _oDeclType, metaBody) => _ => // macro
+          putDefn(
+            for (l <- singleton(samePos){
+                        case m : scalac.DefDef => genDLabel(m.symbol)
+                        case _ => log(s"The matching ast for macro definition $name is not a macro."); genDLabel
+                      }
+                      { log(s"Found ${scope.length} matching asts for macro definition $name, expected 1.");
+                        for (l <- genDLabel;
+                             _ <- forM_(symbols)(addSymbol(_, l)))
+                        yield l
+                      };
+                 b <- genExpr(metaBody, childScope(samePos, scope)))
+            yield Defn.Macro(l, symbols, name, paramss, b)
+          )
+      , (_mods, name, typeParams, metaBody) => _ => // type
+          putDefn(
+            for (l <- genDLabel)
+            yield Defn.Type(l, symbols, name, typeParams, metaBody)
+          )
       , (_mods, name, _typeParams, _constructor, metaBody) => _ => // class
           putDefn(genDLabel){ l => {
               val matchingClasses : List[Tree] = samePos.filter(t => t.symbol != null && t.symbol.isClass)
@@ -580,6 +597,19 @@ object Expr {
           }
       , sugared
       )
+  }
+
+  private def genCtor(ctor : meta.Ctor.Secondary, scope : List[Tree]) : NodeGen[Defn] = {
+    val meta.Ctor.Secondary(mods @ _, name, paramss, init @ _, stats) = ctor
+    val samePos : List[Tree] = searchSamePosition(ctor.pos, scope)
+    val symbols : List[Symbol] = symbolsOf(samePos)
+    val childScope : List[Tree] = if (!samePos.isEmpty) samePos else scope
+    putDefn(
+      for (l <- genDLabel;
+           _ <- forM_(symbols)(addSymbol(_, l));
+           body <- forM(stats)(genStat(_, childScope)))
+      yield Defn.SecondaryCtor(l, symbols, name, paramss, body)
+    )
   }
 
   private def extractVarValSymbols(pats : List[meta.Pat], metaDef : meta.Defn, scope : List[Tree]) : List[Symbol] = {
@@ -833,7 +863,7 @@ object Expr {
             yield newE
         , (l, obj, termName, t) => // selection
             for (o <- toDotGen(obj);
-                 select <- DotGen.node(DotNode.record(l, "Selection", termName.toString()));
+                 select <- DotGen.node(DotNode.record(l, "Selection", n.toString));
                  _ <- DotGen.edge(select, o, ""))
             yield select
         , (l, typeName, _t) => // this

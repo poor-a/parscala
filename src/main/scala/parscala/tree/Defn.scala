@@ -21,10 +21,37 @@ object Defn {
     override def toString : String = symbols.toString
   }
 
-  case class Method(val l : DLabel, symbols : List[Symbol], name : meta.Term.Name, argss : List[List[meta.Term.Param]], body : Expr) extends Defn {
+  case class Method(val l : DLabel, symbols : List[Symbol], name : meta.Term.Name, paramss : List[List[meta.Term.Param]], body : Expr) extends Defn {
     def label : DLabel = l
 
-    override def toString : String = symbols.map(_.fullName).toString
+    override def toString : String = {
+      val params : String = paramss.map(_.mkString("(",", ", ")")).mkString("");
+      s"this$params"
+    }
+  }
+
+  case class Type(l : DLabel, symbols : List[Symbol], name : meta.Type.Name, params : List[meta.Type.Param], body : meta.Type) extends Defn {
+    def label : DLabel = l
+
+    override def toString : String = name.toString
+  }
+
+  case class Macro(l : DLabel, symbols : List[Symbol], name : meta.Term.Name, paramss : List[List[meta.Term.Param]], body : Expr) extends Defn {
+    def label : DLabel = l
+
+    override def toString : String = {
+      val params : String = paramss.map(_.mkString("(",", ", ")")).mkString("");
+      s"this$params"
+    }
+  }
+
+  case class SecondaryCtor(l : DLabel, symbols : List[Symbol], name : meta.Name, paramss : List[List[meta.Term.Param]], body : List[Statement]) extends Defn {
+    def label : DLabel = l
+
+    override def toString : String = {
+      val params : String = paramss.map(_.mkString("(",", ", ")")).mkString("");
+      s"this$params"
+    }
   }
 
   case class Class(val l : DLabel, symbols : List[Symbol], name : meta.Type.Name, stats : List[Statement]) extends Defn {
@@ -94,6 +121,9 @@ object Defn {
   def cata[A]( fVal : (DLabel, List[meta.Pat], List[Symbol], Expr) => A
              , fVar : (DLabel, List[meta.Pat], List[Symbol], Option[Expr]) => A
              , fMethod : (DLabel, List[Symbol], meta.Term.Name, List[List[meta.Term.Param]], Expr) => A
+             , fType : (DLabel, List[Symbol], meta.Type.Name, List[meta.Type.Param], meta.Type) => A
+             , fMacro : (DLabel, List[Symbol], meta.Term.Name, List[List[meta.Term.Param]], Expr) => A
+             , fSndCtor : (DLabel, List[Symbol], meta.Name, List[List[meta.Term.Param]], List[Statement]) => A
              , fClass : (DLabel, List[Symbol], meta.Type.Name, List[Statement]) => A
              , fTrait : (DLabel, List[Symbol], meta.Type.Name, List[Statement]) => A
              , fObject : (DLabel, List[Symbol], meta.Term.Name, List[Statement]) => A
@@ -105,6 +135,9 @@ object Defn {
       case Var(l, pats, symbols, oRhs) => fVar(l, pats, symbols, oRhs)
       case Val(l, pats, symbols, rhs) => fVal(l, pats, symbols, rhs)
       case Method(l, sym, name, argss, body) => fMethod(l, sym, name, argss, body)
+      case Type(l, sym, name, params, body) => fType(l, sym, name, params, body)
+      case Macro(l, sym, name, argss, body) => fMacro(l, sym, name, argss, body)
+      case SecondaryCtor(l, sym, name, paramss, body) => fSndCtor(l, sym, name, paramss, body)
       case Class(l, sym, name, stats) => fClass(l, sym, name, stats)
       case Trait(l, sym, name, stats) => fTrait(l, sym, name, stats)
       case Object(l, sym, name, stats) => fObject(l, sym, name, stats)
@@ -115,6 +148,9 @@ object Defn {
   def kindCata[A]( val_ : Val => A
                  , var_ : Var => A
                  , method_ : Method => A
+                 , type_ : Type => A
+                 , macro_ : Macro => A
+                 , sndCtor_ : SecondaryCtor => A
                  , class_ : Class => A
                  , trait_ : Trait => A
                  , object_ : Object => A
@@ -126,6 +162,9 @@ object Defn {
       case v : Val => val_(v)
       case v : Var => var_(v)
       case m : Method => method_(m)
+      case t : Type => type_(t)
+      case m : Macro => macro_(m)
+      case s : SecondaryCtor => sndCtor_(s)
       case c : Class => class_(c)
       case t : Trait => trait_(t)
       case o : Object => object_(o)
@@ -140,6 +179,9 @@ object Defn {
         cFalse // val
       , cFalse // var
       , cFalse // method
+      , cFalse // type
+      , cFalse // macro
+      , cFalse // secondary constructor
       , cTrue  // class
       , cTrue  // trait
       , cTrue  // object
@@ -192,10 +234,22 @@ object Defn {
             yield var_
         , (l, _symbols, name, argss, body) => // method
             for (b <- Expr.toDotGen(body);
-                 args = argss.map(_.map(_.name).mkString("(",", ", ")")).mkString("");
-                 m <- DotGen.node(DotNode.record(l, "Method", s"${name.toString}$args"));
+                 m <- DotGen.node(DotNode.record(l, "Method", defn.toString));
                  _ <- DotGen.edge(m, b, "body"))
             yield m
+        , (l, _symbols, name, _params, _body) => // type
+            for (tpe <- DotGen.node(DotNode.record(l, "Type member", name.toString)))
+            yield tpe
+        , (l, _symbols, name, argss, body) => // macro
+            for (b <- Expr.toDotGen(body);
+                 mcro <- DotGen.node(DotNode.record(l, "Macro", defn.toString));
+                 _ <- DotGen.edge(mcro, b, "body"))
+             yield mcro
+        , (l, _symbols, name, paramss, body) => // secondary constructor
+            for (b <- mapM(formatStatement, body);
+                 ctor <- DotGen.node(DotNode.record(l, "Secondary constructor", defn.toString));
+                 _ <- DotGen.enum(ctor, b, Function.const("")))
+            yield ctor
         , (l, _symbols, name, statements) => // class
             for (stmts <- mapM(formatStatement, statements);
                  class_ <- DotGen.node(DotNode.record(l, "Class", name.toString));

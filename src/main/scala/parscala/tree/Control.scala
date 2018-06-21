@@ -208,7 +208,6 @@ object Control {
       case o @ meta.Defn.Object(mods, name, template) => object_(mods, name, template)(o)
     }
 
-
   def patCataMeta[A]( var_ : meta.Term.Name => A
                     , wildcard : () => A
                     , seqWildcard : () => A

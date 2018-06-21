@@ -173,7 +173,9 @@ object CFGraph {
                                  mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
                              }
                            })))})}}))}
-
+                        , const5 // type
+                        , const5 // macro
+                        , const5 // secondary constructor
                         , const4 // class
                         , const4 // trait
                         , const4 // object
