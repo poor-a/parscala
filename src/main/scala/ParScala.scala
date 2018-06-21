@@ -58,7 +58,6 @@ object ParScala {
 
   private def findMethod(name : String, pg : ProgramGraph) : Option[Either[tree.Decl.Method, tree.Defn.Method]] = {
     val methods : List[Either[tree.Decl.Method, tree.Defn.Method]] = pg.classes.flatMap(_.methods)
-    println("methods: " + methods)
     methods.find(_.fold(_.symbols, _.symbols).map(_.fullName) contains name)
   }
 
@@ -160,7 +159,8 @@ object ParScala {
                         println(noMethod(mName))
                     }
                   }
-                , println("No method name is given. Specify one with -m <name>")
+                , if (c.showCfg || c.showDataflowGraph)
+                    println("No method name is given. Specify one with -m <name>")
                 )
             }
           } 
