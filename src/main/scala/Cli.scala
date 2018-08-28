@@ -1,4 +1,5 @@
 import org.apache.commons.cli
+import java.nio.file.Paths
 
 class Cli {
   private[this] val method : cli.Option = 
@@ -101,14 +102,14 @@ class Cli {
                        result.hasOption(showCfg.getOpt),
                        result.hasOption(showCalls.getOpt),
                        result.hasOption(showDataflow.getOpt),
-                       Option(result.getOptionValue(dotOutput.getOpt)),
+                       Option(result.getOptionValue(dotOutput.getOpt)).map(Paths.get(_)),
                        result.getOptionValues(files.getOpt) match {
                          case null => List()
-                         case xs => xs.toList
+                         case xs => xs.toList.map(Paths.get(_))
                        },
                        result.getOptionValues(dirs.getOpt) match {
                          case null => List()
-                         case ds => ds.toList
+                         case ds => ds.toList.map(Paths.get(_))
                        },
                        Option(result.getOptionValue(classpath.getOpt)),
                        result.hasOption(help.getOpt)))

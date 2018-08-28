@@ -9,7 +9,7 @@ object DirectoryTraverser {
   private def isScalaSource(p : Path, attr : BasicFileAttributes) : Boolean =
     attr.isRegularFile() && p.getFileName().toString.endsWith(".scala")
 
-  def getScalaSources(dir : String) : Stream[Path] = {
-    Files.find(Paths.get(dir), Integer.MAX_VALUE, (p : Path, attr : BasicFileAttributes) => isScalaSource(p, attr))
+  def getScalaSources(dir : Path) : Stream[Path] = {
+    Files.find(dir, Integer.MAX_VALUE, (p : Path, attr : BasicFileAttributes) => isScalaSource(p, attr))
   }
 }

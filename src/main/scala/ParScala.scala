@@ -18,16 +18,15 @@ case class Config (
   val showCfg : Boolean,
   val showCallGraph : Boolean,
   val showDataflowGraph : Boolean,
-  val dotOutput : Option[String],
-  val files : List[String],
-  val directories : List[String],
+  val dotOutput : Option[Path],
+  val files : List[Path],
+  val directories : List[Path],
   val classpath : Option[String],
   val showHelp : Boolean
 )
 
 object ParScala {
-  private def dumpDot(path : String, g : dot.DotGraph) : Unit = {
-    val p : Path = Paths.get(path)
+  private def dumpDot(p : Path, g : dot.DotGraph) : Unit = {
     try {
       val out = new PrintWriter(Files.newBufferedWriter(p, StandardOpenOption.CREATE_NEW))
       out.print(g)
@@ -103,17 +102,16 @@ object ParScala {
           if (c.files.isEmpty && c.directories.isEmpty)
             Console.err.println("No Scala source is given.")
           else {
-            val existingFiles : List[Path] = 
-              for (f <- c.files;
-                   p = Paths.get(f);
-                   if (Files.exists(p)))
-              yield p
-            val scalaSourceFilesInDirs : Stream[Path] = c.directories.foldLeft(Stream.empty[Path])((files, dir) => Stream.concat(DirectoryTraverser.getScalaSources(dir), files))
-            val scalaSourceFiles = existingFiles ++ (JavaConverters.asScalaBuffer(scalaSourceFilesInDirs.collect(Collectors.toList[Path])).toList)
+            val existingFiles : List[Path] = c.files.filter(Files.isRegularFile(_))
+            val (sbtProjects, dirs) : (List[Path], List[Path]) = c.directories.partition(Sbt.isSbtProject)
+            val scalaSourceFilesInDirs : List[Path] = JavaConverters.asScalaBuffer(dirs.foldLeft(Stream.empty[Path])((files, dir) => Stream.concat(DirectoryTraverser.getScalaSources(dir), files)).collect(Collectors.toList[Path])).toList
+            val classPathSeparator : String = if (scala.util.Properties.isWin) ";" else ":"
+            val (projectFiles, projectClassPath) : (List[Path], List[Path]) = scalaz.std.tuple.tuple2Bitraverse.bimap(sbtProjects.map(Sbt.loadProject).unzip)(_.flatten, _.flatten)
+            val scalaSourceFiles = existingFiles ++ scalaSourceFilesInDirs ++ projectFiles
             if (scalaSourceFiles.isEmpty) {
               Console.err.println("No Scala files are found.")
             } else {
-              val analyse : () => ProgramGraph = () => mkProgramGraph(scalaSourceFiles, c.classpath)
+              val analyse : () => ProgramGraph = () => mkProgramGraph(scalaSourceFiles, c.classpath.map(_ + projectClassPath.mkString(classPathSeparator)))
               val pgraph : ProgramGraph = analyse()
               if (c.showAst)
                 MainWindow.showDotWithTitle(mkAst(pgraph), "AST", () => mkAst(analyse()))
