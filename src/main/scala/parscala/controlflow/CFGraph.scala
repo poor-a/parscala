@@ -53,6 +53,9 @@ object CFGraph {
   private def gets[A](f : St => A) : CFGGen[A] =
     for (s <- State.get[St]) yield f(s)
 
+  private def putMethod[M[_]](method : MLabel, start : BLabel, done : BLabel)(implicit monadSt : MonadState[M, St]) : M[Unit] =
+    modifySt{ st => ((), st.copy(methods = st.methods + (method -> (start, done)))) }
+
   private def getAbruptNext : CFGGen[BLabel] =
     gets(_.abruptNext)
 
@@ -65,8 +68,10 @@ object CFGraph {
   private def append(b : Block[Node, C, O], n : Node[O, O]) : Block[Node, C, O] =
     BCat(b, BMiddle(n))
 
-  private def close(b : Block[Node, C, O], n : Node[O, C])(implicit monadSt : MonadState[CFGAnalyser, St] = cfgASt) : CFGAnalyser[Unit] =
-    modifySt{ st => ((), st.copy(blocks = st.blocks + (b.entryLabel -> BCat(b, BLast(n))))) }
+  private def close(b : Block[Node, C, O], n : Node[O, C])(implicit monadSt : MonadState[CFGAnalyser, St] = cfgASt) : CFGAnalyser[Block[Node, C, C]] = {
+    val closed : Block[Node, C, C] = BCat(b, BLast(n))
+    modifySt{ st => (closed, st.copy(blocks = st.blocks + (b.entryLabel -> closed))) }
+  }
 
   private def liftM[A](m : CFGGen[A]) : CFGAnalyser[A] = 
     EitherT.eitherTHoist.liftM(m)
@@ -130,6 +135,7 @@ object CFGraph {
   //                 def addReturn()
 
   private def analyseMethod(method : MLabel)(implicit mSt : MonadState[CFGAnalyser, St], monadTrans : Hoist[({type λ[M[_], A] = EitherT[M, Unit, A]})#λ]) : CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = {
+    println("analysing " + method)
     val const2 : (Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const2(mSt.pure(None))
     val const3 : (Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const3(mSt.pure(None))
     val const4 : (Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const4(mSt.pure(None))
@@ -146,7 +152,8 @@ object CFGraph {
                                  end <- emptyBlock;
                                  done = Done(List());
                                  _ <- close(start, Jump(end.entryLabel));
-                                 _ <- close(end, done))
+                                 _ <- close(end, done);
+                                 _ <- putMethod(method, start.entryLabel, end.entryLabel))
 
                             yield Some((start.entryLabel, (end.entryLabel, done)))
                         , const5 // type
@@ -163,6 +170,7 @@ object CFGraph {
                            close(end, done) >> {
                            emptyBlock >>= (first => {
                            close(start, Jump(first.entryLabel)) >> (
+                           putMethod(method, start.entryLabel, end.entryLabel) >> (
                            monadTrans.liftM(setAbruptNext(end.entryLabel)) >> (
                            monadTrans.liftM(cfgStmts(body, first).run) >>= (res => {
                            res match {
@@ -172,7 +180,7 @@ object CFGraph {
                                case _      =>
                                  mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
                              }
-                           })))})}}))}
+                           }))))})}}))}
                         , const5 // type
                         , const5 // macro
                         , const5 // secondary constructor
