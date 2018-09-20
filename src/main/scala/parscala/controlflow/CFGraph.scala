@@ -3,7 +3,7 @@ package controlflow
 
 import scala.language.higherKinds
 
-import scalaz.{State, EitherT, Hoist, MonadState, \/-}
+import scalaz.{State, EitherT, Hoist, Monad, MonadState, \/-}
 import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 
 import parscala.Control.{foldM, forM}
@@ -14,8 +14,15 @@ abstract class O // Open
 abstract class C // Closed
 
 object CFGraph {
-  def fromExpression(n : tr.Expr, pgraph : ProgramGraph) : CFGraph =
-    mkExtCFGraph(n, pgraph).freeze
+  def fromMethod(m : tr.Defn.Method, pgraph : ProgramGraph) : CFGraph = {
+    val (b, st) : (Block[Node, C, O], St) = initSt(pgraph)
+    mkExtCFGraph(m.body, b, st/*.copy(methods = st.methods + (Left(m.label) -> ((st.start.entryLabel, st.done.entryLabel))))*/).freeze
+  }
+
+  def fromExpression(n : tr.Expr, pgraph : ProgramGraph) : CFGraph = {
+    val (b, st) : (Block[Node, C, O], St) = initSt(pgraph)
+    mkExtCFGraph(n, b, st).freeze
+  }
 
   private case class St(
       val bGen : BLabelGen
@@ -39,6 +46,7 @@ object CFGraph {
 //  private val cfgAErr : MonadError[CFGAnalyser, Unit] = implicitly[MonadError[CFGAnalyser, Unit]]
   private val cfgASt : MonadState[CFGAnalyser, St] = parscala.EitherT.eitherTStateTInstance
   private val cfgATrans : Hoist[({type λ[M[_], A] = EitherT[M, Unit, A]})#λ] = EitherT.eitherTHoist
+  private val cfgAnalyser : Monad[CFGAnalyser] = EitherT.eitherTMonad
 
   private def genBLabel[M[_]](implicit monadSt : MonadState[M, St]) : M[BLabel] =
     modifySt{ st => (st.bGen.head, st.copy(bGen = st.bGen.tail)) }
@@ -54,7 +62,7 @@ object CFGraph {
     for (s <- State.get[St]) yield f(s)
 
   private def putMethod[M[_]](method : MLabel, start : BLabel, done : BLabel)(implicit monadSt : MonadState[M, St]) : M[Unit] =
-    modifySt{ st => ((), st.copy(methods = st.methods + (method -> (start, done)))) }
+    modifySt{ st => ((), st.copy(methods = st.methods + (method -> ((start, done))))) }
 
   private def getAbruptNext : CFGGen[BLabel] =
     gets(_.abruptNext)
@@ -82,15 +90,14 @@ object CFGraph {
   private def raiseError[A]() : CFGAnalyser[A] =
     EitherT.eitherTMonadError[CFGGen, Unit].raiseError(())
 
-  private def mkExtCFGraph(expression : tr.Expr, pgraph : ProgramGraph) : ExtensibleCFGraph = {
-    val (b, startSt) : (Block[Node, C, O], St) = initSt(pgraph)
+  private def mkExtCFGraph(expression : tr.Expr, b : Block[Node, C, O], startSt : St) : ExtensibleCFGraph = {
     val endSt : St = cfgStmts(expression, b)(cfgASt).run.run(startSt) match {
       case (st, \/-(block)) =>
         st.addBlock(BCat(block, BLast(Jump(st.done.entryLabel))))
       case (st, _) =>
         st
     }
-    new ExtensibleCFGraph(new CFGraph(endSt.blocks, endSt.start, endSt.done, pgraph), endSt.bGen, endSt.sGen)
+    new ExtensibleCFGraph(new CFGraph(endSt.blocks, endSt.start, endSt.done, endSt.pgraph), endSt.bGen, endSt.sGen)
   }
 
   /**
@@ -116,14 +123,28 @@ object CFGraph {
 
   private def methodStartEnd(method : MLabel) : CFGAnalyser[Option[(BLabel, (BLabel, Done))]] =
     for (methods <- liftM(State.gets[St, Methods](_.methods));
-         blocks <- liftM(State.gets[St, Map[BLabel, Block[Node, C, C]]](_.blocks)))
-    yield for (startEnd <- methods.get(method);
-               b <- blocks.get(startEnd._2);
-               done <- (Block.lastNode(b) match { 
-                         case n : Done => Some(n)
-                         case _ => None
-                       }))
-          yield (startEnd._1, (startEnd._2, done))
+         res <- (methods.get(method) match {
+          case Some((start, end)) =>
+            for (b <- getBlock(end);
+                 done <- getDone(b))
+            yield Some((start, (end, done)))
+          case _ => cfgAnalyser.pure(None)
+         }))
+    yield res
+
+  private def liftOption[A](o : Option[A]) : CFGAnalyser[A] =
+    scalaz.std.option.cata(o)(cfgAnalyser.pure(_), raiseError())
+
+  private def getDone(b : Block[Node, C, C]) : CFGAnalyser[Done] =
+    Block.lastNode(b) match { 
+      case n : Done => cfgAnalyser.pure(n)
+      case _ => raiseError()
+    }
+
+  private def getBlock(l : BLabel) : CFGAnalyser[Block[Node, C, C]] =
+    for (blocks <- liftM(State.gets[St, Map[BLabel, Block[Node, C, C]]](_.blocks));
+         b <- liftOption(blocks.get(l)))
+    yield b
 
   // private def addReturnPoint(method : Either[SLabel, DLabel], returnPoint : BLabel) : CFGAnalyser[Unit] =
   //   liftM(State.gets[St, Map[BLabel, Block[Node, C, C]]](_.blocks)) >>= (blocks =>
@@ -173,14 +194,15 @@ object CFGraph {
                            putMethod(method, start.entryLabel, end.entryLabel) >> (
                            monadTrans.liftM(setAbruptNext(end.entryLabel)) >> (
                            monadTrans.liftM(cfgStmts(body, first).run) >>= (res => {
+                           getBlock(end.entryLabel) >>= (b => (getDone(b) >>= (done_ =>
                            res match {
                                case \/-(b) =>
                                  close(b, Jump(end.entryLabel)) >>
-                                 mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
+                                 mSt.pure(Some((start.entryLabel, (end.entryLabel, done_))))
                                case _      =>
-                                 mSt.pure(Some((start.entryLabel, (end.entryLabel, done))))
+                                 mSt.pure(Some((start.entryLabel, (end.entryLabel, done_))))
                              }
-                           }))))})}}))}
+                           )))}))))})}}))}
                         , const5 // type
                         , const5 // macro
                         , const5 // secondary constructor
@@ -253,7 +275,7 @@ object CFGraph {
           funRefs >>= callMethods
           })
   }
-    
+
   private def cfgStmts
     ( node : tr.Expr, b : Block[Node, C, O] )
     ( implicit m : MonadState[CFGAnalyser, St] ) 
