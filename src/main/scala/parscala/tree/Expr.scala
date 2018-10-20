@@ -194,7 +194,7 @@ object Expr {
     , sGen : SLabelGen
     , dGen : DLabelGen
     , exprs : ExprMap
-    , symbols : SymbolTable
+    , symbolTable : SymbolTable
     , decls : DeclMap
     , defns : DefnMap
     , topLevels : List[Either[Decl, Defn]]
@@ -235,7 +235,7 @@ object Expr {
     yield x
 
   private def getDLabel (s : Symbol) : NodeGen[Option[DLabel]] =
-    stateInstance.gets[Option[DLabel]](_.symbols.get(s))
+    stateInstance.gets[Option[DLabel]](_.symbolTable.get(s))
 
   private val genSLabel : NodeGen[SLabel] =
     modifySt{ s => (s.sGen.head, s.copy(sGen = s.sGen.tail)) }
@@ -248,14 +248,14 @@ object Expr {
 
   private def genDLabel(sym : Symbol) : NodeGen[DLabel] =
     modifySt{ s =>
-      s.symbols.get(sym) match {
+      s.symbolTable.get(sym) match {
         case Some(dl) => (dl, s)
-        case None => (s.dGen.head, s.copy(dGen = s.dGen.tail, symbols = s.symbols + ((sym, s.dGen.head)))) 
+        case None => (s.dGen.head, s.copy(dGen = s.dGen.tail, symbolTable = s.symbolTable + ((sym, s.dGen.head)))) 
       }
     }
 
   private def addSymbol(sym : Symbol, l : DLabel) : NodeGen[Unit] =
-    modifySt { s => ((), s.copy(symbols = s.symbols + ((sym, l)))) }
+    modifySt { s => ((), s.copy(symbolTable = s.symbolTable + ((sym, l)))) }
 
   private def addCallTarget(l : SLabel, callee : DLabel) : NodeGen[Unit] =
     modifySt { s => ((), s.copy(callTargets = updateMap(s.callTargets, l, Left(callee) :: (_ : List[Either[DLabel, SLabel]]), List(Left(callee))))) }

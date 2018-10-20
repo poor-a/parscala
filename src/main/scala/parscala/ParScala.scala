@@ -35,9 +35,9 @@ object ParScala {
           val l : String = log.mkString("\n")
           println(s"During the AST building, we noticed the following:\n$l")
         }
-        (new ProgramGraph(st.decls, st.defns, st.exprs, st.symbols, st.topLevels, st.callTargets), None)
+        (new ProgramGraph(st.decls, st.defns, st.exprs, st.symbolTable, foreignSymbols(st), st.topLevels, st.callTargets), None)
       case -\/(err) =>
-        (new ProgramGraph(Map(), Map(), Map(), Map(), List(), Map()), Some(err))
+        (new ProgramGraph(Map(), Map(), Map(), Map(), Map(), List(), Map()), Some(err))
     }
   }
 
@@ -51,6 +51,11 @@ object ParScala {
     run.units.map(_.body).toList
   }
 
+  private def foreignSymbols(st : tr.Expr.St) : Map[DLabel, Symbol] = {
+    val known : Set[DLabel] = st.decls.keySet union st.defns.keySet
+    st.symbolTable.toIterator.filterNot{case (sym, l) => known.contains(l)}.map(_.swap).toMap
+  }
+    
 
   def astOfExprWithSource(expr : String) : Option[(Tree, SourceFile)] = {
     import scalac.Quasiquote

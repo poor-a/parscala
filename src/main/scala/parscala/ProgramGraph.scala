@@ -5,16 +5,21 @@ import parscala.dot.{DotNode, DotEdge, DotGen, DotGraph}
 import parscala.{tree => tr}
 //import callgraph.{CallGraph,CallGraphBuilder}
 
+import scalaz.Either3
+
 class ProgramGraph (
     val declarations : DeclMap
   , val definitions : DefnMap
   , val expressions : ExprMap
-  , val symbolTable : SymMap[DLabel]
+  , val symbolTable : SymbolTable
+  , val foreignSymbols : Map[DLabel, Symbol]
   , val topLevels : List[Either[tr.Decl, tr.Defn]]
   , val callTargets : Map[SLabel, List[Either[DLabel, SLabel]]]
   ) {
-  def lookupDeclDefn(l : DLabel) : Option[Either[tr.Decl, tr.Defn]] =
-    declarations.get(l).map(Left(_)) orElse definitions.get(l).map(Right(_))
+  def lookupDeclDefn(l : DLabel) : Option[Either3[tr.Decl, tr.Defn, Symbol]] =
+    declarations.get(l).map(Either3.left3(_)) orElse 
+    definitions.get(l).map(Either3.middle3(_)) orElse 
+    foreignSymbols.get(l).map(Either3.right3(_))
 
   def classes : List[tree.Defn.Class] = parscala.Control.catSomes(
       topLevels map (_.fold(

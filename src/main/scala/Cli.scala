@@ -80,7 +80,7 @@ class Cli {
      .build()  
 
   private val options : cli.Options = {
-    val options = List(method, showAst, /*showCfg, showCalls, showDataflow,*/ dotOutput, files, dirs, classpath, help)
+    val options = List(method, showAst, showCfg, showCalls, showDataflow, dotOutput, files, dirs, classpath, help)
     options.foldLeft(new cli.Options){(acc, o) => acc.addOption(o)}
   }
 

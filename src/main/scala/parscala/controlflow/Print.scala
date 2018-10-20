@@ -3,6 +3,8 @@ package controlflow
 
 import parscala.dot._
 
+import scalaz.{Left3, Middle3, Right3}
+
 object CFGPrinter {
   private def topoSort(graph : CFGraph) : List[BLabel] = {
     def sort(from : BLabel, marked : Set[BLabel], sorted : List[BLabel]) : (Set[BLabel],List[BLabel]) = {
@@ -28,8 +30,8 @@ object CFGPrinter {
     sort(graph.start.entryLabel, Set(), List())._2.reverse
   }
 
-  private def formatLabels(graph : CFGraph, labels : List[BLabel]) : (List[DotNode], List[DotEdge]) = {
-    def formatLabel(l : BLabel) : Option[(DotNode, List[DotEdge])] = {
+  private def formatLabels(graph : CFGraph, labels : List[(BLabel, Option[String])]) : (List[DotNode], List[DotEdge]) = {
+    def formatLabel(l : BLabel, annotation : Option[String]) : Option[(DotNode, List[DotEdge])] = {
       if (l == graph.start.entryLabel)
           graph.get(l) match {
             case Some(b) => {
@@ -56,7 +58,7 @@ object CFGPrinter {
           graph.get(l) match {
             case Some(b : Block[Node,C,C]) => {
               val header :: stmts = contents(b)
-              val content : String = "{ %s | %s }".format(header, stmts.mkString("\\l"))
+              val content : String = "{ %s | %s }".format(header + annotation.getOrElse(""), stmts.mkString("\\l"))
 
               Some((DotNode(l.toString) !! DotAttr.shape(Shape.Record) !! DotAttr.labelWithPorts(content), formatEdges(b)))
             }
@@ -67,7 +69,7 @@ object CFGPrinter {
 
     labels.foldLeft((List[DotNode](), List[DotEdge]())) {(acc, x) =>
       val (nodes, edges) = acc
-      formatLabel(x) map (x => (x._1 :: nodes, x._2 ++ edges)) getOrElse acc
+      formatLabel(x._1, x._2) map (x => (x._1 :: nodes, x._2 ++ edges)) getOrElse acc
     }
   }
 
@@ -87,7 +89,7 @@ object CFGPrinter {
 
   private def formatNode(n : Node[_,_], nodes : ExprMap) : String = {
     def showExpr(expr : SLabel) : String = 
-      "%3s: %s".format(expr.toShortString, scalaz.std.option.cata(nodes.get(expr))(node => Dot.dotEscape(node.toString()), "##Err##"))
+      "%-3d: %s".format(expr.toInt, scalaz.std.option.cata(nodes.get(expr))(node => Dot.dotEscape(node.toString()), "##Err##"))
 
     def blockHeader(l : BLabel) : String =
       "Block " + l
@@ -119,9 +121,43 @@ object CFGPrinter {
    */
   def formatGraph(graph : CFGraph) : DotGraph = {
     val labels : List[BLabel] = topoSort(graph)
-    val (nodes, edges) = formatLabels(graph, labels)
+    val methods : Map[BLabel, String] = methodsOfLabels(graph)
+    val (nodes, edges) = formatLabels(graph, annotateLabels(labels, methods))
     DotGraph("CFG", nodes, edges)
   }
+
+  def methodsOfLabels(graph : CFGraph) : Map[BLabel, String] =
+    graph.methods.toList.flatMap{
+      case (Left(method), (start, end)) =>
+	graph.pgraph.lookupDeclDefn(method) match {
+	  case Some(Left3(decl)) =>
+	    tree.Decl.asMethod(decl) match {
+	      case None =>
+		List()
+	      case Some(m) =>
+		val name : String = m.name.toString
+		List((start, s" start of $name"), (end, s" end of $name"))
+	    }
+	  case Some(Middle3(defn)) =>
+	    tree.Defn.asMethod(defn) match {
+	      case None =>
+		List()
+	      case Some(m) =>
+		val name : String = m.name.toString
+		List((start, s" start of $name"), (end, s" end of $name"))
+	    }
+	  case Some(Right3(foreignSymbol)) =>
+	    val name : String = foreignSymbol.fullName
+	    List((start, s" start of $name"), (end, s" end of $name"))
+	  case _ =>
+	    List()
+	}
+      case _ => 
+	List()
+    }.toMap
+
+  def annotateLabels(labels : List[BLabel], annotations : Map[BLabel, String]) : List[(BLabel, Option[String])] =
+    labels.map(l => (l, annotations.get(l)))
 
   private val pTrue : String = "p0"
   private val pFalse : String = "p1"

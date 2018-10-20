@@ -31,8 +31,7 @@ package object parscala {
   type ExprMap = Map[SLabel, tree.Expr]
   type DefnMap = Map[DLabel, tree.Defn]
   type DeclMap = Map[DLabel, tree.Decl]
-  type SymMap[A] = Map[Symbol, A]
-  type SymbolTable = SymMap[DLabel]
+  type SymbolTable = Map[Symbol, DLabel]
 
   type MLabel = Either[DLabel, SLabel]
 }

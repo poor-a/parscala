@@ -26,7 +26,7 @@ object Defn {
 
     override def toString : String = {
       val params : String = paramss.map(_.mkString("(",", ", ")")).mkString("");
-      s"this$params"
+      s"$name$params"
     }
   }
 

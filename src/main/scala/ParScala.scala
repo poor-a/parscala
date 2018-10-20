@@ -68,7 +68,7 @@ object ParScala {
     }
 
   private def mkCfg(m : tree.Defn.Method, pg : ProgramGraph) : CFGraph =
-    CFGraph.fromExpression(m.body, pg)
+    CFGraph.fromMethod(m, pg)
 
   private def mkDataflow(m : tree.Defn.Method, cfg : CFGraph) : DotGraph = {
     val usedef : UseDefinition = UseDefinition.fromCFGraph(cfg)
@@ -118,8 +118,6 @@ object ParScala {
               if (c.showCallGraph) {
                 MainWindow.showDotWithTitle(mkCallGraph(pgraph), "Call graph", () => mkCallGraph(analyse()))
               }
-              if (!c.dotOutput.isEmpty)
-                dumpDot(c.dotOutput.get, mkAst(pgraph))
               scalaz.std.option.cata(c.method)(
                   mName => {
                     val oMethod : Option[Either[tree.Decl.Method, tree.Defn.Method]] = findMethod(mName, pgraph)
