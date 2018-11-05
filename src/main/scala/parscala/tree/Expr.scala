@@ -302,7 +302,10 @@ object Expr {
         child => searchSamePosition(child.pos, samePos)
 
     def resugarChild(child : meta.Term) : NodeGen[Expr] =
-      genExpr(child, childSamePos(child))
+      childSamePos(child) match {
+        case Nil => genExpr(child, samePos)
+        case matches => genExpr(child, matches)
+      }
 
     Control.exprCataMeta(
         lit => label(Literal(_, lit, types)) // literal
@@ -375,7 +378,7 @@ object Expr {
                return_ <- label(Return(_, expr, types)))
           yield return_
       , (metaStats) => // block
-          for (stats <- forM(metaStats)(genStat(_, samePos));
+          for (stats <- forM(metaStats)(stat => genStat(stat, childSamePos(stat)));
                block <- label(Block(_, stats, types)))
           yield block
       , (metaTerm) => label(Other(_, metaTerm, types)) // other
