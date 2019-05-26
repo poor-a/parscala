@@ -36,7 +36,7 @@ object MapLike {
                , (_, targets, _) => // call
                    for (s <- IndexedState.get[St];
                         m = s._2;
-                        _ <- IndexedState.modify[St](st => if (targets contains m) {println("found a call!"); st.copy(_1 = st._1 +1)} else {println("no recursive call here " + targets); st} ))
+                        _ <- IndexedState.modify[St](st => if (targets contains m) st.copy(_1 = st._1 +1) else st ))
                    yield ()
                , c3Void       // cond
                , c2Void       // branch
@@ -66,7 +66,6 @@ object MapLike {
   private def callsSoFar : State[St, Int] = State.gets(_._1)
 
   private def traverseFrom(l : BLabel, cfg : CFGraph) : State[St, Boolean] = {
-    println("traversing " + l)
     isVisited(l) >>= (visited =>
       if (!visited)
         markAsVisited(l) >> (
@@ -82,8 +81,10 @@ object MapLike {
                                                  pathEligible <- traverseFrom(succ, cfg))
                                             yield pathEligible
                         )(IndexedStateT.stateMonad))
-            yield { println("found " + s._1 + " calls in " + b.entryLabel); 
-                    if (allPathsEligible.isEmpty) recursiveCalls <= 1 else !(allPathsEligible contains false); }
+            yield if (allPathsEligible.isEmpty)
+                    recursiveCalls <= 1
+                  else
+                    !(allPathsEligible contains false)
           case None => IndexedStateT.stateMonad.pure(false)
         })
       else 

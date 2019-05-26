@@ -47,6 +47,13 @@ class Cli {
      .hasArg()
      .build()
 
+  private[this] val mapLike : cli.Option =
+    cli.Option.builder("ml")
+     .longOpt("map-like")
+     .desc("check whether the selected method exhibits map-like behavior")
+     .required(false)
+     .build()
+
   private[this] val files : cli.Option = 
     cli.Option.builder("f")
      .longOpt("files")
@@ -80,7 +87,7 @@ class Cli {
      .build()  
 
   private val options : cli.Options = {
-    val options = List(method, showAst, showCfg, showCalls, showDataflow, dotOutput, files, dirs, classpath, help)
+    val options = List(method, showAst, showCfg, showCalls, showDataflow, dotOutput, files, mapLike, dirs, classpath, help)
     options.foldLeft(new cli.Options){(acc, o) => acc.addOption(o)}
   }
 
@@ -103,6 +110,7 @@ class Cli {
                        result.hasOption(showCalls.getOpt),
                        result.hasOption(showDataflow.getOpt),
                        Option(result.getOptionValue(dotOutput.getOpt)).map(Paths.get(_)),
+                       result.hasOption(mapLike.getOpt),
                        result.getOptionValues(files.getOpt) match {
                          case null => List()
                          case xs => xs.toList.map(Paths.get(_))

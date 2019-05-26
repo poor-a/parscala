@@ -19,6 +19,7 @@ case class Config (
   val showCallGraph : Boolean,
   val showDataflowGraph : Boolean,
   val dotOutput : Option[Path],
+  val checkMapLike : Boolean,
   val files : List[Path],
   val directories : List[Path],
   val classpath : Option[String],
@@ -85,6 +86,9 @@ object ParScala {
   private def noDataflow(name : String) : String =
     noBody(name) + " Could not generate the data flow graph."
 
+  private def noMapLike(name : String) : String =
+    noBody(name) + " Could not check whether method is like map."
+
   private def noMethod(name : String) : String =
     s"Method $name is not found."
 
@@ -123,7 +127,8 @@ object ParScala {
                     val oMethod : Option[Either[tree.Decl.Method, tree.Defn.Method]] = findMethod(mName, pgraph)
                     oMethod match {
                       case Some(Right(method)) =>
-                        if (c.showCfg || c.showDataflowGraph || !c.dotOutput.isEmpty) {
+                        println(s"$mName refers to a method definition.")
+                        if (c.showCfg || c.showDataflowGraph || !c.dotOutput.isEmpty || c.checkMapLike) {
                           val cfg : CFGraph = mkCfg(method, pgraph)
                           if (c.showCfg) {
                             val refreshCfg : () => DotGraph = () => {
@@ -141,21 +146,25 @@ object ParScala {
                           }
                           if (!c.dotOutput.isEmpty)
                             dumpDot(c.dotOutput.get, CFGPrinter.formatGraph(cfg))
+                          if (c.checkMapLike)
+                            if (MapLike.isMapLike(method.l,cfg))
+                              println(s"Yes, $mName is a map-like function.")
+                            else
+                              println(s"No, $mName is not a map-like function.")
                         }
                       case Some(Left(method)) =>
-                        val what : String = 
-                          if (c.showCfg || !c.dotOutput.isEmpty)
-                            noCfg(method.name.toString)
-                          else if (c.showDataflowGraph)
-                            noDataflow(method.name.toString)
-                          else
-                            noBody(method.name.toString)
-                        Console.err.println(what)
+                        println(s"$mName refers to an abstract method declaration.")
+                        if (c.showCfg)
+                          Console.err.println(noCfg(method.name.toString))
+                        else if (c.showDataflowGraph)
+                          Console.err.println(noDataflow(method.name.toString))
+                        else if (c.checkMapLike)
+                          Console.err.println(noMapLike(method.name.toString))
                       case None =>
                         println(noMethod(mName))
                     }
                   }
-                , if (c.showCfg || c.showDataflowGraph)
+                , if (c.showCfg || c.showDataflowGraph || c.checkMapLike)
                     println("No method name is given. Specify one with -m <name>")
                 )
             }
