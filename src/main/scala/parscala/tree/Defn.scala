@@ -74,6 +74,8 @@ object Defn {
     def label : DLabel = l
 
     override def toString : String = symbols.toString
+
+    def methods : List[Either[Decl.Method, Method]] = filterMethods(stats)
   }
 
   case class PackageObject(val l : DLabel, symbols : List[Symbol], name : meta.Term.Name, stats : List[Statement]) extends Defn {
@@ -200,6 +202,12 @@ object Defn {
   def asClass(d : Defn) : Option[Class] =
     d match {
       case c : Class => Some(c)
+      case _ => None
+    }
+
+  def asObject(d : Defn) : Option[Object] =
+    d match {
+      case o : Object => Some(o)
       case _ => None
     }
 

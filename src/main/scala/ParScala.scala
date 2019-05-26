@@ -57,7 +57,8 @@ object ParScala {
     CallGraphVisualiser.format(CallGraphBuilder.fullCallGraph(pg))
 
   private def findMethod(name : String, pg : ProgramGraph) : Option[Either[tree.Decl.Method, tree.Defn.Method]] = {
-    val methods : List[Either[tree.Decl.Method, tree.Defn.Method]] = pg.classes.flatMap(_.methods)
+    val methods : List[Either[tree.Decl.Method, tree.Defn.Method]] =
+      pg.classes.flatMap(_.methods) ++ pg.objects.flatMap(_.methods)
     methods.find(_.fold(_.symbols, _.symbols).map(_.fullName) contains name)
   }
 

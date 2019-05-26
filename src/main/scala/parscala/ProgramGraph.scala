@@ -29,6 +29,14 @@ class ProgramGraph (
       )
     )
 
+  def objects : List[tree.Defn.Object] = parscala.Control.catSomes(
+      topLevels map (_.fold(
+          (decl : tree.Decl) => None
+        , (defn : tree.Defn) => tree.Defn.asObject(defn)
+        )
+      )
+    )
+
   def toDot : dot.DotGraph = {
     val (nodes, edges) : (List[DotNode], List[DotEdge]) = DotGen.exec(
       for (nodes <- forM(topLevels)(
