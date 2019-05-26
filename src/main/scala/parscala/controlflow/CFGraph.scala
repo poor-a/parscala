@@ -189,9 +189,9 @@ object CFGraph {
                         , decl
                         )
           case Some(Middle3(defn)) =>
-            tr.Defn.cata( const4 // value
-                        , const4 // variable
-                        , (_, _, _, _, body) => { // method
+            tr.Defn.cata( const5 // value
+                        , const5 // variable
+                        , (_, _, _, _, _, body) => { // method
                             emptyBlock >>= (start =>
                             emptyBlock >>= (end => {
                             val done = Done(List())

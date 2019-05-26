@@ -19,6 +19,7 @@ libraryDependencies ++= Seq( "org.scala-lang" % "scala-compiler" % scalaVersion.
                            , "org.scala-sbt" % "sbt" % "1.1.6"
                            , "com.github.poor-a" % "launcher" % "c257e22d2052298d447f39b1a1857cdc4490850d"
                            , "org.scala-sbt" % "sbt-launch" % "1.1.6"
+                           , "org.typelevel" %% "paiges-core" % "0.2.2"
                            )
 
 scalacOptions ++= Seq("-Xlint:_",

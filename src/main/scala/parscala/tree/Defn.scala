@@ -4,24 +4,26 @@ package tree
 import parscala.Control.mapM
 import parscala.dot.{DotGen, DotNode, DotGraph}
 
+import org.typelevel.paiges.Doc
+
 sealed abstract class Defn {
   def label : DLabel
 }
 
 object Defn {
-  case class Var(val l : DLabel, pats : List[meta.Pat], symbols : List[Symbol], oRhs : Option[Expr]) extends Defn {
+  case class Var(val l : DLabel, pats : List[meta.Pat], symbols : List[Symbol], oDeclType : Option[meta.Type], oRhs : Option[Expr]) extends Defn {
     def label : DLabel = l
 
     override def toString : String = symbols.toString
   }
 
-  case class Val(val l : DLabel, pats : List[meta.Pat], symbols : List[Symbol], rhs : Expr) extends Defn {
+  case class Val(val l : DLabel, pats : List[meta.Pat], symbols : List[Symbol], oDeclType : Option[meta.Type], rhs : Expr) extends Defn {
     def label : DLabel = l
 
     override def toString : String = symbols.toString
   }
 
-  case class Method(val l : DLabel, symbols : List[Symbol], name : meta.Term.Name, paramss : List[List[meta.Term.Param]], body : Expr) extends Defn {
+  case class Method(val l : DLabel, symbols : List[Symbol], name : meta.Term.Name, paramss : List[List[meta.Term.Param]], declType : Option[meta.Type], body : Expr) extends Defn {
     def label : DLabel = l
 
     override def toString : String = {
@@ -120,9 +122,9 @@ object Defn {
     })
   }
 
-  def cata[A]( fVal : (DLabel, List[meta.Pat], List[Symbol], Expr) => A
-             , fVar : (DLabel, List[meta.Pat], List[Symbol], Option[Expr]) => A
-             , fMethod : (DLabel, List[Symbol], meta.Term.Name, List[List[meta.Term.Param]], Expr) => A
+  def cata[A]( fVal : (DLabel, List[meta.Pat], List[Symbol], Option[meta.Type], Expr) => A
+             , fVar : (DLabel, List[meta.Pat], List[Symbol], Option[meta.Type], Option[Expr]) => A
+             , fMethod : (DLabel, List[Symbol], meta.Term.Name, List[List[meta.Term.Param]], Option[meta.Type], Expr) => A
              , fType : (DLabel, List[Symbol], meta.Type.Name, List[meta.Type.Param], meta.Type) => A
              , fMacro : (DLabel, List[Symbol], meta.Term.Name, List[List[meta.Term.Param]], Expr) => A
              , fSndCtor : (DLabel, List[Symbol], meta.Name, List[List[meta.Term.Param]], List[Statement]) => A
@@ -134,9 +136,9 @@ object Defn {
              , defn : Defn
              ) : A =
     defn match {
-      case Var(l, pats, symbols, oRhs) => fVar(l, pats, symbols, oRhs)
-      case Val(l, pats, symbols, rhs) => fVal(l, pats, symbols, rhs)
-      case Method(l, sym, name, argss, body) => fMethod(l, sym, name, argss, body)
+      case Var(l, pats, symbols, oDeclType, oRhs) => fVar(l, pats, symbols, oDeclType, oRhs)
+      case Val(l, pats, symbols, oDeclType, rhs) => fVal(l, pats, symbols, oDeclType, rhs)
+      case Method(l, sym, name, argss, oDeclType, body) => fMethod(l, sym, name, argss, oDeclType, body)
       case Type(l, sym, name, params, body) => fType(l, sym, name, params, body)
       case Macro(l, sym, name, argss, body) => fMacro(l, sym, name, argss, body)
       case SecondaryCtor(l, sym, name, paramss, body) => fSndCtor(l, sym, name, paramss, body)
@@ -216,6 +218,59 @@ object Defn {
     DotGraph("", nodes, edges)
   }
 
+  def prettyPrint(defn : Defn) : Doc = {
+    lazy val lbr : Doc = Doc.str("[")
+    lazy val rbr : Doc = Doc.str("]")
+    lazy val lp : Doc = Doc.str("(")
+    lazy val rp : Doc = Doc.str(")")
+    lazy val lcurly : Doc = Doc.str("{")
+    lazy val rcurly : Doc = Doc.str("}")
+
+    def prettyArgss(argss : List[List[meta.Term.Param]]) : Doc =
+      Doc.fill(Doc.lineOrEmpty, argss.map(args => Doc.str(args.mkString("(", ", ", ")"))))
+    def prettyStatements(stmts : List[Statement]) : Doc =
+      Doc.intercalate(Doc.line + Doc.line, stmts.map(Statement.prettyPrint)).bracketBy(lcurly, rcurly, 2)
+
+    def bracketMany(l : List[Doc]) : Doc =
+      l match {
+        case List(d) => d
+        case _ => lp + Doc.intercalate(Doc.text(", "), l) + rp
+      }
+
+    def spaceIf(b : Boolean) : Doc = if (b) Doc.space else Doc.empty
+
+    def typ(t : Option[meta.Type]) : Doc =
+      t.fold(Doc.empty)(declType => Doc.text(":") + Doc.space + Doc.str(declType) + Doc.space)
+
+    cata(
+        (_l, pats, symbols, oDeclType, rhs) => // val
+          Doc.text("val") + Doc.space + bracketMany(pats.map(Doc.str)) + Doc.space + typ(oDeclType) + Doc.text("=") + Doc.space + Expr.prettyPrint(rhs)
+      , (_l, pats, symbols, oDeclType, oRhs) => // var
+          Doc.text("var") + Doc.space + bracketMany(pats.map(Doc.str)) + Doc.space + typ(oDeclType) + oRhs.fold(Doc.empty)(rhs => Doc.text("=") + Doc.lineOrSpace + Expr.prettyPrint(rhs))
+      , (_l, _symbols, name, argss, oDeclType, body) => // method
+          Doc.text("def") + Doc.space + Doc.str(name) + Doc.lineOrSpace +
+          prettyArgss(argss) + spaceIf(!argss.isEmpty) + typ(oDeclType) + Doc.text("=") + Doc.lineOrSpace +
+          Expr.prettyPrint(body)
+      , (_l, _symbols, name, params, body) => // type
+          Doc.text("type") + Doc.space + Doc.str(name) + Doc.space + Doc.str(params.mkString("[", ",", "]")) + Doc.space + Doc.text("=") + Doc.lineOrSpace + Doc.str(body)
+      , (_l, _symbols, name, argss, body) => // macro
+          Doc.spread(List(Doc.text("def"), Doc.str(name), prettyArgss(argss))) + Doc.space + Doc.text("=") + Doc.lineOrSpace + Expr.prettyPrint(body)
+      , (_l, _symbols, name, paramss, body) => // secondary constructor
+          Doc.text("this") + prettyArgss(paramss) + Doc.space + Doc.text("=") + Doc.space + prettyStatements(body)
+      , (_l, _symbols, name, statements) => // class
+          Doc.text("class") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
+      , (_l, _symbols, name, statements) => // trait
+          Doc.text("trait") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
+      , (_l, _symbols, name, statements) => // object
+          Doc.text("object") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
+      , (_l, _symbols, name, statements) => // package object
+          Doc.spread(List(Doc.text("package"), Doc.text("object"), Doc.str(name), prettyStatements(statements)))
+      , (_l, _symbols, name, statements) => // package
+          Doc.text("package") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
+      , defn
+      )
+  }
+
   def toDotGen(defn : Defn) : DotGen.DotGen[DotNode] = {
     def formatStatement(stmt : Statement) : DotGen.DotGen[DotNode] =
       stmt.fold(
@@ -225,12 +280,12 @@ object Defn {
         )
 
       cata(
-          (l, pats, symbols, rhs) => // val
+          (l, pats, symbols, _, rhs) => // val
             for (right <- Expr.toDotGen(rhs);
                  val_ <- DotGen.node(DotNode.record(l, "Val", pats.mkString(", ") + " : " + symbols.map(_.info).mkString(", ")));
                  _ <- DotGen.edge(val_, right, "rhs"))
             yield val_
-        , (l, pats, symbols, oRhs) => // var
+        , (l, pats, symbols, _, oRhs) => // var
             for (var_ <- DotGen.node(DotNode.record(l, "Var", pats.mkString(", ") + " : " + symbols.map(_.info).mkString(", ")));
                  optionTraverse : scalaz.Traverse[Option] = scalaz.std.option.optionInstance;
                  _ <- optionTraverse.traverse[DotGen.DotGen, Expr, Unit](oRhs)(rhs =>
@@ -240,7 +295,7 @@ object Defn {
                       )
                 )
             yield var_
-        , (l, _symbols, name, argss, body) => // method
+        , (l, _symbols, name, argss, _, body) => // method
             for (b <- Expr.toDotGen(body);
                  m <- DotGen.node(DotNode.record(l, "Method", defn.toString));
                  _ <- DotGen.edge(m, b, "body"))

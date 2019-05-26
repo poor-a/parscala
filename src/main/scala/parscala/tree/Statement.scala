@@ -3,6 +3,8 @@ package tree
 
 import scalaz.Either3
 
+import org.typelevel.paiges.Doc
+
 /** Trees that can be used in statement context (terms, definitions). */
 class Statement (val statement : Either3[Decl, Defn, Expr]) extends AnyVal {
   def label : Option[SLabel] = {
@@ -27,4 +29,7 @@ object Statement {
   def fromDefn(d : Defn) : Statement = new Statement(scalaz.Either3.middle3(d))
 
   def fromExpr(e : Expr) : Statement = new Statement(scalaz.Either3.right3(e))
+
+  def prettyPrint(stmt : Statement) : Doc =
+    stmt.fold(Decl.prettyPrint, Defn.prettyPrint, Expr.prettyPrint)
 }

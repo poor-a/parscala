@@ -5,6 +5,7 @@ import scala.language.higherKinds
 
 import scala.meta
 
+import org.typelevel.paiges.Doc
 import scalaz.{StateT, \/, Traverse, Monoid, Monad, MonadState, MonadTrans, IndexedStateT, WriterT}
 import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 
@@ -506,7 +507,7 @@ object Expr {
     lazy val symbols : List[Symbol] = symbolsOf(samePos)
 
     Control.defnCataMeta(
-        (_mods, pats, _oDeclType, metaRhs) => _ => // value
+        (_mods, pats, oDeclType, metaRhs) => _ => // value
           putDefn(genDLabel){ l => {
               val valSymbols : List[Symbol] = extractVarValSymbols(pats, sugared, scope)
               val numVals : Int = pats.flatMap(Control.patNames).length
@@ -514,10 +515,10 @@ object Expr {
                                (log(s"Number of values ($numVals) and symbols (${valSymbols.length}) differ in definition of $pats at ${sugared.pos}."));
                    _ <- forM_(valSymbols)(addSymbol(_, l));
                    rhs <- genExpr(metaRhs, childScope(samePos, scope)))
-              yield Defn.Val(l, pats, valSymbols, rhs)
+              yield Defn.Val(l, pats, valSymbols, oDeclType, rhs)
             }
           }
-      , (_mods, pats, _oDeclType, oMetaRhs) => _ => // variable
+      , (_mods, pats, oDeclType, oMetaRhs) => _ => // variable
           putDefn(genDLabel){ l => {
               val varSymbols : List[Symbol] = extractVarValSymbols(pats, sugared, scope)
               val optionTraverse : Traverse[Option] = scalaz.std.option.optionInstance
@@ -526,7 +527,7 @@ object Expr {
                                (log(s"Number of variables ($numVars) and symbols (${symbols.length}) differ in definition of $pats."));
                    _ <- forM_(varSymbols)(addSymbol(_, l));
                    oRhs <- optionTraverse.traverse(oMetaRhs)(metaRhs => genExpr(metaRhs, childScope(samePos, scope))))
-              yield Defn.Var(l, pats, varSymbols, oRhs)
+              yield Defn.Var(l, pats, varSymbols, oDeclType, oRhs)
             }
           }
       , (_mods, name, _typeParams, paramss, oDeclType, metaBody) => _ => // method
@@ -541,7 +542,7 @@ object Expr {
                               yield l
                             };
                        body <- genExpr(metaBody, childScope(samePos, scope)))
-                  yield Defn.Method(l, symbols, name, paramss, body)
+                  yield Defn.Method(l, symbols, name, paramss, oDeclType, body)
                  )
        , (_mods, name, _typeParams, paramss, _oDeclType, metaBody) => _ => // macro
           putDefn(
@@ -816,6 +817,71 @@ object Expr {
   def runNodeGen[A](m : NodeGen[A]) : String \/ (List[String], (St, A)) = {
     val startSt : St = St(PLabel.stream, SLabel.stream, DLabel.stream, Map(), Map(), Map(), Map(), List(), Map())
     m.run(startSt).run
+  }
+
+  def prettyPrint(e : Expr) : Doc = {
+    lazy val lparen : Doc = Doc.text("(")
+    lazy val rparen : Doc = Doc.text(")")
+
+    def prettyArgs(args : List[Expr]) : Doc =
+      lparen + Doc.intercalate(Doc.text(",") + Doc.lineOrSpace, args.map(prettyPrint)).aligned + rparen
+
+    def prettyArgss(argss : List[List[Expr]]) : Doc =
+      Doc.intercalate(Doc.lineOrEmpty, 
+                      argss.map(args => lparen + Doc.intercalate(Doc.text(","), args.map(prettyPrint)) + rparen))
+
+    cata(
+        (_l, lit, _typ) => // literal
+          Doc.str(lit)
+      , (_l, ident, _, _typ) => // identifier reference
+          Doc.text(ident)
+      , (_l, lhs, rhs, _typ) => // assignment
+          prettyPrint(lhs) + Doc.space + Doc.str("=") + Doc.lineOrSpace + prettyPrint(rhs)
+      , (_l, m, args, _t) => // application
+          prettyPrint(m) + prettyArgs(args)
+      , (_l, lhs, op, args, _t) => // infix application
+          prettyPrint(lhs) + Doc.space + Doc.str(op) + Doc.lineOrSpace + 
+            (args match {
+              case List(arg) => prettyPrint(arg)
+              case _ => prettyArgs(args)
+            })
+      , (_l, op, arg, _t) => // unary application
+          Doc.str(op) + Doc.space + prettyPrint(arg)
+      , (_l, class_, argss, _t) => // new
+          Doc.text("new") + Doc.space + Doc.str(class_) + prettyArgss(argss)
+      , (_l, obj, termName, _t) => // selection
+          prettyPrint(obj) + Doc.text(".") + Doc.str(termName)
+      , (_l, typeName, _t) => // this
+          Doc.str(typeName) + Doc.text(".this")
+      , (_l, _thisp, _superp, _t) => // super
+          Doc.text("super")
+      , (_l, comps, _t) => // tuple
+          prettyArgs(comps)
+      , (_l, pred, thenE, _t) => // if-then
+          Doc.text("if") + Doc.space + lparen + prettyPrint(pred) + rparen + Doc.space +
+          prettyPrint(thenE)
+      , (_l, pred, thenE, elseE, _t) => // if-then-else
+          Doc.text("if") + Doc.space + lparen + prettyPrint(pred) + rparen + Doc.space +
+          prettyPrint(thenE) + Doc.space + Doc.str("else") + Doc.space + prettyPrint(elseE)
+      , (_l, pred, body, _t) => // while loop
+          Doc.text("while") + Doc.space + lparen + prettyPrint(pred) + rparen + Doc.space +
+          prettyPrint(body)
+      , (_l, enums, body, _t) => // for loop
+         Doc.text("for") + lparen + Doc.cat(enums.map(e => Doc.str(e) + Doc.text(";"))) + rparen + Doc.space + prettyPrint(body)
+      , (_l, enums, body, _t) => // for-yield loop
+         Doc.text("for") + lparen + Doc.cat(enums.map(e => Doc.str(e) + Doc.text(";"))) + rparen + Doc.space + Doc.text("yield") + Doc.space + prettyPrint(body)
+      , (_, _) => // return
+         Doc.text("return")
+      , (_l, expr, _t) => // return with expr
+         Doc.text("return") + Doc.space + prettyPrint(expr)
+      , (_l, expr, _t) => // throw
+         Doc.text("throw") + Doc.space + prettyPrint(expr)
+      , (_l, stmts, _) => // block
+         Doc.text("{") + Doc.stack(Doc.empty :: stmts.map(Statement.prettyPrint)).nested(2) + Doc.line + Doc.text("}")
+      , (_l, expr, _t) => // other expression
+         Doc.str(expr)
+      , e
+      )
   }
 
   def toDot(n : Expr) : DotGraph = {

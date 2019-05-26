@@ -5,6 +5,8 @@ import parscala.dot
 import parscala.dot.{DotNode, DotGen}
 import scala.meta
 
+import org.typelevel.paiges.Doc
+
 /**
  * Superclass of declarations and definitions.
  */
@@ -72,6 +74,26 @@ object Decl {
       case t : Type => type_(t)
       case i : Import => import_(i)
     }
+
+  def prettyPrint(decl : Decl) : Doc = {
+    def prettyArgss(argss : List[List[meta.Term.Param]]) : Doc =
+      Doc.fill(Doc.lineOrEmpty, argss.map(args => Doc.str(args.mkString("(", ",", ")"))))
+
+    cata(
+        (_l, pats, symbols) => // val
+          Doc.spread(List(Doc.text("val"), Doc.text(pats.mkString("(", ",", ")"))))
+      , (_l, pats, symbols) => // var
+          Doc.spread(List(Doc.text("var"), Doc.text(pats.mkString("(", ",", ")"))))
+      , (_l, _symbols, name, argss) => // method
+          Doc.text("def") + Doc.space + Doc.str(name) + Doc.lineOrSpace +
+          prettyArgss(argss)
+      , (_l, _symbols, name, params, _bounds) => // type
+          Doc.text("type") + Doc.space + Doc.str(name) + Doc.space + Doc.str(params.mkString("[", ",", "]"))
+      , (_l, imports) => // import
+          Doc.text("import") + Doc.space + Doc.str(imports)
+      , decl
+      )
+  }
 
   /** Converts a declaration into a graph.
    */
