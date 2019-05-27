@@ -20,6 +20,7 @@ case class Config (
   val showDataflowGraph : Boolean,
   val dotOutput : Option[Path],
   val checkMapLike : Boolean,
+  val removeUnusedVariables : Boolean,
   val files : List[Path],
   val directories : List[Path],
   val classpath : Option[String],
@@ -88,10 +89,27 @@ object ParScala {
     noBody(name) + " Could not generate the data flow graph."
 
   private def noMapLike(name : String) : String =
-    noBody(name) + " Could not check whether method is like map."
+    noBody(name) + " Could not check whether the method is like map."
 
   private def noMethod(name : String) : String =
     s"Method $name is not found."
+
+  private def rewriteFileOf(m : tree.Defn.Method, pgraph : ProgramGraph) : Unit = {
+    def path(s : Symbol) : String = s.pos.source.path
+    m.symbols match {
+      case s :: _ =>
+        val p : String = path(s)
+        val topLevels : List[Either[tree.Decl, tree.Defn]] = pgraph.topLevels.filter(_.fold(decl => tree.Decl.symbols(decl).exists(s => path(s) == p), defn => tree.Defn.symbols(defn).exists(s => path(s) == p)))
+        val code : List[String] = topLevels.map(_.fold(tree.Decl.prettyPrint(_).render(80), tree.Defn.prettyPrint(_).render(80)))
+        if (!code.isEmpty) {
+          val f = new java.io.PrintWriter(new java.io.BufferedWriter(new java.io.FileWriter(p)))
+          f.println(code.mkString("\n\n"))
+          f.flush()
+          f.close()
+        }
+      case _ => ()
+    }
+  }
 
   def main(args : Array[String]) : Unit = {
     val cli = new Cli
@@ -129,8 +147,15 @@ object ParScala {
                     oMethod match {
                       case Some(Right(method)) =>
                         println(s"$mName refers to a method definition.")
+                        val pgraphTransformed : ProgramGraph = 
+                          if (c.removeUnusedVariables) {
+                            val pg : ProgramGraph = parscala.transformation.RemoveUnusedVariables.in(method, pgraph)
+                            rewriteFileOf(method, pg)
+                            pg
+                          } else
+                            pgraph
                         if (c.showCfg || c.showDataflowGraph || !c.dotOutput.isEmpty || c.checkMapLike) {
-                          val cfg : CFGraph = mkCfg(method, pgraph)
+                          val cfg : CFGraph = mkCfg(method, pgraphTransformed)
                           if (c.showCfg) {
                             val refreshCfg : () => DotGraph = () => {
                               val pg = analyse()

@@ -56,7 +56,6 @@ object ParScala {
     st.symbolTable.toIterator.filterNot{case (sym, l) => known.contains(l)}.map(_.swap).toMap
   }
     
-
   def astOfExprWithSource(expr : String) : Option[(Tree, SourceFile)] = {
     import scalac.Quasiquote
 

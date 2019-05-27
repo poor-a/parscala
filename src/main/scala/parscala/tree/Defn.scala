@@ -213,6 +213,33 @@ object Defn {
       case _ => None
     }
 
+  def symbols(d : Defn) : List[Symbol] =
+    cata(
+        (_, _, symbols, _, _) => // val
+          symbols
+      , (_, _, symbols, _, _) => // var
+          symbols
+      , (_, symbols, _, _, _, _) => // method
+          symbols
+      , (_, symbols, _, _, _) => // type
+          symbols
+      , (_, symbols, _, _, _) => // macro
+          symbols
+      , (_, symbols, _, _, _) => // secondary constructor
+          symbols
+      , (_, symbols, _, _) => // class
+          symbols
+      , (_, symbols, _, _) => // trait
+          symbols
+      , (_, symbols, _, _) => // object
+          symbols
+      , (_, symbols, _, _) => // package object
+          symbols
+      , (_, symbols, _, _) => // package
+          symbols
+      , d
+      )
+
   def toDot(d : Defn) : DotGraph = {
     val (nodes, edges) = DotGen.exec(toDotGen(d))
     DotGraph("", nodes, edges)

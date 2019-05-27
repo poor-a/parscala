@@ -7,7 +7,7 @@ import parscala.{tree => tr}
 
 import scalaz.Either3
 
-class ProgramGraph (
+case class ProgramGraph (
     val declarations : DeclMap
   , val definitions : DefnMap
   , val expressions : ExprMap
@@ -50,7 +50,7 @@ class ProgramGraph (
           _ <- mapM_((n : DotNode) => DotGen.edge(root, n, ""), nodes))
       yield ()
     )
-        
+
     DotGraph("program_graph", nodes, edges)
   }
 }

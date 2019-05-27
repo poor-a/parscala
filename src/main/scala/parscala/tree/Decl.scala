@@ -146,4 +146,19 @@ object Decl {
       , d
       )
   }
+
+  def symbols(d : Decl) : List[Symbol] =
+    Decl.cata(
+        (_, _, symbols) => // val
+          symbols
+      , (_, _, symbols) => // var
+          symbols
+      , (_, symbols, _, _) => // method
+          symbols
+      , (_, symbols, _, _, _) => // type
+          symbols
+      , (_, _) => // import
+          List()
+      , d
+      )
 }

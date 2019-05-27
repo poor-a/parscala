@@ -54,6 +54,13 @@ class Cli {
      .required(false)
      .build()
 
+  private[this] val transformRemoveUnusedVars : cli.Option =
+    cli.Option.builder("ru")
+     .longOpt("remove-unused")
+     .desc("Removes unused variables in the selected method")
+     .required(false)
+     .build()
+
   private[this] val files : cli.Option = 
     cli.Option.builder("f")
      .longOpt("files")
@@ -87,7 +94,7 @@ class Cli {
      .build()  
 
   private val options : cli.Options = {
-    val options = List(method, showAst, showCfg, showCalls, showDataflow, dotOutput, files, mapLike, dirs, classpath, help)
+    val options = List(method, showAst, showCfg, showCalls, showDataflow, dotOutput, files, mapLike, transformRemoveUnusedVars, dirs, classpath, help)
     options.foldLeft(new cli.Options){(acc, o) => acc.addOption(o)}
   }
 
@@ -111,6 +118,7 @@ class Cli {
                        result.hasOption(showDataflow.getOpt),
                        Option(result.getOptionValue(dotOutput.getOpt)).map(Paths.get(_)),
                        result.hasOption(mapLike.getOpt),
+                       result.hasOption(transformRemoveUnusedVars.getOpt),
                        result.getOptionValues(files.getOpt) match {
                          case null => List()
                          case xs => xs.toList.map(Paths.get(_))
