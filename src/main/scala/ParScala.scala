@@ -40,11 +40,11 @@ object ParScala {
     }
   }
 
-  private def expandPath(path : String) : Path = 
+  private def expandPath(path : Path) : Path = 
     if (path startsWith "~")
-      Paths.get(System.getProperty("user.home"), path.tail)
+      Paths.get(util.Properties.userHome).resolve(path.subpath(1, path.getNameCount))
     else
-      Paths.get(path)
+      path
 
   private def mkProgramGraph(scalaSourceFiles : List[Path], classpath : Option[String]) : ProgramGraph = {
     val (pgraph, oErr) : (ProgramGraph, Option[String]) = parscala.ParScala.analyse(scalaSourceFiles, classpath)
@@ -125,7 +125,7 @@ object ParScala {
           if (c.files.isEmpty && c.directories.isEmpty)
             Console.err.println("No Scala source is given.")
           else {
-            val existingFiles : List[Path] = c.files.filter(Files.isRegularFile(_))
+            val existingFiles : List[Path] = c.files.map(expandPath).filter(Files.isRegularFile(_))
             val (sbtProjects, dirs) : (List[Path], List[Path]) = c.directories.partition(Sbt.isSbtProject)
             val scalaSourceFilesInDirs : List[Path] = JavaConverters.asScalaBuffer(dirs.foldLeft(Stream.empty[Path])((files, dir) => Stream.concat(DirectoryTraverser.getScalaSources(dir), files)).collect(Collectors.toList[Path])).toList
             val classPathSeparator : String = if (scala.util.Properties.isWin) ";" else ":"
