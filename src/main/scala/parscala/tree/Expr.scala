@@ -951,7 +951,7 @@ object Expr {
             DotGen.node(DotNode.record(l, "Super", thisp.toString + " " + superp.toString))
         , (l, comps, t) => // tuple
             for (nodes <- mapM(toDotGen, comps);
-                 tuple <- DotGen.node(DotNode.record(l, "Tuple", t.toString()));
+                 tuple <- DotGen.node(DotNode.record(l, "Tuple", t.mkString(" or ")));
                  _ <- DotGen.enum(tuple, nodes,"comp(%s)".format(_)))
             yield tuple
         , (l, pred, thenE, t) => // if-then

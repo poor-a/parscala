@@ -28,7 +28,8 @@ object Defn {
 
     override def toString : String = {
       val params : String = paramss.map(_.mkString("(",", ", ")")).mkString("");
-      s"$name$params"
+      val resultTypes : String = (for (s <- symbols; if s.isMethod; m = s.asMethod) yield m.returnType).mkString(" or ")
+      s"$name$params : $resultTypes"
     }
   }
 
