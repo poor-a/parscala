@@ -524,7 +524,7 @@ object Expr {
               val optionTraverse : Traverse[Option] = scalaz.std.option.optionInstance
               val numVars : Int = pats.flatMap(Control.patNames).length
               for( _ <- m.whenM(varSymbols.length != numVars)
-                               (log(s"Number of variables ($numVars) and symbols (${symbols.length}) differ in definition of $pats."));
+                               (log(s"Number of variables ($numVars) and symbols (${symbols.length}) differ in definition of $pats at ${sugared.pos}."));
                    _ <- forM_(varSymbols)(addSymbol(_, l));
                    oRhs <- optionTraverse.traverse(oMetaRhs)(metaRhs => genExpr(metaRhs, childScope(samePos, scope))))
               yield Defn.Var(l, pats, varSymbols, oDeclType, oRhs)
@@ -621,25 +621,35 @@ object Expr {
       pos => meta.Position.Range(metaDef.pos.input, metaDef.pos.start, pos.end)
     val extendEnd : meta.Position => meta.Position =
       pos => meta.Position.Range(metaDef.pos.input, pos.start, metaDef.pos.end)
+    // if metaDef is like var x : Int = _, then the placeholder is not included in
+    // the range of the scalac tree
+    val extendEndUntilPlaceHolder : meta.Position => meta.Position =
+      metaDef match {
+        // if metaDef is like var x : Int = _, then type must be given
+        case meta.Defn.Var(_, _, Some(typ), None) =>
+          pos => meta.Position.Range(metaDef.pos.input, pos.start, typ.pos.end)
+        case _ =>
+          extendEnd
+      }
     // extends the first pattern's starting position and last pattern's ending position
     val patternsPos : List[meta.Position] = pats match {
       case List(pat) => 
         val names : List[meta.Name] = Control.patNames(pat)
         if (names.length == 1) 
-          List(extendStart(extendEnd(pat.pos))) 
+          List(extendStart(extendEndUntilPlaceHolder(pat.pos)))
         else 
           names.map(_.pos)
       case _ =>
         val headNames : List[meta.Name] = Control.patNames(pats.head)
         val headPoss : List[meta.Position] = 
           if (headNames.length == 1) 
-            List(extendStart(pats.head.pos)) 
+            List(extendStart(pats.head.pos))
           else
             headNames.map(_.pos)
         val lastNames : List[meta.Name] = Control.patNames(pats.last)
         val lastPoss : List[meta.Position] = 
           if (lastNames.length == 1) 
-            List(extendEnd(pats.last.pos)) 
+            List(extendEndUntilPlaceHolder(pats.last.pos)) 
           else
             lastNames.map(_.pos)
         headPoss ++ lastPoss ++ pats.tail.init.map(_.pos)
