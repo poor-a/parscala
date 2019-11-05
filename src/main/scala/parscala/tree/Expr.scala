@@ -267,7 +267,7 @@ object Expr {
       case Some(x) => m.updated(k, f(x))
     }
 
-  private def label(f : SLabel => Expr) : NodeGen[Expr] = 
+  private def label[E <: Expr](f : SLabel => E) : NodeGen[E] =
     for (l <- genSLabel;
          n = f(l);
          _ <- modifySt{ s => ((), s.copy(exprs = s.exprs.updated(l, n))) })
@@ -341,8 +341,8 @@ object Expr {
                argsRight <- forM(metaArgsRight)(resugarChild(_));
                appInfix <- label(AppInfix(_, argLeft, metaOp, argsRight, types));
                desugaredSelects = searchSamePosition(meta.Position.Range(sugared.pos.input, metaArgLeft.pos.start, metaOp.pos.end), samePos);
-               targets <- mapM(genDLabel, for (f <- desugaredSelects; if f.symbol != null) yield f.symbol);
-               _ <- mapM((t : DLabel) => addCallTarget(appInfix.label, t), targets))
+               targets = symbolsOf(desugaredSelects);
+               _ <- mapM[NodeGen, Symbol, Unit]((t : Symbol) => for (l <- genDLabel(t); _ <- addCallTarget(appInfix.label, l)) yield (), targets))
           yield appInfix
       , (metaPred, metaThen) => // if then
           for (pred <- resugarChild(metaPred);
@@ -903,11 +903,11 @@ object Expr {
       cata(
           (l, lit, t) => { // literal
             val types : String = t.mkString(" or ")
-            DotGen.node(DotNode.record(l, "Literal", s"${lit.toString}, types: $types"))
+            DotGen.node(DotNode.record(l, "Literal", s"$lit : $types"))
           }
         , (l, ident, _, t) => { // identifier reference
             val types : String = t.mkString(" or ")
-            DotGen.node(DotNode.record(l, "Identifier", s"${ident.toString}, types: $types"))
+            DotGen.node(DotNode.record(l, "Identifier", s"$ident : $types"))
           }
         , (l, lhs, rhs, t) => // assignment
             for (left <- toDotGen(lhs);
@@ -916,17 +916,17 @@ object Expr {
                  _ <- DotGen.edge(as, left, "left");
                  _ <- DotGen.edge(as, right, "right"))
             yield as
-        , (l, m, args, _t) => // application
+        , (l, m, args, t) => // application
             for (method <- toDotGen(m);
                  nodes <- mapM(toDotGen, args);
-                 app <- DotGen.node(DotNode.record(l, "Application", ""));
+                 app <- DotGen.node(DotNode.record(l, "Application", " : " + t.mkString(" or ")));
                  _ <- DotGen.edge(app, method, "method");
                  _ <- DotGen.enum(app, nodes, "arg(%s)".format(_)))
             yield app
-        , (l, lhs, op, args, _t) => // infix application
+        , (l, lhs, op, args, t) => // infix application
             for (lhsNode <- toDotGen(lhs);
                  nodes <- mapM(toDotGen, args);
-                 app <- DotGen.node(DotNode.record(l, "Infix application", op.toString));
+                 app <- DotGen.node(DotNode.record(l, "Infix application", op.toString + ", result : " + t.mkString(" or ")));
                  _ <- DotGen.edge(app, lhsNode, "left");
                  _ <- DotGen.enum(app, nodes, "arg(%s)".format(_)))
             yield app
