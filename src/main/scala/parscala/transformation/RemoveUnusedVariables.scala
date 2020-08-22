@@ -29,44 +29,48 @@ object RemoveUnusedVariables {
         pg.symbolTable.get(s.owner).flatMap(pg.definitions.get(_)) match {
           case Some(parent) =>
             val updated : Option[Defn] = Defn.cata(
-                (_, _, _, _, _) => // val
+                (_, _, _, _, _, _) => // val
                   None
-              , (_, _, _, _, _) => // var
+              , (_, _, _, _, _, _) => // var
                   None
-              , (_, _, _, _, _, _) => // method
+              , (_, _, _, _, _,  _, _, _) => // method
                   None
-              , (_, _, _, _, _) => // type
+              , (_, _, _, _, _, _) => // type
                   None
-              , (_, _, _, _, _) => // macro
+              , (_, _, _, _, _, _) => // macro
                   None
-              , (_, _, _, _, _) => // secondary constructor
+              , (_, _, _, _, _, _) => // secondary constructor
                   None
-              , (l, symbols, name, statements) => { // class
+              , (l, symbols, mods, name, statements) => { // class
                   Some(Defn.Class(l,
-                                  symbols, 
+                                  symbols,
+                                  mods,
                                   name, 
                                   replace[Statement](statements, stmt => stmt.fold(decl => Some(decl.label), defn => Some(defn.label), expr => None), Statement.fromDefn, d)))
                 }
-              , (l, symbols, name, statements) => // trait
+              , (l, symbols, mods, name, statements) => // trait
                   Some(Defn.Trait(l,
                                   symbols,
+                                  mods,
                                   name,
                                   replace[Statement](statements, stmt => stmt.fold(decl => Some(decl.label), defn => Some(defn.label), expr => None), Statement.fromDefn, d)))
-              , (l, symbols, name, statements) => // object
+              , (l, symbols, mods, name, statements) => // object
                   Some(Defn.Object(l,
                                    symbols,
+                                   mods,
                                    name,
                                    replace[Statement](statements, stmt => stmt.fold(decl => Some(decl.label), defn => Some(defn.label), expr => None), Statement.fromDefn, d)))
-              , (l, symbols, name, statements) => // package object
+              , (l, symbols, mods, name, statements) => // package object
                   Some(Defn.PackageObject(l,
                                           symbols,
+                                          mods,
                                           name,
-                                          replace[Statement](statements, stmt => stmt.fold(decl => Some(decl.label), defn => Some(defn.label), expr => None), Statement.fromDefn, d)))
+                                          replace[Statement](statements, stmt => stmt.fold(decl => Some(decl.label), defn => Some(defn.label), _expr => None), Statement.fromDefn, d)))
               , (l, symbols, name, statements) => // package
                   Some(Defn.Package(l,
                                     symbols,
                                     name,
-                                    replace[Statement](statements, stmt => stmt.fold(decl => Some(decl.label), defn => Some(defn.label), expr => None), Statement.fromDefn, d)))
+                                    replace[Statement](statements, stmt => stmt.fold(decl => Some(decl.label), defn => Some(defn.label), _expr => None), Statement.fromDefn, d)))
               , parent
               )
             updated match {
@@ -103,7 +107,9 @@ object RemoveUnusedVariables {
             e
         , (_, _, _, _) => // new
             e
-        , (_, _, _, _) => // selection
+        , (_, _, _, _, _) => // selection
+            e
+        , (_, _) => // this(...) application
             e
         , (_, _, _) => // this
             e

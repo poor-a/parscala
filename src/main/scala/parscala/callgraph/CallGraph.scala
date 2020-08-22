@@ -92,8 +92,12 @@ object CallGraphBuilder {
             argss.flatten.foldLeft(empty)(
                 (acc, arg) => acc ++ collectCalls(arg)
               )
-        , (_, obj, _, _) => // selection
+        , (_, obj, _, _, _) => // selection
             collectCalls(obj)
+        , (_, argss) => // this(...) application TODO: edge to called constructor
+            argss.flatten.foldLeft(empty)(
+              (acc, arg) => acc ++ collectCalls(arg)
+            )
         , const3 // this
         , const4 // super
         , (_, components, _) => // tuple

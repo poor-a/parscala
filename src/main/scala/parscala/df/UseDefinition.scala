@@ -40,7 +40,8 @@ object UseDefinition {
             , const5 // infix application
             , const4 // unary application
             , const4 // new
-            , const4 // selection
+            , const5 // selection
+            , const2 // this(...) application
             , const3 // this
             , const4 // super
             , const3 // tuple

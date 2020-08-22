@@ -123,16 +123,16 @@ object Control {
   /**
    * Catamorphism over scala.meta declaration syntax trees.
    */
-  def declCataMeta[A]( val_ : (List[meta.Mod], List[meta.Pat]) => meta.Decl.Val => A
-                     , var_ : (List[meta.Mod], List[meta.Pat]) => meta.Decl.Var => A
-                     , def_ : (List[meta.Mod], meta.Term.Name, List[meta.Type.Param], List[List[meta.Term.Param]]) => meta.Decl.Def => A
+  def declCataMeta[A]( val_ : (List[meta.Mod], List[meta.Pat], meta.Type) => meta.Decl.Val => A
+                     , var_ : (List[meta.Mod], List[meta.Pat], meta.Type) => meta.Decl.Var => A
+                     , def_ : (List[meta.Mod], meta.Term.Name, List[meta.Type.Param], List[List[meta.Term.Param]], meta.Type) => meta.Decl.Def => A
                      , type_ : (List[meta.Mod], meta.Type.Name, List[meta.Type.Param], meta.Type.Bounds) => meta.Decl.Type => A
                      , decl : meta.Decl
                      ) : A =
     decl match {
-      case d @ meta.Decl.Val(mods, pats, decltype @ _) => val_(mods, pats)(d)
-      case d @ meta.Decl.Var(mods, pats, decltype @ _) => var_(mods, pats)(d)
-      case d @ meta.Decl.Def(mods, name, tparams, paramss, decltype @ _) => def_(mods, name, tparams, paramss)(d)
+      case d @ meta.Decl.Val(mods, pats, declType) => val_(mods, pats, declType)(d)
+      case d @ meta.Decl.Var(mods, pats, declType) => var_(mods, pats, declType)(d)
+      case d @ meta.Decl.Def(mods, name, tparams, paramss, declType) => def_(mods, name, tparams, paramss, declType)(d)
       case d @ meta.Decl.Type(mods, name, tparams, bounds) => type_(mods, name, tparams, bounds)(d)
     }
 

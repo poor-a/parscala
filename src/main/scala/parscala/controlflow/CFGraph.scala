@@ -168,14 +168,15 @@ object CFGraph {
     val const3 : (Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const3(mSt.pure(None))
     val const4 : (Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const4(mSt.pure(None))
     val const5 : (Any, Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const5(mSt.pure(None))
+    val const6 : (Any, Any, Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const6(mSt.pure(None))
     mSt.gets(_.pgraph) >>= (programgraph =>
     method match {
       case Left(dLabel) =>
         programgraph.lookupDeclDefn(dLabel) match {
           case Some(Left3(decl)) => 
-            tr.Decl.cata( const3 // var
-                        , const3 // val
-                        , (_, _, _, _) => // method
+            tr.Decl.cata( const5 // var
+                        , const5 // val
+                        , (_, _, _, _, _, _, _) => // method
                             for (start <- emptyBlock;
                                  end <- emptyBlock;
                                  done = Done(List());
@@ -184,14 +185,14 @@ object CFGraph {
                                  _ <- putMethod(method, start.entryLabel, end.entryLabel))
 
                             yield Some((start.entryLabel, (end.entryLabel, done)))
-                        , const5 // type
+                        , const6 // type
                         , const2 // import
                         , decl
                         )
           case Some(Middle3(defn)) =>
-            tr.Defn.cata( const5 // value
-                        , const5 // variable
-                        , (_, _, _, _, _, body) => { // method
+            tr.Defn.cata( const6 // value
+                        , const6 // variable
+                        , (_, _, _, _, _, _, _, body) => { // method
                             emptyBlock >>= (start =>
                             emptyBlock >>= (end => {
                             val done = Done(List())
@@ -210,13 +211,13 @@ object CFGraph {
                                   mSt.pure(Some((start.entryLabel, (end.entryLabel, done_))))
                               }
                             )))}))))})}}))}
-                        , const5 // type
-                        , const5 // macro
-                        , const5 // secondary constructor
-                        , const4 // class
-                        , const4 // trait
-                        , const4 // object
-                        , const4 // package object
+                        , const6 // type
+                        , const6 // macro
+                        , const6 // secondary constructor
+                        , const5 // class
+                        , const5 // trait
+                        , const5 // object
+                        , const5 // package object
                         , const4 // package
                         , defn
                         )
@@ -289,7 +290,7 @@ object CFGraph {
 
   private def cfgStmts
     ( node : tr.Expr, b : Block[Node, C, O] )
-    ( implicit m : MonadState[CFGAnalyser, St] ) 
+    ( implicit m : MonadState[CFGAnalyser, St] )
     : CFGAnalyser[Block[Node, C, O]] = {
 
     def foldArgs(init : Block[Node, C, O], args : List[tr.Expr]) : CFGAnalyser[Block[Node, C, O]] =
@@ -319,8 +320,11 @@ object CFGraph {
           cfgMethodCall(l, afterArg))
       , (l, class_, argss, _) => // new
           m.map(foldM((acc : Block[Node, C, O], x : tr.Expr) => cfgStmts(x, acc), b, argss.flatten)(m))(append(_, Expr(l)))
-      , (l, expr, tname, _) => // selection
+      , (l, expr, tname, _, _) => // selection
           m.map(cfgStmts(expr, b))(append(_, Expr(l)))
+      , (l, argss) => // this(...) application TODO: edge to called constructor
+          foldM((acc, args) => foldArgs(acc, args), b, argss) >>= (afterArgss =>
+          m.pure(append(afterArgss, Expr(l))))
       , (l, _, _) => // qualified this
           m.pure(append(b, Expr(l)))
       , (l, _, _, _) => // qualified super

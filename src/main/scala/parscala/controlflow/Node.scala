@@ -3,17 +3,17 @@ package controlflow
 
 sealed abstract class Node[E,X] extends NonLocal[E,X]
 
-case class Label(val label : BLabel) extends Node[C,O] {
+case class Label(label : BLabel) extends Node[C,O] {
   override def entryLabel(implicit evidence : C =:= C) = label
   override def successors(implicit evidence : O =:= C) : List[(BLabel, EdgeLabel.TagType)] = ???
 }
 
-case class Pattern(val pat : PLabel, val succ : BLabel, val fail : BLabel) extends Node[O,C] {
+case class Pattern(pat : PLabel, succ : BLabel, fail : BLabel) extends Node[O,C] {
   override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
   override def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List((succ, EdgeLabel.T),(fail, EdgeLabel.F))
 }
 
-case class Expr(val expr : SLabel) extends Node[O,O] {
+case class Expr(expr : SLabel) extends Node[O,O] {
   override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
   override def successors(implicit evidence : O =:= C) : List[(BLabel, EdgeLabel.TagType)] = ???
 }
@@ -24,7 +24,7 @@ case class Expr(val expr : SLabel) extends Node[O,O] {
  * @param expr The method application expression in the program.
  * @param m The method to be invoked.
  */
-case class Call(val expr : SLabel, val ms : List[BLabel], val returnPoint : BLabel) extends Node[O,C] {
+case class Call(expr : SLabel, ms : List[BLabel], returnPoint : BLabel) extends Node[O,C] {
   override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
   override def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = ms.map((_, EdgeLabel.NoLabel))
 }
@@ -42,17 +42,17 @@ case class Return(l : BLabel, from : List[BLabel], call : Call) extends Node[C,O
  * Branching based on a known condition `expr`. When `expr` evaluates
  * to `true`, we take the `t` branch, otherwise the `f` branch.
  */
-case class Cond(val expr : SLabel, val t : BLabel, val f : BLabel) extends Node[O,C] {
+case class Cond(expr : SLabel, t : BLabel, f : BLabel) extends Node[O,C] {
   override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
   override def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List((t, EdgeLabel.T), (f, EdgeLabel.F))
 }
 
-case class Branch(val s1 : BLabel, val s2 : BLabel) extends Node[O,C] {
+case class Branch(s1 : BLabel, s2 : BLabel) extends Node[O,C] {
   override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
   override def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List((s1, EdgeLabel.T), (s2, EdgeLabel.F))
 }
 
-case class Jump(val target : BLabel) extends Node[O,C] {
+case class Jump(target : BLabel) extends Node[O,C] {
   override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
   override def successors(implicit evidence : C =:= C) : List[(BLabel, EdgeLabel.TagType)] = List((target, EdgeLabel.NoLabel))
 }

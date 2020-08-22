@@ -11,53 +11,54 @@ sealed abstract class Defn {
 }
 
 object Defn {
-  case class Var(val l : DLabel, pats : List[meta.Pat], symbols : List[Symbol], oDeclType : Option[meta.Type], oRhs : Option[Expr]) extends Defn {
+  case class Var(l : DLabel, mods : List[meta.Mod], pats : List[meta.Pat], symbols : List[Symbol], oDeclType : Option[meta.Type], oRhs : Option[Expr]) extends Defn {
     def label : DLabel = l
 
     override def toString : String = symbols.toString
   }
 
-  case class Val(val l : DLabel, pats : List[meta.Pat], symbols : List[Symbol], oDeclType : Option[meta.Type], rhs : Expr) extends Defn {
+  case class Val(l : DLabel, mods : List[meta.Mod], pats : List[meta.Pat], symbols : List[Symbol], oDeclType : Option[meta.Type], rhs : Expr) extends Defn {
     def label : DLabel = l
 
     override def toString : String = symbols.toString
   }
 
-  case class Method(val l : DLabel, symbols : List[Symbol], name : meta.Term.Name, paramss : List[List[meta.Term.Param]], declType : Option[meta.Type], body : Expr) extends Defn {
+  case class Method(l : DLabel, symbols : List[Symbol], mods : List[meta.Mod], name : meta.Term.Name, typeArgs : List[meta.Type.Param], paramss : List[List[meta.Term.Param]], declType : Option[meta.Type], body : Expr) extends Defn {
     def label : DLabel = l
 
     override def toString : String = {
-      val params : String = paramss.map(_.mkString("(",", ", ")")).mkString("");
+      val params : String = paramss.map(_.mkString("(",", ", ")")).mkString("")
+      val tparams : String = if (typeArgs.isEmpty) "" else typeArgs.mkString("[", ", ", "]")
       val resultTypes : String = (for (s <- symbols; if s.isMethod; m = s.asMethod) yield m.returnType).mkString(" or ")
-      s"$name$params : $resultTypes"
+      s"$name$tparams$params : $resultTypes"
     }
   }
 
-  case class Type(l : DLabel, symbols : List[Symbol], name : meta.Type.Name, params : List[meta.Type.Param], body : meta.Type) extends Defn {
+  case class Type(l : DLabel, symbols : List[Symbol], mods : List[meta.Mod], name : meta.Type.Name, params : List[meta.Type.Param], body : meta.Type) extends Defn {
     def label : DLabel = l
 
     override def toString : String = name.toString
   }
 
-  case class Macro(l : DLabel, symbols : List[Symbol], name : meta.Term.Name, paramss : List[List[meta.Term.Param]], body : Expr) extends Defn {
+  case class Macro(l : DLabel, symbols : List[Symbol], mods : List[meta.Mod], name : meta.Term.Name, paramss : List[List[meta.Term.Param]], body : Expr) extends Defn {
     def label : DLabel = l
 
     override def toString : String = {
-      val params : String = paramss.map(_.mkString("(",", ", ")")).mkString("");
+      val params : String = paramss.map(_.mkString("(",", ", ")")).mkString("")
       s"this$params"
     }
   }
 
-  case class SecondaryCtor(l : DLabel, symbols : List[Symbol], name : meta.Name, paramss : List[List[meta.Term.Param]], body : List[Statement]) extends Defn {
+  case class SecondaryCtor(l : DLabel, symbols : List[Symbol], mods : List[meta.Mod], name : meta.Name, paramss : List[List[meta.Term.Param]], body : (ThisApply, List[Statement])) extends Defn {
     def label : DLabel = l
 
     override def toString : String = {
-      val params : String = paramss.map(_.mkString("(",", ", ")")).mkString("");
+      val params : String = paramss.map(_.mkString("(",", ", ")")).mkString("")
       s"this$params"
     }
   }
 
-  case class Class(val l : DLabel, symbols : List[Symbol], name : meta.Type.Name, stats : List[Statement]) extends Defn {
+  case class Class(l : DLabel, symbols : List[Symbol], mods : List[meta.Mod], name : meta.Type.Name, stats : List[Statement]) extends Defn {
     def label : DLabel = l
 
     override def toString : String = symbols.toString
@@ -65,7 +66,7 @@ object Defn {
     def methods : List[Either[Decl.Method, Method]] = filterMethods(stats)
   }
 
-  case class Trait(val l : DLabel, symbols : List[Symbol], name : meta.Type.Name, stats : List[Statement]) extends Defn {
+  case class Trait(l : DLabel, symbols : List[Symbol], mods : List[meta.Mod], name : meta.Type.Name, stats : List[Statement]) extends Defn {
     def label : DLabel = l
 
     override def toString : String = symbols.toString
@@ -73,7 +74,7 @@ object Defn {
     def methods : List[Either[Decl.Method, Method]] = filterMethods(stats)
   }
 
-  case class Object(val l : DLabel, symbols : List[Symbol], name : meta.Term.Name, stats : List[Statement]) extends Defn{
+  case class Object(l : DLabel, symbols : List[Symbol], mods : List[meta.Mod], name : meta.Term.Name, stats : List[Statement]) extends Defn{
     def label : DLabel = l
 
     override def toString : String = symbols.toString
@@ -81,13 +82,13 @@ object Defn {
     def methods : List[Either[Decl.Method, Method]] = filterMethods(stats)
   }
 
-  case class PackageObject(val l : DLabel, symbols : List[Symbol], name : meta.Term.Name, stats : List[Statement]) extends Defn {
+  case class PackageObject(l : DLabel, symbols : List[Symbol], mods : List[meta.Mod], name : meta.Term.Name, stats : List[Statement]) extends Defn {
     def label : DLabel = l
 
     override def toString : String = symbols.toString
   }
 
-  case class Package(val l : DLabel, symbols : List[Symbol], name : meta.Term.Ref, stats : List[Statement]) extends Defn {
+  case class Package(l : DLabel, symbols : List[Symbol], name : meta.Term.Ref, stats : List[Statement]) extends Defn {
     def label : DLabel = l
 
     override def toString : String = symbols.toString
@@ -123,30 +124,30 @@ object Defn {
     })
   }
 
-  def cata[A]( fVal : (DLabel, List[meta.Pat], List[Symbol], Option[meta.Type], Expr) => A
-             , fVar : (DLabel, List[meta.Pat], List[Symbol], Option[meta.Type], Option[Expr]) => A
-             , fMethod : (DLabel, List[Symbol], meta.Term.Name, List[List[meta.Term.Param]], Option[meta.Type], Expr) => A
-             , fType : (DLabel, List[Symbol], meta.Type.Name, List[meta.Type.Param], meta.Type) => A
-             , fMacro : (DLabel, List[Symbol], meta.Term.Name, List[List[meta.Term.Param]], Expr) => A
-             , fSndCtor : (DLabel, List[Symbol], meta.Name, List[List[meta.Term.Param]], List[Statement]) => A
-             , fClass : (DLabel, List[Symbol], meta.Type.Name, List[Statement]) => A
-             , fTrait : (DLabel, List[Symbol], meta.Type.Name, List[Statement]) => A
-             , fObject : (DLabel, List[Symbol], meta.Term.Name, List[Statement]) => A
-             , fPObject : (DLabel, List[Symbol], meta.Term.Name, List[Statement]) => A
+  def cata[A]( fVal : (DLabel, List[meta.Mod], List[meta.Pat], List[Symbol], Option[meta.Type], Expr) => A
+             , fVar : (DLabel, List[meta.Mod], List[meta.Pat], List[Symbol], Option[meta.Type], Option[Expr]) => A
+             , fMethod : (DLabel, List[Symbol], List[meta.Mod], meta.Term.Name, List[meta.Type.Param], List[List[meta.Term.Param]], Option[meta.Type], Expr) => A
+             , fType : (DLabel, List[Symbol], List[meta.Mod], meta.Type.Name, List[meta.Type.Param], meta.Type) => A
+             , fMacro : (DLabel, List[Symbol], List[meta.Mod], meta.Term.Name, List[List[meta.Term.Param]], Expr) => A
+             , fSndCtor : (DLabel, List[Symbol], List[meta.Mod], meta.Name, List[List[meta.Term.Param]], (ThisApply, List[Statement])) => A
+             , fClass : (DLabel, List[Symbol], List[meta.Mod], meta.Type.Name, List[Statement]) => A
+             , fTrait : (DLabel, List[Symbol], List[meta.Mod], meta.Type.Name, List[Statement]) => A
+             , fObject : (DLabel, List[Symbol], List[meta.Mod], meta.Term.Name, List[Statement]) => A
+             , fPObject : (DLabel, List[Symbol], List[meta.Mod], meta.Term.Name, List[Statement]) => A
              , fPackage : (DLabel, List[Symbol], meta.Term.Ref, List[Statement]) => A
              , defn : Defn
              ) : A =
     defn match {
-      case Var(l, pats, symbols, oDeclType, oRhs) => fVar(l, pats, symbols, oDeclType, oRhs)
-      case Val(l, pats, symbols, oDeclType, rhs) => fVal(l, pats, symbols, oDeclType, rhs)
-      case Method(l, sym, name, argss, oDeclType, body) => fMethod(l, sym, name, argss, oDeclType, body)
-      case Type(l, sym, name, params, body) => fType(l, sym, name, params, body)
-      case Macro(l, sym, name, argss, body) => fMacro(l, sym, name, argss, body)
-      case SecondaryCtor(l, sym, name, paramss, body) => fSndCtor(l, sym, name, paramss, body)
-      case Class(l, sym, name, stats) => fClass(l, sym, name, stats)
-      case Trait(l, sym, name, stats) => fTrait(l, sym, name, stats)
-      case Object(l, sym, name, stats) => fObject(l, sym, name, stats)
-      case PackageObject(l, sym, name, stats) => fPObject(l, sym, name, stats)
+      case Var(l, mods, pats, symbols, oDeclType, oRhs) => fVar(l, mods, pats, symbols, oDeclType, oRhs)
+      case Val(l, mods, pats, symbols, oDeclType, rhs) => fVal(l, mods, pats, symbols, oDeclType, rhs)
+      case Method(l, sym, mods, name, typeArgs, argss, oDeclType, body) => fMethod(l, sym, mods, name, typeArgs, argss, oDeclType, body)
+      case Type(l, sym, mods, name, params, body) => fType(l, sym, mods, name, params, body)
+      case Macro(l, sym, mods, name, argss, body) => fMacro(l, sym, mods, name, argss, body)
+      case SecondaryCtor(l, sym, mods, name, paramss, body) => fSndCtor(l, sym, mods, name, paramss, body)
+      case Class(l, sym, mods, name, stats) => fClass(l, sym, mods, name, stats)
+      case Trait(l, sym, mods, name, stats) => fTrait(l, sym, mods, name, stats)
+      case Object(l, sym, mods, name, stats) => fObject(l, sym, mods, name, stats)
+      case PackageObject(l, sym, mods, name, stats) => fPObject(l, sym, mods, name, stats)
       case Package(l, sym, name, stats) => fPackage(l, sym, name, stats)
     }
 
@@ -216,25 +217,25 @@ object Defn {
 
   def symbols(d : Defn) : List[Symbol] =
     cata(
-        (_, _, symbols, _, _) => // val
+        (_, _, _, symbols, _, _) => // val
           symbols
-      , (_, _, symbols, _, _) => // var
+      , (_, _, _, symbols, _, _) => // var
           symbols
-      , (_, symbols, _, _, _, _) => // method
+      , (_, symbols, _, _, _, _, _, _) => // method
           symbols
-      , (_, symbols, _, _, _) => // type
+      , (_, symbols, _, _, _, _) => // type
           symbols
-      , (_, symbols, _, _, _) => // macro
+      , (_, symbols, _, _, _, _) => // macro
           symbols
-      , (_, symbols, _, _, _) => // secondary constructor
+      , (_, symbols, _, _, _, _) => // secondary constructor
           symbols
-      , (_, symbols, _, _) => // class
+      , (_, symbols, _, _, _) => // class
           symbols
-      , (_, symbols, _, _) => // trait
+      , (_, symbols, _, _, _) => // trait
           symbols
-      , (_, symbols, _, _) => // object
+      , (_, symbols, _, _, _) => // object
           symbols
-      , (_, symbols, _, _) => // package object
+      , (_, symbols, _, _, _) => // package object
           symbols
       , (_, symbols, _, _) => // package
           symbols
@@ -246,24 +247,17 @@ object Defn {
     DotGraph("", nodes, edges)
   }
 
-  def prettyPrint(defn : Defn) : Doc = {
-    lazy val lbr : Doc = Doc.str("[")
-    lazy val rbr : Doc = Doc.str("]")
-    lazy val lp : Doc = Doc.str("(")
-    lazy val rp : Doc = Doc.str(")")
-    lazy val lcurly : Doc = Doc.str("{")
-    lazy val rcurly : Doc = Doc.str("}")
+  def prettyPrint(defn : Defn) : Doc = prettyPrintConfigurable(defn, Statement.prettyPrint, Expr.prettyPrint)
+
+  def prettyPrintLint(defn : Defn) : Doc = prettyPrintConfigurable(defn, Statement.prettyPrintLint, Expr.prettyPrintLint)
+
+  def prettyPrintConfigurable(defn : Defn, prettyStatement : Statement => Doc, prettyExpression : Expr => Doc) : Doc = {
+    import PrettyPrint.{paren, bracket, lcurly, rcurly, eachFollowedBy, when}
 
     def prettyArgss(argss : List[List[meta.Term.Param]]) : Doc =
-      Doc.fill(Doc.lineOrEmpty, argss.map(args => Doc.str(args.mkString("(", ", ", ")"))))
+      Doc.fill(Doc.lineOrEmpty, argss.map(args => paren(Doc.str(args.mkString(", ")))))
     def prettyStatements(stmts : List[Statement]) : Doc =
-      Doc.intercalate(Doc.line + Doc.line, stmts.map(Statement.prettyPrint)).bracketBy(lcurly, rcurly, 2)
-
-    def bracketMany(l : List[Doc]) : Doc =
-      l match {
-        case List(d) => d
-        case _ => lp + Doc.intercalate(Doc.text(", "), l) + rp
-      }
+      PrettyPrint.curly(when(!stmts.isEmpty, Doc.hardLine) + Doc.intercalate(Doc.hardLine + Doc.hardLine, stmts.map(prettyStatement)).indent(2) + when(!stmts.isEmpty, Doc.hardLine))
 
     def spaceIf(b : Boolean) : Doc = if (b) Doc.space else Doc.empty
 
@@ -271,28 +265,30 @@ object Defn {
       t.fold(Doc.empty)(declType => Doc.text(":") + Doc.space + Doc.str(declType) + Doc.space)
 
     cata(
-        (_l, pats, symbols, oDeclType, rhs) => // val
-          Doc.text("val") + Doc.space + bracketMany(pats.map(Doc.str)) + Doc.space + typ(oDeclType) + Doc.text("=") + Doc.space + Expr.prettyPrint(rhs)
-      , (_l, pats, symbols, oDeclType, oRhs) => // var
-          Doc.text("var") + Doc.space + bracketMany(pats.map(Doc.str)) + Doc.space + typ(oDeclType) + oRhs.fold(Doc.empty)(rhs => Doc.text("=") + Doc.lineOrSpace + Expr.prettyPrint(rhs))
-      , (_l, _symbols, name, argss, oDeclType, body) => // method
-          Doc.text("def") + Doc.space + Doc.str(name) + Doc.lineOrSpace +
+        (_l, mods, pats, symbols, oDeclType, rhs) => // val
+          eachFollowedBy(Doc.space, mods) + Doc.text("val") + Doc.space + PrettyPrint.sepBy(Doc.comma + Doc.space, pats) + Doc.space + typ(oDeclType) + Doc.text("=") + Doc.space + prettyExpression(rhs)
+      , (_l, mods, pats, symbols, oDeclType, oRhs) => // var
+          eachFollowedBy(Doc.space, mods) + Doc.text("var") + Doc.space + PrettyPrint.sepBy(Doc.comma + Doc.space, pats) + Doc.space + typ(oDeclType) + Doc.text("=") + Doc.space + oRhs.fold(Doc.text("_"))(prettyExpression)
+      , (_l, _symbols, mods, name, typeArgs, argss, oDeclType, body) => // method
+          eachFollowedBy(Doc.space, mods) + Doc.text("def") + Doc.space + Doc.str(name) + PrettyPrint.bracketMany1(Doc.comma + Doc.space, typeArgs) +
           prettyArgss(argss) + spaceIf(!argss.isEmpty) + typ(oDeclType) + Doc.text("=") + Doc.lineOrSpace +
-          Expr.prettyPrint(body)
-      , (_l, _symbols, name, params, body) => // type
-          Doc.text("type") + Doc.space + Doc.str(name) + Doc.space + Doc.str(params.mkString("[", ",", "]")) + Doc.space + Doc.text("=") + Doc.lineOrSpace + Doc.str(body)
-      , (_l, _symbols, name, argss, body) => // macro
-          Doc.spread(List(Doc.text("def"), Doc.str(name), prettyArgss(argss))) + Doc.space + Doc.text("=") + Doc.lineOrSpace + Expr.prettyPrint(body)
-      , (_l, _symbols, name, paramss, body) => // secondary constructor
-          Doc.text("this") + prettyArgss(paramss) + Doc.space + Doc.text("=") + Doc.space + prettyStatements(body)
-      , (_l, _symbols, name, statements) => // class
-          Doc.text("class") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
-      , (_l, _symbols, name, statements) => // trait
-          Doc.text("trait") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
-      , (_l, _symbols, name, statements) => // object
-          Doc.text("object") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
-      , (_l, _symbols, name, statements) => // package object
-          Doc.spread(List(Doc.text("package"), Doc.text("object"), Doc.str(name), prettyStatements(statements)))
+          prettyExpression(body)
+      , (_l, _symbols, mods, name, params, body) => // type
+          eachFollowedBy(Doc.space, mods) + Doc.text("type") + Doc.space + Doc.str(name) + PrettyPrint.bracketMany1(Doc.comma + Doc.space, params) + Doc.space + Doc.text("=") + Doc.lineOrSpace + Doc.str(body)
+      , (_l, _symbols, mods, name, argss, body) => // macro
+           eachFollowedBy(Doc.space, mods) + Doc.spread(List(Doc.text("def"), Doc.str(name), prettyArgss(argss), Doc.text("="))) + Doc.lineOrSpace + prettyExpression(body)
+      , (_l, _symbols, mods, name, paramss, body) => { // secondary constructor
+          val (initializer, stmts) = body
+          eachFollowedBy(Doc.space, mods) + Doc.text("def") + Doc.space + Doc.text("this") + prettyArgss(paramss) + Doc.space + Doc.text("=") + Doc.space + prettyStatements(Statement.fromExpr(initializer) :: stmts)
+        }
+      , (_l, _symbols, mods, name, statements) => // class
+          eachFollowedBy(Doc.space, mods) + Doc.text("class") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
+      , (_l, _symbols, mods, name, statements) => // trait
+          eachFollowedBy(Doc.space, mods) + Doc.text("trait") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
+      , (_l, _symbols, mods, name, statements) => // object
+          eachFollowedBy(Doc.space, mods) + Doc.text("object") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
+      , (_l, _symbols, mods, name, statements) => // package object
+          eachFollowedBy(Doc.space, mods) + Doc.spread(List(Doc.text("package"), Doc.text("object"), Doc.str(name), prettyStatements(statements)))
       , (_l, _symbols, name, statements) => // package
           Doc.text("package") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
       , defn
@@ -308,12 +304,12 @@ object Defn {
         )
 
       cata(
-          (l, pats, symbols, _, rhs) => // val
+          (l, _mods, pats, symbols, _, rhs) => // val
             for (right <- Expr.toDotGen(rhs);
                  val_ <- DotGen.node(DotNode.record(l, "Val", pats.mkString(", ") + " : " + symbols.map(_.info).mkString(", ")));
                  _ <- DotGen.edge(val_, right, "rhs"))
             yield val_
-        , (l, pats, symbols, _, oRhs) => // var
+        , (l, _mods, pats, symbols, _, oRhs) => // var
             for (var_ <- DotGen.node(DotNode.record(l, "Var", pats.mkString(", ") + " : " + symbols.map(_.info).mkString(", ")));
                  optionTraverse : scalaz.Traverse[Option] = scalaz.std.option.optionInstance;
                  _ <- optionTraverse.traverse[DotGen.DotGen, Expr, Unit](oRhs)(rhs =>
@@ -323,40 +319,42 @@ object Defn {
                       )
                 )
             yield var_
-        , (l, _symbols, name, argss, _, body) => // method
+        , (l, _symbols, _mods, name, typeArgs, argss, _, body) => // method
             for (b <- Expr.toDotGen(body);
                  m <- DotGen.node(DotNode.record(l, "Method", defn.toString));
                  _ <- DotGen.edge(m, b, "body"))
             yield m
-        , (l, _symbols, name, _params, _body) => // type
+        , (l, _symbols, _mods, name, _params, _body) => // type
             for (tpe <- DotGen.node(DotNode.record(l, "Type member", name.toString)))
             yield tpe
-        , (l, _symbols, name, argss, body) => // macro
+        , (l, _symbols, _mods, name, argss, body) => // macro
             for (b <- Expr.toDotGen(body);
                  mcro <- DotGen.node(DotNode.record(l, "Macro", defn.toString));
                  _ <- DotGen.edge(mcro, b, "body"))
              yield mcro
-        , (l, _symbols, name, paramss, body) => // secondary constructor
-            for (b <- mapM(formatStatement, body);
+        , (l, _symbols, _mods, name, paramss, body) => { // secondary constructor
+            val (initializer, statements) = body
+            for (b <- mapM(formatStatement, Statement.fromExpr(initializer) :: statements);
                  ctor <- DotGen.node(DotNode.record(l, "Secondary constructor", defn.toString));
                  _ <- DotGen.enum(ctor, b, Function.const("")))
             yield ctor
-        , (l, _symbols, name, statements) => // class
+          }
+        , (l, _symbols, _mods, name, statements) => // class
             for (stmts <- mapM(formatStatement, statements);
                  class_ <- DotGen.node(DotNode.record(l, "Class", name.toString));
                  _ <- DotGen.enum(class_, stmts, Function.const("")))
             yield class_
-        , (l, _symbols, name, statements) => // trait
+        , (l, _symbols, _mods, name, statements) => // trait
             for (stmts <- mapM(formatStatement, statements);
                  trait_ <- DotGen.node(DotNode.record(l, "Trait", name.toString));
                  _ <- DotGen.enum(trait_, stmts, Function.const("")))
             yield trait_
-        , (l, _symbols, name, statements) => // object
+        , (l, _symbols, _mods, name, statements) => // object
             for (stmts <- mapM(formatStatement, statements);
                  object_ <- DotGen.node(DotNode.record(l, "Object", name.toString));
                  _ <- DotGen.enum(object_, stmts, Function.const("")))
             yield object_
-        , (l, _symbols, name, statements) => // package object
+        , (l, _symbols, _mods, name, statements) => // package object
             for (stmts <- mapM(formatStatement, statements);
                  pobject <- DotGen.node(DotNode.record(l, "Package object", name.toString));
                  _ <- DotGen.enum(pobject, stmts, Function.const("")))

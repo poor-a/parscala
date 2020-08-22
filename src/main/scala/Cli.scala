@@ -18,6 +18,13 @@ class Cli {
      .required(false)
      .build()
 
+  private[this] val prettyPrint : cli.Option =
+    cli.Option.builder("p")
+     .longOpt("pretty-print")
+     .desc("generate code from syntax tree and print to the standard output")
+     .required(false)
+     .build()
+
   private[this] val showAst : cli.Option = 
     cli.Option.builder("ast")
      .longOpt("show-ast")
@@ -94,7 +101,7 @@ class Cli {
      .build()  
 
   private val options : cli.Options = {
-    val options = List(method, showAst, showCfg, showCalls, showDataflow, dotOutput, files, mapLike, transformRemoveUnusedVars, dirs, classpath, help)
+    val options = List(method, prettyPrint, showAst, showCfg, showCalls, showDataflow, dotOutput, files, mapLike, transformRemoveUnusedVars, dirs, classpath, help)
     options.foldLeft(new cli.Options){(acc, o) => acc.addOption(o)}
   }
 
@@ -111,24 +118,26 @@ class Cli {
     val parser : cli.CommandLineParser = new cli.DefaultParser
     try {
       val result = parser.parse(options, args)
-      Right(new Config(Option(result.getOptionValue(method.getOpt)),
-                       result.hasOption(showAst.getOpt),
-                       result.hasOption(showCfg.getOpt),
-                       result.hasOption(showCalls.getOpt),
-                       result.hasOption(showDataflow.getOpt),
-                       Option(result.getOptionValue(dotOutput.getOpt)).map(Paths.get(_)),
-                       result.hasOption(mapLike.getOpt),
-                       result.hasOption(transformRemoveUnusedVars.getOpt),
-                       result.getOptionValues(files.getOpt) match {
-                         case null => List()
-                         case xs => xs.toList.map(Paths.get(_))
-                       },
-                       result.getOptionValues(dirs.getOpt) match {
-                         case null => List()
-                         case ds => ds.toList.map(Paths.get(_))
-                       },
-                       Option(result.getOptionValue(classpath.getOpt)),
-                       result.hasOption(help.getOpt)))
+      Right(new Config( Option(result.getOptionValue(method.getOpt))
+                      , result.hasOption(showAst.getOpt)
+                      , result.hasOption(showCfg.getOpt)
+                      , result.hasOption(showCalls.getOpt)
+                      , result.hasOption(showDataflow.getOpt)
+                      , Option(result.getOptionValue(dotOutput.getOpt)).map(Paths.get(_))
+                      , result.hasOption(mapLike.getOpt)
+                      , result.hasOption(transformRemoveUnusedVars.getOpt)
+                      , result.getOptionValues(files.getOpt) match {
+                          case null => List()
+                          case xs => xs.toList.map(Paths.get(_))
+                        }
+                      , result.getOptionValues(dirs.getOpt) match {
+                          case null => List()
+                          case ds => ds.toList.map(Paths.get(_))
+                      , }
+                      , Option(result.getOptionValue(classpath.getOpt))
+                      , result.hasOption(prettyPrint.getOpt)
+                      , result.hasOption(help.getOpt)
+                      ))
     } catch {
       case ex : cli.MissingArgumentException =>
         Left("missing argument for option '%s'".format(ex.getOption.getLongOpt))

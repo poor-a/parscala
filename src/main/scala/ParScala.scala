@@ -24,6 +24,7 @@ case class Config (
   val files : List[Path],
   val directories : List[Path],
   val classpath : Option[String],
+  val prettyPrint : Boolean,
   val showHelp : Boolean
 )
 
@@ -140,6 +141,9 @@ object ParScala {
                 MainWindow.showDotWithTitle(mkAst(pgraph), "AST", () => mkAst(analyse()))
               if (c.showCallGraph) {
                 MainWindow.showDotWithTitle(mkCallGraph(pgraph), "Call graph", () => mkCallGraph(analyse()))
+              }
+              if (c.prettyPrint) {
+                pgraph.topLevels.foreach(d => println(d.fold(tree.Decl.prettyPrint, tree.Defn.prettyPrint).render(100)))
               }
               scalaz.std.option.cata(c.method)(
                   mName => {

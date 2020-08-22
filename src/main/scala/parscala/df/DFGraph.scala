@@ -98,16 +98,18 @@ object DFGraph {
             args.map(arg => traverse(arg, ud) + ((arg.label -> label, D())) )
             .foldLeft(Set.empty[Edge])(_ union (_)) + ((fun.label -> label, D())) union traverse(fun, ud)
           fun match {
-            case tr.Select(_, expr, _, _) => edges + ((expr.label -> label, D()))
-            case _                        => edges
+            case tr.Select(_, expr, _, _, _) => edges + ((expr.label -> label, D()))
+            case _                           => edges
           }
         }
       , (_label, _lhs, _op, _args, _) => Set[Edge]() // infix application TODO
       , (_label, _op, _arg, _) => Set[Edge]() // unary application TODO
       , (label, _, argss, _) => // new
-          argss.flatMap(args => args.map( arg => traverse(arg, ud) + ((arg.label -> label, D())) )).foldLeft(Set.empty[Edge])(_ union (_))
-      , (label, obj, _, _) => // select
+        (for (args <- argss.toIterator; arg <- args.toIterator) yield traverse(arg, ud) + ((arg.label -> label, D()))).foldLeft(Set.empty[Edge])(_ union _)
+      , (label, obj, _, _, _) => // select
           traverse(obj, ud) + ((obj.label -> label, D()))
+      , (l, argss) => // this(...) application
+        (for (args <- argss.toIterator; arg <- args.toIterator) yield traverse(arg, ud)).foldLeft(Set.empty[Edge])(_ union _)
       , const3(Set.empty[Edge]) // this
       , const4(Set.empty[Edge]) // super
       , (label, components, _) => // tuple

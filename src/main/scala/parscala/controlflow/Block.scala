@@ -15,7 +15,7 @@ sealed abstract class Block[A[_,_],E,X] extends NonLocal[E,X] {
                    b : B) : B
 }
 
-case class BFirst[A[E,X] <: NonLocal[E,X]](val n : A[C,O]) extends Block[A,C,O] {
+case class BFirst[A[E,X]<:NonLocal[E,X]](val n : A[C,O]) extends Block[A,C,O] {
   override def entryLabel(implicit evidence : C =:= C) : BLabel = n.entryLabel
   override def successors(implicit evidence : O =:= C) : List[(BLabel, EdgeLabel.TagType)] = ???
 
@@ -32,7 +32,7 @@ case class BFirst[A[E,X] <: NonLocal[E,X]](val n : A[C,O]) extends Block[A,C,O] 
     first(n, b)
 }
 
-case class BMiddle[A[E,X] <: NonLocal[E,X]](val n : A[O,O]) extends Block[A,O,O] {
+case class BMiddle[A[E,X]](val n : A[O,O]) extends Block[A,O,O] {
   override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
   override def successors(implicit evidence : O =:= C) : List[(BLabel, EdgeLabel.TagType)] = ???
 

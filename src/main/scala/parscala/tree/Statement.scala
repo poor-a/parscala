@@ -32,4 +32,7 @@ object Statement {
 
   def prettyPrint(stmt : Statement) : Doc =
     stmt.fold(Decl.prettyPrint, Defn.prettyPrint, Expr.prettyPrint)
+
+  def prettyPrintLint(stmt : Statement) : Doc =
+    stmt.fold(Decl.prettyPrint, Defn.prettyPrintLint, Expr.prettyPrintLint)
 }

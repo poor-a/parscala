@@ -31,8 +31,10 @@ object UnusedVariablesAnalysis {
             traverse(arg)
         , (_, _, argss, _) => // new
             mconcat(for (args <- argss; arg <- args) yield traverse(arg))
-        , (_, obj, _, _) => // selection
+        , (_, obj, _, _, _) => // selection
             traverse(obj)
+        , (_, argss) => // this(...) application
+            mconcat(for (args <- argss; arg <- args) yield traverse(arg))
         , (_, _, _) => // this
             nothing
         , (_, _, _, _) => // super
@@ -75,13 +77,13 @@ object UnusedVariablesAnalysis {
 
   private def collectVarDecls(d : Decl) : (Map[Symbol, DLabel], Set[Symbol], Set[Symbol]) =
     Decl.cata(
-        (l, _, symbols) => // val
+        (l, _, _, symbols, _) => // val
           (symbols.map((_, l)).toMap, symbols.toSet, Set())
-      , (l, _, symbols) => // var
+      , (l, _, _, symbols, _) => // var
           (symbols.map((_, l)).toMap, symbols.toSet, Set())
-      , (_, _, _, _) => // method 
+      , (_, _, _, _, _, _, _) => // method
           nothing
-      , (_, _, _, _, _) => // type
+      , (_, _, _, _, _, _) => // type
           nothing
       , (_, _) => // import
           nothing
@@ -90,25 +92,25 @@ object UnusedVariablesAnalysis {
 
   private def collectVarDefns(d : Defn) : (Map[Symbol, DLabel], Set[Symbol], Set[Symbol]) =
     Defn.cata(
-        (l, _, symbols, _, _) => // val
+        (l, _, _, symbols, _, _) => // val
           (symbols.map((_, l)).toMap, symbols.toSet, Set())
-      , (l, _, symbols, _, _) => // var
+      , (l, _, _, symbols, _, _) => // var
           (symbols.map((_, l)).toMap, symbols.toSet, Set())
-      , (_, _, _, _, _, _) => // method
+      , (_, _, _, _, _, _, _, _) => // method
           nothing
-      , (_, _, _, _, _) => // type
+      , (_, _, _, _, _, _) => // type
           nothing
-      , (_, _, _, _, _) => // macro
+      , (_, _, _, _, _, _) => // macro
           nothing
-      , (_, _, _, _, _) => // secondary constructor
+      , (_, _, _, _, _, _) => // secondary constructor
           nothing
-      , (_, _, _, _) => // class
+      , (_, _, _, _, _) => // class
           nothing
-      , (_, _, _, _) => // trait
+      , (_, _, _, _, _) => // trait
           nothing
-      , (_, _, _, _) => // object
+      , (_, _, _, _, _) => // object
           nothing
-      , (_, _, _, _) => // package object
+      , (_, _, _, _, _) => // package object
           nothing
       , (_, _, _, _) => // package
           nothing
