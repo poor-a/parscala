@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# gradle --debug testClasses && /home/r2r/scala/gradle/bin/gradle run --args="org.scalatest.tools.Runner -R build/classes/scala/test $*"
+
+. common
+
+run org.scalatest.tools.Runner -R build/classes/scala/test "$@"

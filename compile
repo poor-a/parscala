@@ -1,0 +1,17 @@
+. common
+
+CLASSDIR=build/classes/scala/main
+COMPILER_OPTS="-Xlint:_ -feature -deprecation -Ywarn-unused:_"
+
+# Main sources
+
+MAIN_SOURCES=$(find src/main/ -type f -name '*.scala')
+
+# Test sources
+
+EXCLUDE_PATTERN_IN_TEST='*TestInput.scala'
+TEST_SOURCES=$(find src/test/ -type f -name '*.scala' | grep -Ev $EXCLUDE_PATTERN_IN_TEST)
+
+# Compilation
+
+scalac -classpath $classpath -d $CLASSDIR $COMPILER_OPTS "$@" $MAIN_SOURCES $TEST_SOURCES

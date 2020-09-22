@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# gradle run --args="ParScala $@"
+
+. common
+
+run ParScala "$@"
