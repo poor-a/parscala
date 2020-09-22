@@ -2,7 +2,7 @@ name := "ParScala"
 
 version := "0.1"
 
-scalaVersion := "2.12.8"
+scalaVersion := "2.12.12"
 
 logLevel := Level.Info
 
@@ -12,13 +12,12 @@ resolvers += "jitpack" at "https://jitpack.io"
 libraryDependencies ++= Seq( "org.scala-lang" % "scala-compiler" % scalaVersion.value
                            , "org.scala-lang" % "scala-reflect" % scalaVersion.value
                            , "commons-cli" % "commons-cli" % "1.3.1"
-                           , "org.scalactic" %% "scalactic" % "3.0.0"
-                           , "org.scalatest" %% "scalatest" % "3.0.0" % "test"
-                           , "org.scalaz" %% "scalaz-core" % "7.2.14"
-                           , "org.scalameta" % "scalameta_2.12" % "3.7.4"
-                           , "org.scala-sbt" % "sbt" % "1.1.6"
+                           , "org.scalatest" %% "scalatest" % "3.2.0" % "test"
+                           , "org.scalaz" %% "scalaz-core" % "7.3.2"
+                           , "org.scalameta" % "scalameta_2.12" % "4.3.20"
+                           , "org.scala-sbt" % "sbt" % "1.3.13"
                            , "com.github.poor-a" % "launcher" % "c257e22d2052298d447f39b1a1857cdc4490850d"
-                           , "org.scala-sbt" % "sbt-launch" % "1.1.6"
+                           , "org.scala-sbt" % "sbt-launch" % "1.3.13"
                            , "org.typelevel" %% "paiges-core" % "0.3.1"
                            )
 

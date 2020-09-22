@@ -61,7 +61,7 @@ object DFGraph {
    * Directed, labeled dataflow edge. Direction corresponds flow of
    * value, that is `((source, destination), label)`.
    */
-  type Edge = ((SLabel, SLabel), DEdgeLabel)
+  type Edge = ((Either[DLabel, SLabel], SLabel), DEdgeLabel)
 
  /**
   * Constructs a dataflow graph from a `ExprTree`
@@ -90,30 +90,30 @@ object DFGraph {
     tree.Expr.cata(
         const3(Set())  // literal
       , (label, _, _symbols, _) => { // identifier
-          ud(label).map { case (sym @ _, assignment) => ((assignment -> label), F()) }}
+          ud(label).map { assignment => ((assignment -> label), F()) }}
       , (label, _, rhs, _) => // assignment
-          traverse(rhs, ud) + ((rhs.label -> label, F()))
+          traverse(rhs, ud) + ((Right(rhs.label) -> label, F()))
       , (label, fun, args, _) => { // application
           val edges : Set[Edge] = 
-            args.map(arg => traverse(arg, ud) + ((arg.label -> label, D())) )
-            .foldLeft(Set.empty[Edge])(_ union (_)) + ((fun.label -> label, D())) union traverse(fun, ud)
+            args.map(arg => traverse(arg, ud) + ((Right(arg.label) -> label, D())) )
+            .foldLeft(Set.empty[Edge])(_ union (_)) + ((Right(fun.label) -> label, D())) union traverse(fun, ud)
           fun match {
-            case tr.Select(_, expr, _, _, _) => edges + ((expr.label -> label, D()))
+            case tr.Select(_, expr, _, _, _) => edges + ((Right(expr.label) -> label, D()))
             case _                           => edges
           }
         }
       , (_label, _lhs, _op, _args, _) => Set[Edge]() // infix application TODO
       , (_label, _op, _arg, _) => Set[Edge]() // unary application TODO
       , (label, _, argss, _) => // new
-        (for (args <- argss.toIterator; arg <- args.toIterator) yield traverse(arg, ud) + ((arg.label -> label, D()))).foldLeft(Set.empty[Edge])(_ union _)
+        (for (args <- argss.toIterator; arg <- args.toIterator) yield traverse(arg, ud) + ((Right(arg.label) -> label, D()))).foldLeft(Set.empty[Edge])(_ union _)
       , (label, obj, _, _, _) => // select
-          traverse(obj, ud) + ((obj.label -> label, D()))
+          traverse(obj, ud) + ((Right(obj.label) -> label, D()))
       , (l, argss) => // this(...) application
         (for (args <- argss.toIterator; arg <- args.toIterator) yield traverse(arg, ud)).foldLeft(Set.empty[Edge])(_ union _)
       , const3(Set.empty[Edge]) // this
       , const4(Set.empty[Edge]) // super
       , (label, components, _) => // tuple
-          (components zip (1 to components.length)).foldLeft(Set.empty[Edge]){ case (acc, (c, n)) => acc union traverse(c, ud) + ((c.label -> label, C(n)))}
+          (components zip (1 to components.length)).foldLeft(Set.empty[Edge]){ case (acc, (c, n)) => acc union traverse(c, ud) + ((Right(c.label) -> label, C(n)))}
       , (_, cond, tBranch, _) => // if-then
           traverse(cond, ud) union traverse(tBranch, ud)
       , (_, cond, tBranch, fBranch, _) => // if-then-else
@@ -126,7 +126,7 @@ object DFGraph {
 //          enumerators.foldLeft(Set.empty[Edge])( (acc, enum) => traverse(enum, ud) ) union traverse(body, ud)
       , const2(Set.empty[Edge]) // return statement
       , (label, expr, _) => // return expr statement
-          traverse(expr, ud) + ((expr.label -> label, F()))
+          traverse(expr, ud) + ((Right(expr.label) -> label, F()))
       , (label, expr, _) => // throw statement
           traverse(expr, ud)
       , (label, statements, _) => { // block expression
@@ -137,7 +137,7 @@ object DFGraph {
                      )
           }
           if (statements.isEmpty) edges
-          else statements.last.label.map((l : SLabel) => edges + ((l -> label, F()))).getOrElse(edges)
+          else statements.last.label.map((l : SLabel) => edges + ((Right(l) -> label, F()))).getOrElse(edges)
         }
 //      , (label, _, body, _) => { // lambda function
 //          traverse(body, ud)
@@ -169,7 +169,7 @@ class DFGraph(graph : List[DFGraph.Edge]) {
   /**
    * Adds a collection of edges to this dataflow graph.
    */
-  def ++:(es : Traversable[((SLabel, SLabel), DEdgeLabel)]) : DFGraph =
+  def ++:(es : Traversable[DFGraph.Edge]) : DFGraph =
     new DFGraph(es ++: graph)
 
   /**
@@ -181,7 +181,7 @@ class DFGraph(graph : List[DFGraph.Edge]) {
    */
   def toDotEdges : Traversable[dot.DotEdge] = 
     graph.map{ case ((s, t), label) =>
-                 (dot.DotEdge(dot.DotNode(s), dot.DotNode(t))
+                 (dot.DotEdge(s.fold(dot.DotNode.fromDLabel(_), dot.DotNode.fromSLabel(_)), dot.DotNode.fromSLabel(t))
                   !! dot.DotAttr.color(dot.Color.Red)
                   !! dot.DotAttr.fontColor(dot.Color.Red)
                   !! dot.DotAttr.label(label.toString))

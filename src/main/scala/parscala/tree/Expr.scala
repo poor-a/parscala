@@ -212,13 +212,13 @@ object Expr {
   private implicit val logMonoid : Monoid[List[String]] = scalaz.std.list.listMonoid[String]
 
   type Exception[A] = String \/ A
-  type Logger[A] = WriterT[Exception, Log, A]
-  type NodeGen[A] = StateT[Logger, St, A]
+  type Logger[A] = WriterT[Log, Exception, A]
+  type NodeGen[A] = StateT[St, Logger, A]
 
-  private val logTransInstance : MonadTrans[({ type λ[M[_], A] = WriterT[M, Log, A] })#λ] = WriterT.writerTHoist
+  private val logTransInstance : MonadTrans[({ type λ[M[_], A] = WriterT[Log, M, A] })#λ] = WriterT.writerTHoist
   private val stateInstance : MonadState[NodeGen, St] = IndexedStateT.stateTMonadState[St, Logger]
 
-  private val transInstance : MonadTrans[({ type λ[M[_], A] = StateT[M, St, A] })#λ] = IndexedStateT.StateMonadTrans
+  private val transInstance : MonadTrans[({ type λ[M[_], A] = StateT[St, M, A] })#λ] = IndexedStateT.StateMonadTrans
   private val m : Monad[NodeGen] = stateInstance
 
   val nodeGenMonadInstance : Monad[NodeGen] = stateInstance
@@ -227,7 +227,7 @@ object Expr {
     transInstance.liftM[Logger, A](logTransInstance.liftM[Exception, A](\/.DisjunctionInstances1.raiseError[A](e)))
 
   private def log(m : String) : NodeGen[Unit] =
-    transInstance.liftM[Logger, Unit](scalaz.WriterT.writerTMonadListen[Exception, Log].tell(List(m)))
+    transInstance.liftM[Logger, Unit](scalaz.WriterT.writerTMonadListen[Log, Exception].tell(List(m)))
 /*
   private val errorInstance : MonadError[NodeGen, String] = new MonadError {
     val errInst : MonadError[Exception, String] = \/.DisjunctionInstances1
@@ -253,7 +253,7 @@ object Expr {
   private val genDLabel : NodeGen[DLabel] =
     modifySt { s => (s.dGen.head, s.copy(dGen = s.dGen.tail)) }
 
-  private def genDLabel(sym : Symbol) : NodeGen[DLabel] =
+  private def genDLabelFor(sym : Symbol) : NodeGen[DLabel] =
     modifySt{ s =>
       s.symbolTable.get(sym) match {
         case Some(dl) => (dl, s)
@@ -286,7 +286,7 @@ object Expr {
 
   private def collectMethod(t : Tree) : NodeGen[Unit] =
     if (t.symbol != null && t.symbol.isMethod)
-      m.void(genDLabel(t.symbol))
+      m.void(genDLabelFor(t.symbol))
     else
       m.pure(())
 
@@ -334,7 +334,7 @@ object Expr {
           for (fun <- resugarChild(metaFun);
                args <- forM(metaArgs)(resugarChild(_));
                app <- label(App(_, fun, args, types));
-               targets <- mapM(genDLabel, for (f <- childSamePos(metaFun, StopOnExactPosition()); if f.symbol != null) yield f.symbol);
+               targets <- mapM(genDLabelFor, for (f <- childSamePos(metaFun, StopOnExactPosition()); if f.symbol != null) yield f.symbol);
                _ <- mapM((t : DLabel) => addCallTarget(app.label, t), targets))
           yield app
         // metaOp should be inspected for symbols
@@ -344,7 +344,7 @@ object Expr {
                appInfix <- label(AppInfix(_, argLeft, metaOp, argsRight, types));
                desugaredSelects = searchSamePosition(meta.Position.Range(sugared.pos.input, metaArgLeft.pos.start, metaOp.pos.end), samePos, SearchChildrenOnExactPosition());
                targets = symbolsOf(desugaredSelects);
-               _ <- mapM[NodeGen, Symbol, Unit]((t : Symbol) => for (l <- genDLabel(t); _ <- addCallTarget(appInfix.label, l)) yield (), targets))
+               _ <- mapM[NodeGen, Symbol, Unit]((t : Symbol) => for (l <- genDLabelFor(t); _ <- addCallTarget(appInfix.label, l)) yield (), targets))
           yield appInfix
       , (metaPred, metaThen) => // if then
           for (pred <- resugarChild(metaPred);
@@ -483,7 +483,7 @@ object Expr {
     forM_(metaStats){ stat => genStat(stat, searchSamePosition(stat.pos, List(desugared), SearchChildrenOnExactPosition())) }
   }
 
-  def genStat(sugared : meta.Stat, ts : List[Tree]) : NodeGen[Statement] =
+  def genStat(sugared : meta.Stat, ts : List[Tree]) : NodeGen[Statement] = {
     Control.metaStatKindCata(
         term => // term
           stateInstance.map(genExpr(term, ts))(Statement.fromExpr(_))
@@ -501,7 +501,7 @@ object Expr {
           stateInstance.map(genImport(imprt, ts))(Statement.fromDecl(_))
       , sugared
       )
-
+  }
   def genDefn(sugared : meta.Defn, scope : List[Tree]) : NodeGen[Defn] = {
     // used for definitions other than vals or vars
     lazy val samePos : List[Tree] = searchSamePosition(sugared.pos, scope, SearchChildrenOnExactPosition())
@@ -515,7 +515,7 @@ object Expr {
 
     lazy val symbols : List[Symbol] = symbolsOf(samePos)
 
-    Control.defnCataMeta(
+    val res:NodeGen[Defn] = Control.defnCataMeta(
         (mods, pats, oDeclType, metaRhs) => _ => // value
           putDefn(genDLabel){ l => {
               val valSymbols : List[Symbol] = extractVarValSymbols(pats, sugared, scope)
@@ -541,7 +541,7 @@ object Expr {
           }
       , (mods, name, typeParams, paramss, oDeclType, metaBody) => _ => // method
           putDefn(for (l <- singleton(samePos){
-                              case t : scalac.DefDef => genDLabel(t.symbol)
+                              case t : scalac.DefDef => genDLabelFor(t.symbol)
                               case _ => log(s"The matching ast for method definition $name is not a method."); genDLabel
                             }
                             { log(s"Found ${scope.length} matching asts for method definition $name, expected 1.");
@@ -556,7 +556,7 @@ object Expr {
        , (mods, name, _typeParams, paramss, _oDeclType, metaBody) => _ => // macro
           putDefn(
             for (l <- singleton(samePos){
-                        case m : scalac.DefDef => genDLabel(m.symbol)
+                        case m : scalac.DefDef => genDLabelFor(m.symbol)
                         case _ => log(s"The matching ast for macro definition $name is not a macro."); genDLabel
                       }
                       { log(s"Found ${scope.length} matching asts for macro definition $name, expected 1.");
@@ -578,7 +578,7 @@ object Expr {
               val symbols : List[Symbol] = symbolsOf(matchingClasses)
               for (_ <- (m.unlessM(matchingClasses.length == 1)
                           (log(s"Found ${matchingClasses.length} matching asts for the class definition $name, expected 1.")));
-                  _ <- forM_(symbols)(addSymbol(_, l));
+                  _ <- forM_(symbols)(s => addSymbol(s, l));
                   statements <- resugarTemplate(metaBody, matchingClasses))
                yield Defn.Class(l, symbols, mods, name, statements)
             }
@@ -610,6 +610,7 @@ object Expr {
           }
       , sugared
       )
+    res
   }
 
   private def genCtor(ctor : meta.Ctor.Secondary, scope : List[Tree]) : NodeGen[Defn] = {

@@ -4,7 +4,7 @@ package controlflow
 sealed abstract class Node[E,X] extends NonLocal[E,X]
 
 case class Label(label : BLabel) extends Node[C,O] {
-  override def entryLabel(implicit evidence : C =:= C) = label
+  override def entryLabel(implicit evidence : C =:= C) : BLabel = label
   override def successors(implicit evidence : O =:= C) : List[(BLabel, EdgeLabel.TagType)] = ???
 }
 
@@ -18,11 +18,16 @@ case class Expr(expr : SLabel) extends Node[O,O] {
   override def successors(implicit evidence : O =:= C) : List[(BLabel, EdgeLabel.TagType)] = ???
 }
 
+case class Defn(defn : DLabel) extends Node[O,O] {
+  override def entryLabel(implicit evidence : O =:= C) : BLabel = ???
+  override def successors(implicit evidence : O =:= C) : List[(BLabel, EdgeLabel.TagType)] = ???
+}
+
 /**
  * Represents a call of the method `m`.
  *
  * @param expr The method application expression in the program.
- * @param m The method to be invoked.
+ * @param ms Methods may be invoked.
  */
 case class Call(expr : SLabel, ms : List[BLabel], returnPoint : BLabel) extends Node[O,C] {
   override def entryLabel(implicit evidence : O =:= C) : BLabel = ???

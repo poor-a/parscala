@@ -9,8 +9,8 @@ import scala.collection.immutable.Traversable
 
 object UseDefinition {
 
-  /** Variables associated with point of assignment in the program. */
-  type Assignment = (Symbol, SLabel)
+  /** Point of assignment in the program. */
+  type Assignment = Either[DLabel, SLabel]
 
   /**
    * Associates use of a variable with the assignments reaching that
@@ -22,9 +22,9 @@ object UseDefinition {
   def fromCFGraph(cfg : cf.CFGraph) : UseDefinition = fromReachingDefinition(ReachingDefinition(cfg))
 
   def fromReachingDefinition(rd : ReachingDefinition) : UseDefinition = {
-    def useDefinitions(l : SLabel, reachingDefs : Set[Assignment]) : Set[Assignment] =
+    def useDefinitions(l : SLabel, reachingDefs : Set[(Symbol, Assignment)]) : Set[Assignment] =
       rd.cfg(l) match {
-        case None => 
+        case None =>
           Set.empty
         case Some(node) =>
           val const2 : (Any, Any) => Set[Assignment] = (_, _) => Set.empty
@@ -33,8 +33,8 @@ object UseDefinition {
           val const5 : (Any, Any, Any, Any, Any) => Set[Assignment] = (_, _, _, _, _) => Set.empty
           tr.Expr.cata(
               const3 // literal
-            , (sl, _, symbols, _) => // identifier
-                reachingDefs filter { case (sym, assignment @ _) => symbols contains sym }
+            , (_, _, symbols, _) => // identifier
+                reachingDefs filter { case (sym, assignment @ _) => symbols contains sym } map (_._2)
             , const4 // assignment
             , const4 // application
             , const5 // infix application
@@ -72,7 +72,7 @@ object UseDefinition {
 class UseDefinition private (useDefinitions : UseDefinition.UD) {
   def toDotEdges : Traversable[dot.DotEdge] =
     useDefinitions.to[Stream].flatMap{ case (variable, definitions) =>
-      definitions.to[Stream].map{ case (_, assignment) => 
+      definitions.to[Stream].map{ assignment =>
         dot.DotEdge(dot.DotNode(assignment.toString), dot.DotNode(variable.toString)) !! List(dot.DotAttr.label("flow"), dot.DotAttr.color(dot.Color.Purple), dot.DotAttr.fontColor(dot.Color.Purple))
       }
   }

@@ -7,10 +7,13 @@ import parscala.{tree => tr}
 import scalaz.std.option
 
 object ReachingDefinition {
-  def apply(cfg : cf.CFGraph) : ReachingDefinition = {
-    // Reaching definition: variables associated with point of assignment in the program
-    type RD = Set[(Symbol, SLabel)]
 
+  /** Reaching definition: variables associated with point of
+   *  assignment in the program.
+   */
+  type RD = Set[(Symbol, Either[DLabel, SLabel])]
+
+  def apply(cfg : cf.CFGraph) : ReachingDefinition = {
     // Assignments reaching the entry of each expression
     type RDMap = Map[SLabel, RD]
 
@@ -33,7 +36,7 @@ object ReachingDefinition {
                 tr.Expr.cata(
                     const3 // literal
                   , (_, _, symbols, _) => // identifier
-                      rd.filter { case (s : Symbol, _ : SLabel) => ! (symbols contains s) } ++ (symbols map ((_, sl)))
+                      rd.filter { case (s : Symbol, _ ) => ! (symbols contains s) } ++ (symbols map ((_, Right(sl))))
                   , const4 // assignment
                   , const4 // application
                   , const5 // infix application
@@ -216,8 +219,8 @@ object ReachingDefinition {
  * See Flemming Nielson, Hanne Riis Nielson, Chris Hankin:
  * 'Principles of Program Analysis' section 2.1
  */
-class ReachingDefinition(val rd : Map[SLabel, Set[(Symbol, SLabel)]], val cfg : cf.CFGraph) {
-  def get(l : SLabel) : Option[Set[(Symbol, SLabel)]] = rd.get(l)
+class ReachingDefinition private (val rd : Map[SLabel, ReachingDefinition.RD], val cfg : cf.CFGraph) {
+  def get(l : SLabel) : ReachingDefinition.RD = rd.get(l).getOrElse(Set.empty)
 
   def toDotEdges : List[dot.DotEdge] =
     rd.foldLeft(List.empty[dot.DotEdge]) { (acc, kv) =>

@@ -50,13 +50,13 @@ object CFGraph {
 
   private type Methods = Map[MLabel, (BLabel, BLabel)]
   private type CFGGen[A] = State[St, A]
-  private type CFGAnalyser[A] = EitherT[CFGGen, Unit, A]
+  private type CFGAnalyser[A] = EitherT[Unit, CFGGen, A]
 
 //  private val cfgAMonad : Monad[CFGAnalyser] = implicitly[Monad[CFGAnalyser]]
 //  private val cfgAErr : MonadError[CFGAnalyser, Unit] = implicitly[MonadError[CFGAnalyser, Unit]]
   private val cfgASt : MonadState[CFGAnalyser, St] = parscala.EitherT.eitherTStateTInstance
-  private val cfgATrans : Hoist[({type λ[M[_], A] = EitherT[M, Unit, A]})#λ] = EitherT.eitherTHoist
-  private val cfgAnalyser : Monad[CFGAnalyser] = EitherT.eitherTMonad
+  private val cfgATrans : Hoist[({type λ[M[_], A] = EitherT[Unit, M, A]})#λ] = EitherT.eitherTHoist
+  private val cfgAnalyser : Monad[CFGAnalyser] = EitherT.eitherTHoist[Unit].apply[({type λ[A] = State[St, A]})#λ](scalaz.IndexedStateT.stateMonad[St])
 
   private def genBLabel[M[_]](implicit monadSt : MonadState[M, St]) : M[BLabel] =
     modifySt{ st => (st.bGen.head, st.copy(bGen = st.bGen.tail)) }
@@ -163,7 +163,7 @@ object CFGraph {
   //               methodEnd => {
   //                 def addReturn()
 
-  private def analyseMethod(method : MLabel)(implicit mSt : MonadState[CFGAnalyser, St], monadTrans : Hoist[({type λ[M[_], A] = EitherT[M, Unit, A]})#λ]) : CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = {
+  private def analyseMethod(method : MLabel)(implicit mSt : MonadState[CFGAnalyser, St], monadTrans : Hoist[({type λ[M[_], A] = EitherT[Unit, M, A]})#λ]) : CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = {
     val const2 : (Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const2(mSt.pure(None))
     val const3 : (Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const3(mSt.pure(None))
     val const4 : (Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const4(mSt.pure(None))
@@ -192,25 +192,26 @@ object CFGraph {
           case Some(Middle3(defn)) =>
             tr.Defn.cata( const6 // value
                         , const6 // variable
-                        , (_, _, _, _, _, _, _, body) => { // method
-                            emptyBlock >>= (start =>
-                            emptyBlock >>= (end => {
-                            val done = Done(List())
-                            close(end, done) >> {
-                            emptyBlock >>= (first => {
-                            close(start, Jump(first.entryLabel)) >> (
-                            putMethod(method, start.entryLabel, end.entryLabel) >> (
-                            monadTrans.liftM(setAbruptNext(end.entryLabel)) >> (
-                            monadTrans.liftM(cfgStmts(body, first).run) >>= (res => {
-                            getBlock(end.entryLabel) >>= (b => (getDone(b) >>= (done_ =>
-                            res match {
-                                case \/-(b) =>
-                                  close(b, Jump(end.entryLabel)) >>
-                                  mSt.pure(Some((start.entryLabel, (end.entryLabel, done_))))
-                                case _      =>
-                                  mSt.pure(Some((start.entryLabel, (end.entryLabel, done_))))
-                              }
-                            )))}))))})}}))}
+                        , (_, _, _, _, _, _, _, body) => // method
+                            for (start <- emptyBlock;
+                                 end <- emptyBlock;
+                                 done = Done(List());
+                                 _ <- close(end, done);
+                                 first <- emptyBlock;
+                                 _ <- close(start, Jump(first.entryLabel));
+                                 _ <- putMethod(method, start.entryLabel, end.entryLabel);
+                                 _ <- monadTrans.liftM(setAbruptNext(end.entryLabel));
+                                 res <- monadTrans.liftM(cfgStmts(body, first).run);
+                                 b <- getBlock(end.entryLabel);
+                                 done_ <- getDone(b);
+                                 _ <- res match {
+                                   case \/-(b_) =>
+                                     close(b_, Jump(end.entryLabel))
+                                   case _ =>
+                                     mSt.pure(())
+                                 })
+                              yield
+                                  Some((start.entryLabel, (end.entryLabel, done_)))
                         , const6 // type
                         , const6 // macro
                         , const6 // secondary constructor
@@ -386,7 +387,7 @@ object CFGraph {
           m.pure(append(b, Expr(l))) 
       , (l, enums, body, _) => // for-yield loop
           m.pure(append(b, Expr(l))) 
-      , (l, _) => // return 
+      , (l, _) => // return
           liftM(getAbruptNext) >>= (abruptNext =>
           close(append(b, Expr(l)), Jump(abruptNext)) >>
           raiseError())
@@ -405,8 +406,42 @@ object CFGraph {
           foldM(
               (acc : Block[Node, C, O], stmt : tr.Statement) =>
                 stmt.fold(
-                    _ => m.pure(acc)
-                  , _ => m.pure(acc)
+                    _ => m.pure(acc) // declaration
+                    // TODO: of course, this is much harder than it is implemented
+                    // statements in an object, for example, are run at the first
+                    // invocation of a member method or reference to a member field
+                  , defn => tr.Defn.cata(
+                                (l, _, _, _, _, rhs) => // value
+                                  for (afterRhs <- cfgStmts(rhs, acc))
+                                  yield append(afterRhs, Defn(l))
+                              , (l, _, _, _, _, oRhs) => // variable
+                                  oRhs match {
+                                    case Some(rhs) =>
+                                      for (afterRhs <- cfgStmts(rhs, acc))
+                                      yield append(afterRhs, Defn(l))
+                                    case None =>
+                                      m.pure(append(acc, Defn(l)))
+                                  }
+                              , (l, _, _, _, _, _, _, _) => // method
+                                  m.pure(append(acc, Defn(l)))
+                              , (l, _, _, _, _, _) => // type
+                                  m.pure(append(acc, Defn(l)))
+                              , (l, _, _, _, _, _) => // macro
+                                  m.pure(append(acc, Defn(l)))
+                              , (l, _, _, _, _, _) => // secondary constructor
+                                  m.pure(append(acc, Defn(l)))
+                              , (l, _, _, _, _) => // class
+                                  m.pure(append(acc, Defn(l)))
+                              , (l, _, _, _, _) => // trait
+                                  m.pure(append(acc, Defn(l)))
+                              , (l, _, _, _, _) => // object
+                                  m.pure(append(acc, Defn(l)))
+                              , (l, _, _, _, _) => // package object
+                                  m.pure(append(acc, Defn(l)))
+                              , (l, _, _, _) => // package
+                                  m.pure(append(acc, Defn(l)))
+                              , defn
+                              )
                   , expr => cfgStmts(expr, acc)
                   )
             , b

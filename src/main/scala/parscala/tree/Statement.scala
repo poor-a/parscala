@@ -19,6 +19,7 @@ class Statement (val statement : Either3[Decl, Defn, Expr]) extends AnyVal {
                   )
 
   def toDefn : Option[Defn] = statement.middleOr[Option[Defn]](None)(Some(_))
+  def toExpr : Option[Expr] = statement.rightOr[Option[Expr]](None)(Some(_))
 
   def fold[A] : (Decl => A, Defn => A, Expr => A) => A = statement.fold _
 }

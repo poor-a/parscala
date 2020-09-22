@@ -3,7 +3,6 @@ package parscala
 import controlflow.{CFGraph, Block, Node, C}
 
 import scalaz.{State, IndexedStateT, IndexedState, Traverse}
-import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 
 object MapLike {
   def isMapLike(m : DLabel, cfg : CFGraph) : Boolean =
@@ -66,35 +65,37 @@ object MapLike {
   private def callsSoFar : State[St, Int] = State.gets(_._1)
 
   private def traverseFrom(l : BLabel, cfg : CFGraph) : State[St, Boolean] = {
-    isVisited(l) >>= (visited =>
-      if (!visited)
-        markAsVisited(l) >> (
-        cfg.get(l) match {
-          case Some(b) =>
-            val listTraverse : Traverse[List] = scalaz.std.list.listInstance
-            for (_ <- countRecursiveCall(b);
-                 recursiveCalls <- callsSoFar;
-                 s <- IndexedState.get[St];
-                 allPathsEligible <- listTraverse.traverse[T, BLabel, Boolean](successors(b, s._3))
-                        ((succ : BLabel) => for (s2 <- IndexedState.get[St];
-                                                 _ <- IndexedState.put[St](resetVisited(resetCounter(s2, s._1), s._4));
-                                                 pathEligible <- traverseFrom(succ, cfg))
-                                            yield pathEligible
-                        )(IndexedStateT.stateMonad))
-            yield if (allPathsEligible.isEmpty)
-                    recursiveCalls <= 1
-                  else
-                    !(allPathsEligible contains false)
-          case None => IndexedStateT.stateMonad.pure(false)
-        })
-      else 
-        for (n <- callsSoFar;
-             mCalls <- callsUntil(l))
-        yield mCalls match {
-                case Some(calls) => n - calls == 0 && n <= 1
-                case _ => throw new IllegalArgumentException("non-existent node: " + l)
-              }
-      )
+    for (visited <- isVisited(l);
+         result <- if (!visited)
+           for (_ <- markAsVisited(l);
+                visitResult <- cfg.get(l) match {
+                  case Some(b) =>
+                    val listTraverse : Traverse[List] = scalaz.std.list.listInstance
+                    for (_ <- countRecursiveCall(b);
+                         recursiveCalls <- callsSoFar;
+                         s <- IndexedState.get[St];
+                         allPathsEligible <- listTraverse.traverse[T, BLabel, Boolean](successors(b, s._3))
+                           ((succ : BLabel) => for (s2 <- IndexedState.get[St];
+                                                    _ <- IndexedState.put[St](resetVisited(resetCounter(s2, s._1), s._4));
+                                                    pathEligible <- traverseFrom(succ, cfg))
+                                               yield pathEligible
+                           )(IndexedStateT.stateMonad))
+                    yield if (allPathsEligible.isEmpty)
+                            recursiveCalls <= 1
+                          else
+                            !(allPathsEligible contains false)
+                  case None => IndexedStateT.stateMonad[St].pure(false)
+                })
+           yield visitResult
+         else
+           for (n <- callsSoFar;
+                mCalls <- callsUntil(l))
+           yield mCalls match {
+               case Some(calls) => n - calls == 0 && n <= 1
+               case _ => throw new IllegalArgumentException("non-existent node: " + l)
+           }
+        )
+        yield result
   }
 
   private def traverseExecutionPaths(m : DLabel, cfg : CFGraph) : Boolean = {

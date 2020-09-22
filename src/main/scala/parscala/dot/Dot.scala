@@ -34,7 +34,10 @@ object DotNode {
   def apply(id : String) : DotNode =
     new DotNode("node_%s".format(dotLegaliseId(id)), List.empty)
 
-  def apply(id : SLabel) : DotNode =
+  def fromSLabel(id : SLabel) : DotNode =
+    new DotNode("node_%s".format(dotLegaliseId(id.toString)), List.empty)
+
+  def fromDLabel(id : DLabel) : DotNode =
     new DotNode("node_%s".format(dotLegaliseId(id.toString)), List.empty)
 
   def record[A](l : A, header : String, body : String)(implicit show : Show[A]) : DotNode =

@@ -2,7 +2,6 @@ import javax.{swing => sw}
 import java.awt.{BorderLayout,Dimension}
 import java.awt.event.ActionEvent
 
-import parscala.controlflow.{CFGraph, CFGPrinter}
 import parscala.callgraph.{CallGraph,CallGraphVisualiser}
 import parscala.dot.{Dot, DotGraph}
 
@@ -20,21 +19,25 @@ object MainWindow {
     }
   }
 
-  def showDotWithTitle(g : DotGraph, title : String, update : () => DotGraph) {
+  def showDotWithTitle(g : DotGraph, title : String, update : () => Option[DotGraph]) {
     val d : Dot = new Dot
 
     def putImage(image : sw.JComponent, w : sw.JFrame) : Unit = {
       w.add(image, BorderLayout.CENTER)
       setKeyShortcut(image, "refresh", 'r'){
-        d.drawGraph(update()) match {
-          case Right(image_) =>
-            w.remove(image)
-            putImage(image_, w)
-            w.revalidate()
-            w.repaint()
-          case Left(err) =>
-            Console.err.println(err)
-        }  
+        update() match {
+          case Some(graph) =>
+            d.drawGraph(graph) match {
+              case Right(image_) =>
+                w.remove(image)
+                putImage(image_, w)
+                w.revalidate()
+                w.repaint()
+              case Left(err) =>
+                Console.err.println(err)
+            }
+          case None => ()
+        }
       }
     }
 
@@ -49,7 +52,7 @@ object MainWindow {
     }
   }
 
-  def showDot(g : DotGraph, update : () => DotGraph) {
+  def showDot(g : DotGraph, update : () => Option[DotGraph]) {
     showDotWithTitle(g, "Dot graph", update)
   }
 

@@ -47,10 +47,14 @@ object ParScala {
     else
       path
 
-  private def mkProgramGraph(scalaSourceFiles : List[Path], classpath : Option[String]) : ProgramGraph = {
-    val (pgraph, oErr) : (ProgramGraph, Option[String]) = parscala.ParScala.analyse(scalaSourceFiles, classpath)
-    oErr foreach { err => println("ERROR: " + err) }
-    pgraph
+  private def mkProgramGraph(scalaSourceFiles : List[Path], classpath : Option[String]) : Option[ProgramGraph] = {
+    parscala.ParScala.analyse(scalaSourceFiles, classpath) match {
+      case Left(err) =>
+        Console.err.println("ERROR: " + err)
+        None
+      case Right((pgraph, warnings @ _)) =>
+        Some(pgraph)
+    }
   }
 
   private def mkAst(pg : ProgramGraph) : DotGraph = pg.toDot
@@ -135,68 +139,79 @@ object ParScala {
             if (scalaSourceFiles.isEmpty) {
               Console.err.println("No Scala files are found.")
             } else {
-              val analyse : () => ProgramGraph = () => mkProgramGraph(scalaSourceFiles, c.classpath.map(_ + projectClassPath.mkString(classPathSeparator)))
-              val pgraph : ProgramGraph = analyse()
-              if (c.showAst)
-                MainWindow.showDotWithTitle(mkAst(pgraph), "AST", () => mkAst(analyse()))
-              if (c.showCallGraph) {
-                MainWindow.showDotWithTitle(mkCallGraph(pgraph), "Call graph", () => mkCallGraph(analyse()))
-              }
-              if (c.prettyPrint) {
-                pgraph.topLevels.foreach(d => println(d.fold(tree.Decl.prettyPrint, tree.Defn.prettyPrint).render(100)))
-              }
-              scalaz.std.option.cata(c.method)(
-                  mName => {
-                    val oMethod : Option[Either[tree.Decl.Method, tree.Defn.Method]] = findMethod(mName, pgraph)
-                    oMethod match {
-                      case Some(Right(method)) =>
-                        println(s"$mName refers to a method definition.")
-                        val pgraphTransformed : ProgramGraph = 
-                          if (c.removeUnusedVariables) {
-                            val pg : ProgramGraph = parscala.transformation.RemoveUnusedVariables.in(method, pgraph)
-                            rewriteFileOf(method, pg)
-                            pg
-                          } else
-                            pgraph
-                        if (c.showCfg || c.showDataflowGraph || !c.dotOutput.isEmpty || c.checkMapLike) {
-                          val cfg : CFGraph = mkCfg(method, pgraphTransformed)
-                          if (c.showCfg) {
-                            val refreshCfg : () => DotGraph = () => {
-                              val pg = analyse()
-                              onMethod(mName, m => CFGPrinter.formatGraph(mkCfg(m, pg)), _ => { println(noCfg(mName)); DotGraph.empty }, { println(noMethod(mName)); DotGraph.empty }, pg)
+              val fullClassPath : Option[String] = c.classpath.map(_ + projectClassPath.mkString(classPathSeparator))
+              val analyse : () => Option[ProgramGraph] = () => mkProgramGraph(scalaSourceFiles, fullClassPath)
+              analyse() match {
+                case Some(pgraph) =>
+                  if (c.showAst)
+                    MainWindow.showDotWithTitle(mkAst(pgraph), "AST", () => analyse().map(mkAst(_)))
+                  if (c.showCallGraph)
+                    MainWindow.showDotWithTitle(mkCallGraph(pgraph), "Call graph", () => analyse().map(mkCallGraph(_)))
+                  if (c.prettyPrint)
+                    pgraph.topLevels.foreach(d => println(d.fold(tree.Decl.prettyPrint, tree.Defn.prettyPrint).render(100)))
+                  scalaz.std.option.cata(c.method) (
+                    mName => {
+                      val oMethod : Option[Either[tree.Decl.Method, tree.Defn.Method]] = findMethod(mName, pgraph)
+                      oMethod match {
+                        case Some(Right(method)) =>
+                          println(s"$mName refers to a method definition.")
+                          val pgraphTransformed : ProgramGraph =
+                            if (c.removeUnusedVariables) {
+                              val pg : ProgramGraph = parscala.transformation.RemoveUnusedVariables.in(method, pgraph)
+                              rewriteFileOf(method, pg)
+                              pg
+                            } else
+                              pgraph
+                            if (c.showCfg || c.showDataflowGraph || !c.dotOutput.isEmpty || c.checkMapLike) {
+                              val cfg : CFGraph = mkCfg(method, pgraphTransformed)
+                              if (c.showCfg) {
+                                val refreshCfg : () => Option[DotGraph] = () => {
+                                  analyse() match {
+                                    case Some(pgraph) =>
+                                      onMethod(mName, m => Some(CFGPrinter.formatGraph(mkCfg(m, pgraph))), _ => { println(noCfg(mName)); None }, { println(noMethod(mName)); None }, pgraph)
+                                    case None =>
+                                      None
+                                  }
+                                }
+                                MainWindow.showDotWithTitle(CFGPrinter.formatGraph(cfg), "Control flow graph of %s".format(method.name), refreshCfg)
+                              }
+                              if (c.showDataflowGraph) {
+                                val refreshDf : () => Option[DotGraph] = () => {
+                                  analyse() match {
+                                    case Some(pgraph) =>
+                                      onMethod(mName, m => Some(mkDataflow(m, mkCfg(m, pgraph))), _ => { println(noDataflow(mName)); None }, { println(noMethod(mName)); None }, pgraph)
+                                    case None =>
+                                      None
+                                  }
+                                }
+                                MainWindow.showDotWithTitle(mkDataflow(method, cfg), "Data flow graph of %s".format(method.name), refreshDf)
+                              }
+                              if (!c.dotOutput.isEmpty)
+                                dumpDot(c.dotOutput.get, CFGPrinter.formatGraph(cfg))
+                              if (c.checkMapLike)
+                                if (MapLike.isMapLike(method.l,cfg))
+                                  println(s"Yes, $mName is a map-like function.")
+                                else
+                                  println(s"No, $mName is not a map-like function.")
                             }
-                            MainWindow.showDotWithTitle(CFGPrinter.formatGraph(cfg), "Control flow graph of %s".format(method.name), refreshCfg)
-                          }
-                          if (c.showDataflowGraph) {
-                            val refreshDf : () => DotGraph = () => {
-                              val pg = analyse()
-                              onMethod(mName, m => mkDataflow(m, mkCfg(m, pg)), _ => { println(noDataflow(mName)); DotGraph.empty }, { println(noMethod(mName)); DotGraph.empty }, pg)
-                            }
-                            MainWindow.showDotWithTitle(mkDataflow(method, cfg), "Data flow graph of %s".format(method.name), refreshDf)
-                          }
-                          if (!c.dotOutput.isEmpty)
-                            dumpDot(c.dotOutput.get, CFGPrinter.formatGraph(cfg))
-                          if (c.checkMapLike)
-                            if (MapLike.isMapLike(method.l,cfg))
-                              println(s"Yes, $mName is a map-like function.")
-                            else
-                              println(s"No, $mName is not a map-like function.")
-                        }
-                      case Some(Left(method)) =>
-                        println(s"$mName refers to an abstract method declaration.")
-                        if (c.showCfg)
-                          Console.err.println(noCfg(method.name.toString))
-                        else if (c.showDataflowGraph)
-                          Console.err.println(noDataflow(method.name.toString))
-                        else if (c.checkMapLike)
-                          Console.err.println(noMapLike(method.name.toString))
-                      case None =>
-                        println(noMethod(mName))
+                        case Some(Left(method)) =>
+                          println(s"$mName refers to an abstract method declaration.")
+                          if (c.showCfg)
+                            Console.err.println(noCfg(method.name.toString))
+                          else if (c.showDataflowGraph)
+                            Console.err.println(noDataflow(method.name.toString))
+                          else if (c.checkMapLike)
+                            Console.err.println(noMapLike(method.name.toString))
+                        case None =>
+                          println(noMethod(mName))
+                      }
                     }
-                  }
-                , if (c.showCfg || c.showDataflowGraph || c.checkMapLike)
-                    println("No method name is given. Specify one with -m <name>")
-                )
+                    , if (c.showCfg || c.showDataflowGraph || c.checkMapLike)
+                      println("No method name is given. Specify one with -m <name>")
+                  )
+                case None =>
+                  ()
+              }
             }
           } 
         }

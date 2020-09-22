@@ -16,17 +16,19 @@ class CallGraph(val methods : Set[Either[tr.Decl.Method, tr.Defn.Method]], val c
   def addMethod(m : tr.Decl.Method) : CallGraph =
     new CallGraph(methods + Left(m), calls)
 
-  def call(m : tr.Defn.Method) : Set[Either3[tr.Decl.Method, tr.Defn.Method, tr.Expr]] =
+  type Callee = Either3[tree.Decl.Method, tree.Defn.Method, tree.Expr]
+
+  def call(m : tr.Defn.Method) : Set[Callee] =
     for (e <- calls; if (e.caller == m)) yield e.callee
 
-  private def calledBy(m : Either3[tr.Decl.Method, tr.Defn.Method, tr.Expr]) : Set[tr.Defn.Method] =
+  private def calledBy(m : Callee) : Set[tr.Defn.Method] =
     for (e <- calls; if (e.callee == m)) yield e.caller
 
   def calledBy(m : tr.Defn.Method) : Set[tr.Defn.Method] =
-    calledBy(Either3.middle3(m))
+    calledBy(Either3.middle3(m) : Callee)
 
   def calledBy(m : tr.Decl.Method) : Set[tr.Defn.Method] =
-    calledBy(Either3.left3(m))
+    calledBy(Either3.left3(m) : Callee)
 }
 
 object CallGraphBuilder {
@@ -65,13 +67,12 @@ object CallGraphBuilder {
                         (dl : DLabel) => {
                           val calleeIsDecl : Option[Set[Edge]] =
                             for (decl <- pgraph.declarations.get(dl);
-                                 callee <- tr.Decl.asMethod(decl).map(Either3.left3(_)))
+                                 callee <- tr.Decl.asMethod(decl).map[CallGraph#Callee](Either3.left3(_)))
                             yield Set(Edge(method, callee))
-                          lazy val calleeIsDefn : Option[Set[Edge]] = 
+                          lazy val calleeIsDefn : Option[Set[Edge]] =
                             for (defn <- pgraph.definitions.get(dl);
-                                 callee <- tr.Defn.asMethod(defn).map(Either3.middle3(_)))
-                          yield Set(Edge(method, callee))
-            
+                                 callee <- tr.Defn.asMethod(defn).map[CallGraph#Callee](Either3.middle3(_)))
+                            yield Set(Edge(method, callee))
                           (calleeIsDecl orElse calleeIsDefn).getOrElse(Set[Edge]())
                         }
                       , (sl : SLabel) => {

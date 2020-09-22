@@ -17,9 +17,9 @@ case class ProgramGraph (
   , val callTargets : Map[SLabel, List[Either[DLabel, SLabel]]]
   ) {
   def lookupDeclDefn(l : DLabel) : Option[Either3[tr.Decl, tr.Defn, Symbol]] =
-    declarations.get(l).map(Either3.left3(_)) orElse 
-    definitions.get(l).map(Either3.middle3(_)) orElse 
-    foreignSymbols.get(l).map(Either3.right3(_))
+    declarations.get(l).map(Either3.left3[tr.Decl, tr.Defn, Symbol](_)) orElse
+    definitions.get(l).map(Either3.middle3[tr.Decl, tr.Defn, Symbol](_)) orElse
+    foreignSymbols.get(l).map(Either3.right3[tr.Decl, tr.Defn, Symbol](_))
 
   def classes : List[tree.Defn.Class] = parscala.Control.catSomes(
       topLevels map (_.fold(
@@ -40,7 +40,7 @@ case class ProgramGraph (
   def toDot : dot.DotGraph = {
     val (nodes, edges) : (List[DotNode], List[DotEdge]) = DotGen.exec(
       for (nodes <- forM(topLevels)(
-              (declOrDefn : Either[tr.Decl, tr.Defn]) => 
+              (declOrDefn : Either[tr.Decl, tr.Defn]) =>
                 declOrDefn.fold(
                     (decl : tr.Decl) => tr.Decl.toDotGen(decl)
                   , (defn : tr.Defn) => tr.Defn.toDotGen(defn)

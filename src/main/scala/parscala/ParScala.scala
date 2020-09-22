@@ -3,13 +3,12 @@ package parscala
 import parscala.{tree => tr}
 
 import java.nio
-import org.langmeta.inputs
 import scala.meta
 
 import scalaz.{Monad, \/-, -\/}
 
 object ParScala {
-  def analyse(pathes : List[nio.file.Path], classPath : Option[String]) : (ProgramGraph, Option[String]) = {
+  def analyse(pathes : List[nio.file.Path], classPath : Option[String]) : Either[String, (ProgramGraph, Option[String])] = {
     scalaz.std.option.cata(classPath)(
         cp => scalac.currentSettings.classpath.value = cp
       , ()
@@ -31,19 +30,22 @@ object ParScala {
             )
     tr.Expr.runNodeGen(genDecls) match {
       case \/-((log, (st, _))) =>
+        val pgraph : ProgramGraph = new ProgramGraph(st.decls, st.defns, st.exprs, st.symbolTable, foreignSymbols(st), st.topLevels, st.callTargets)
         if (!log.isEmpty) {
           val l : String = log.mkString("\n")
           println(s"During the AST building, we noticed the following:\n$l")
+          Right((pgraph, Some(l)))
+        } else {
+          Right((pgraph, None))
         }
-        (new ProgramGraph(st.decls, st.defns, st.exprs, st.symbolTable, foreignSymbols(st), st.topLevels, st.callTargets), None)
       case -\/(err) =>
-        (new ProgramGraph(Map(), Map(), Map(), Map(), Map(), List(), Map()), Some(err))
+        Left(err)
     }
   }
 
   def parseMeta(path : nio.file.Path) : meta.Parsed[meta.Source] =
     // parsing again does not work with Input.File, as if scalameta caches input length
-    meta.parsers.Parse.parseSource(inputs.Input.Stream(java.nio.file.Files.newInputStream(path), java.nio.charset.Charset.forName("UTF-8")), meta.dialects.Scala212)
+    meta.parsers.Parse.parseSource(meta.inputs.Input.Stream(java.nio.file.Files.newInputStream(path), java.nio.charset.Charset.forName("UTF-8")), meta.dialects.Scala212)
 
   def typeCheck(pathes : List[String]) : List[Tree] = {
     val run = new scalac.Run()
@@ -53,9 +55,9 @@ object ParScala {
 
   private def foreignSymbols(st : tr.Expr.St) : Map[DLabel, Symbol] = {
     val known : Set[DLabel] = st.decls.keySet union st.defns.keySet
-    st.symbolTable.toIterator.filterNot{case (sym, l) => known.contains(l)}.map(_.swap).toMap
+    st.symbolTable.toIterator.filterNot{case (sym @ _, l) => known.contains(l)}.map(_.swap).toMap
   }
-    
+
   def astOfExprWithSource(expr : String) : Option[(Tree, SourceFile)] = {
     import scalac.Quasiquote
 
