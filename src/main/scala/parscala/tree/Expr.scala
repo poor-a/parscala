@@ -45,7 +45,7 @@ case class App(l : SLabel, method : Expr, args : List[Expr], typ : List[scalac.T
   }
 }
 
-case class AppInfix(l : SLabel, lhs : Expr, method : meta.Name, args : List[Expr], typ : List[scalac.Type]) extends Expr {
+case class AppInfix(l : SLabel, lhs : Expr, method : meta.Term.Name, args : List[Expr], typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 
   override def toString : String = {
@@ -69,7 +69,7 @@ case class NewAnonymous(l : SLabel, template : Template, typ : List[scalac.Type]
   def label : SLabel = l
 }
 
-case class Select(l : SLabel, qualifier : Expr, sel : meta.Name, sym : List[Symbol], typ : List[scalac.Type]) extends Expr {
+case class Select(l : SLabel, qualifier : Expr, sel : meta.Term.Name, sym : List[Symbol], typ : List[scalac.Type]) extends Expr {
   def label : SLabel = l
 
   override def toString : String = s"$qualifier.$sel"
@@ -152,10 +152,10 @@ object Expr {
               ident : (SLabel, String, List[Symbol], List[scalac.Type]) => A,
               assign : (SLabel, Expr, Expr, List[scalac.Type]) => A,
               app : (SLabel, Expr, List[Expr], List[scalac.Type]) => A,
-              appInfix : (SLabel, Expr, meta.Name, List[Expr], List[scalac.Type]) => A,
+              appInfix : (SLabel, Expr, meta.Term.Name, List[Expr], List[scalac.Type]) => A,
               appUnary : (SLabel, meta.Name, Expr, List[scalac.Type]) => A,
               new_ : (SLabel, meta.Type, List[List[Expr]], List[scalac.Type]) => A,
-              select : (SLabel, Expr, meta.Name, List[Symbol], List[scalac.Type]) => A,
+              select : (SLabel, Expr, meta.Term.Name, List[Symbol], List[scalac.Type]) => A,
               thisApply : (SLabel, List[List[Expr]]) => A,
               this_ : (SLabel, meta.Name, List[scalac.Type]) => A,
               super_ : (SLabel, meta.Name, meta.Name, List[scalac.Type]) => A,

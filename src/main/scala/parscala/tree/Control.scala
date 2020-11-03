@@ -16,9 +16,9 @@ object Control {
                      , tuple : List[meta.Term] => A
                      , newE : (meta.Type, meta.Name, List[List[meta.Term]]) => A
                      , thisE : meta.Name => A
-                     , sel : (meta.Term, meta.Name) => A
+                     , sel : (meta.Term, meta.Term.Name) => A
                      , app : (meta.Term, List[meta.Term]) => A
-                     , appInfix : (meta.Term, meta.Name, List[meta.Type], List[meta.Term]) => A
+                     , appInfix : (meta.Term, meta.Term.Name, List[meta.Type], List[meta.Term]) => A
                      , ifE : (meta.Term, meta.Term) => A
                      , ifElse : (meta.Term, meta.Term, meta.Term) => A
                      , whileE : (meta.Term, meta.Term) => A
