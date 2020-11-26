@@ -2,37 +2,36 @@ package parscala
 
 import parscala.Control.{forM, mapM_}
 import parscala.dot.{DotNode, DotEdge, DotGen, DotGraph}
-import parscala.{tree => tr}
 //import callgraph.{CallGraph,CallGraphBuilder}
 
 import scalaz.Either3
 
 case class ProgramGraph (
-    val declarations : DeclMap
-  , val definitions : DefnMap
-  , val expressions : ExprMap
-  , val symbolTable : SymbolTable
+    val declarations : tree.TypedDeclMap
+  , val definitions : tree.TypedDefnMap
+  , val expressions : tree.TypedExprMap
+  , val symbolTable : tree.SymbolTable
   , val foreignSymbols : Map[DLabel, Symbol]
-  , val topLevels : List[Either[tr.Decl, tr.Defn]]
+  , val topLevels : List[Either[tree.TypedDecl, tree.TypedDefn]]
   , val callTargets : Map[SLabel, List[Either[DLabel, SLabel]]]
   ) {
-  def lookupDeclDefn(l : DLabel) : Option[Either3[tr.Decl, tr.Defn, Symbol]] =
-    declarations.get(l).map(Either3.left3[tr.Decl, tr.Defn, Symbol](_)) orElse
-    definitions.get(l).map(Either3.middle3[tr.Decl, tr.Defn, Symbol](_)) orElse
-    foreignSymbols.get(l).map(Either3.right3[tr.Decl, tr.Defn, Symbol](_))
+  def lookupDeclDefn(l : DLabel) : Option[Either3[tree.TypedDecl, tree.TypedDefn, Symbol]] =
+    declarations.get(l).map(Either3.left3[tree.TypedDecl, tree.TypedDefn, Symbol](_)) orElse
+    definitions.get(l).map(Either3.middle3[tree.TypedDecl, tree.TypedDefn, Symbol](_)) orElse
+    foreignSymbols.get(l).map(Either3.right3[tree.TypedDecl, tree.TypedDefn, Symbol](_))
 
-  def classes : List[tree.Defn.Class] = parscala.Control.catSomes(
+  def classes : List[tree.Defn.TypedClass] = parscala.Control.catSomes(
       topLevels map (_.fold(
-          (decl : tree.Decl) => None
-        , (defn : tree.Defn) => tree.Defn.asClass(defn)
+          (decl : tree.TypedDecl) => None
+        , (defn : tree.TypedDefn) => defn.asClass
         )
       )
     )
 
-  def objects : List[tree.Defn.Object] = parscala.Control.catSomes(
+  def objects : List[tree.Defn.TypedObject] = parscala.Control.catSomes(
       topLevels map (_.fold(
-          (decl : tree.Decl) => None
-        , (defn : tree.Defn) => tree.Defn.asObject(defn)
+          (decl : tree.TypedDecl) => None
+        , (defn : tree.TypedDefn) => defn.asObject
         )
       )
     )
@@ -40,10 +39,10 @@ case class ProgramGraph (
   def toDot : dot.DotGraph = {
     val (nodes, edges) : (List[DotNode], List[DotEdge]) = DotGen.exec(
       for (nodes <- forM(topLevels)(
-              (declOrDefn : Either[tr.Decl, tr.Defn]) =>
+              (declOrDefn : Either[tree.TypedDecl, tree.TypedDefn]) =>
                 declOrDefn.fold(
-                    (decl : tr.Decl) => tr.Decl.toDotGen(decl)
-                  , (defn : tr.Defn) => tr.Defn.toDotGen(defn)
+                    (decl : tree.TypedDecl) => tree.Decl.toDotGen(decl)
+                  , (defn : tree.TypedDefn) => tree.Defn.toDotGen(defn)
                   )
             );
           root <- DotGen.node(DotNode.record("root", "Root", "")(scalaz.std.string.stringInstance));

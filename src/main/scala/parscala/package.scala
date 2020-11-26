@@ -28,10 +28,6 @@ package object parscala {
   type SLabelGen = Stream[SLabel]
   type PLabelGen = Stream[PLabel]
   type DLabelGen = Stream[DLabel]
-  type ExprMap = Map[SLabel, tree.Expr]
-  type DefnMap = Map[DLabel, tree.Defn]
-  type DeclMap = Map[DLabel, tree.Decl]
-  type SymbolTable = Map[Symbol, DLabel]
 
   type MLabel = Either[DLabel, SLabel]
 }

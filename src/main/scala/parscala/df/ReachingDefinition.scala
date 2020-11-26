@@ -26,17 +26,17 @@ object ReachingDefinition {
           val const3 : (Any, Any, Any) => RD = (_, _, _) => rd
           val const4 : (Any, Any, Any, Any) => RD = (_, _, _, _) => rd
           val const5 : (Any, Any, Any, Any, Any) => RD = (_, _, _, _, _) => rd
-          tr.Expr.cata(
+          node.cata(
               const3 // literal
             , const4 // identifier
 /*            , (sl, pat, _, _) => // pattern definition
                 rd ++ (tr.Pat.identifiers(pat).map(symbol => (symbol, sl)).toSet)
 */
             , (sl, lhs, _, _) => // assignment
-                tr.Expr.cata(
+                lhs.cata(
                     const3 // literal
-                  , (_, _, symbols, _) => // identifier
-                      rd.filter { case (s : Symbol, _ ) => ! (symbols contains s) } ++ (symbols map ((_, Right(sl))))
+                  , (_, _, symbol, _) => // identifier
+                      rd.filter { case (s : Symbol, _ ) => symbol != s } + ((symbol, Right(sl)))
                   , const4 // assignment
                   , const4 // application
                   , const5 // infix application
@@ -58,7 +58,7 @@ object ReachingDefinition {
                   , const3 // block
 //                  , const4 // lambda expression
                   , const3 // other expression
-                  , lhs)
+                  )
             , const4 // application
             , const5 // infix application
             , const4 // unary application
@@ -79,7 +79,6 @@ object ReachingDefinition {
             , const3 // block
 //            , const4 // lambda expression
             , const3 // other expression
-            , node
             )
     }
 

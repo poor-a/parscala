@@ -31,10 +31,10 @@ object UseDefinition {
           val const3 : (Any, Any, Any) => Set[Assignment] = (_, _, _) => Set.empty
           val const4 : (Any, Any, Any, Any) => Set[Assignment] = (_, _, _, _) => Set.empty
           val const5 : (Any, Any, Any, Any, Any) => Set[Assignment] = (_, _, _, _, _) => Set.empty
-          tr.Expr.cata(
+          node.cata(
               const3 // literal
-            , (_, _, symbols, _) => // identifier
-                reachingDefs filter { case (sym, assignment @ _) => symbols contains sym } map (_._2)
+            , (_, _, symbol, _) => // identifier
+                reachingDefs filter { case (sym, assignment @ _) => symbol == sym } map (_._2)
             , const4 // assignment
             , const4 // application
             , const5 // infix application
@@ -56,7 +56,7 @@ object UseDefinition {
             , const3 // block
 //            , const4 // lambda function
             , const3 // other expression
-            , node)
+            )
     }
     new UseDefinition(rd.rd map{ case (k, v) => (k, useDefinitions(k, v)) })
   }

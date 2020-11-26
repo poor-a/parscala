@@ -318,12 +318,12 @@ object Control {
       case decl : meta.Decl => decl_(decl)
       case defn : meta.Defn => defn_(defn)
       case snd : meta.Ctor.Secondary => secondary_(snd)
-	  case pobj : meta.Pkg.Object => pobject_(pobj)
-	  case pkg : meta.Pkg => pkg_(pkg)
+      case pobj : meta.Pkg.Object => pobject_(pobj)
+      case pkg : meta.Pkg => pkg_(pkg)
       case imprt : meta.Import => import_(imprt)
     }
 
-  def isPackageMeta(decl : Decl) : Boolean =
+  def isPackageMeta(decl : meta.Decl) : Boolean =
     decl match {
       case meta.Pkg(_, _) => true
       case _ => false

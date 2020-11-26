@@ -1,26 +1,27 @@
 package parscala
 package analysis
 
-import parscala.tree.{Expr, Defn, Decl, Statement}
+import parscala.tree.{Expr, Defn, Decl, Statement, TypedExpr, TypedDecl, TypedDefn}
 
 object UnusedVariablesAnalysis {
-  private val nothing : (Map[Symbol, DLabel], Set[Symbol], Set[Symbol]) = (Map(), Set(), Set())
+  type AnalysisValue = (Map[Symbol, DLabel], Set[Symbol], Set[Symbol]) // TODO better name
+  private val nothing : AnalysisValue = (Map(), Set(), Set())
 
-  def analyse(m : Defn.Method) : Set[DLabel] = {
-    def mappend(x1 : (Map[Symbol, DLabel], Set[Symbol], Set[Symbol]), x2 : (Map[Symbol, DLabel], Set[Symbol], Set[Symbol])) : (Map[Symbol, DLabel], Set[Symbol], Set[Symbol]) =
+  def analyse(m : Defn.TypedMethod) : Set[DLabel] = {
+    def mappend(x1 : AnalysisValue, x2 : AnalysisValue) : AnalysisValue =
       (x1, x2) match {
         case ((symbols1, defined1, used1), (symbols2, defined2, used2)) => (symbols1 ++ symbols2, defined1 union defined2, used1 union used2)
       }
 
-    def mconcat(l : List[(Map[Symbol, DLabel], Set[Symbol], Set[Symbol])]) : (Map[Symbol, DLabel], Set[Symbol], Set[Symbol]) =
+    def mconcat(l : List[AnalysisValue]) : AnalysisValue =
       l.foldLeft(nothing)(mappend)
 
-    def traverse(e : Expr) : (Map[Symbol, DLabel], Set[Symbol], Set[Symbol]) = {
-      Expr.cata(
+    def traverse(e : TypedExpr) : AnalysisValue = {
+      e.cata(
           (_, _, _) => // literal
             nothing
         , (_, _, used, _) => // identifier reference
-            (Map(), Set(), used.toSet)
+            (Map(), Set(), Set(used))
         , (_, _, rhs, _) => // assignment
             traverse(rhs)
         , (_, m, args, _) => // application
@@ -61,7 +62,6 @@ object UnusedVariablesAnalysis {
             mconcat(stmts.map(_.fold(collectVarDecls, collectVarDefns, traverse)))
         , (_, _, _) => // other expression
             nothing
-        , e
         )
     }
 
@@ -75,8 +75,8 @@ object UnusedVariablesAnalysis {
     )
   }
 
-  private def collectVarDecls(d : Decl) : (Map[Symbol, DLabel], Set[Symbol], Set[Symbol]) =
-    Decl.cata(
+  private def collectVarDecls(d : TypedDecl) : AnalysisValue =
+    d.cata(
         (l, _, _, symbols, _) => // val
           (symbols.map((_, l)).toMap, symbols.toSet, Set())
       , (l, _, _, symbols, _) => // var
@@ -87,11 +87,10 @@ object UnusedVariablesAnalysis {
           nothing
       , (_, _) => // import
           nothing
-      , d
       )
 
-  private def collectVarDefns(d : Defn) : (Map[Symbol, DLabel], Set[Symbol], Set[Symbol]) =
-    Defn.cata(
+  private def collectVarDefns(d : TypedDefn) : AnalysisValue =
+    d.cata(
         (l, _, _, symbols, _, _) => // val
           (symbols.map((_, l)).toMap, symbols.toSet, Set())
       , (l, _, _, symbols, _, _) => // var
@@ -114,6 +113,5 @@ object UnusedVariablesAnalysis {
           nothing
       , (_, _, _, _) => // package
           nothing
-      , d
       )
 }

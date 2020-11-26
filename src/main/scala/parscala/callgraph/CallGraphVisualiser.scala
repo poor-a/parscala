@@ -5,19 +5,19 @@ import parscala.{tree => tr}
 import parscala.dot._
 
 object CallGraphVisualiser {
-  private def formatMethod(m : Either[tr.Decl.Method, tr.Defn.Method]) : DotNode = {
+  private def formatMethod(m : Either[tr.Decl.TypedMethod, tr.Defn.TypedMethod]) : DotNode = {
     val name : String = m.fold(_.symbols, _.symbols).map(_.fullName).toString
     DotNode(name) !! List(DotAttr.shape(Shape.Rectangle), DotAttr.label(name))
   }
 
-  private def formatExpr(expr : tr.Expr) : DotNode =
+  private def formatExpr(expr : tr.TypedExpr) : DotNode =
     DotNode.record(expr.label, "Expression", expr.toString)
 
   private def formatEdge(e : Edge) : DotEdge = {
     val callee : DotNode = e.callee.fold(
-        (m : tr.Decl.Method) => formatMethod(Left(m))  // method definition
-      , (m : tr.Defn.Method) => formatMethod(Right(m)) // method declaration
-      , (e : tr.Expr) => formatExpr(e)                 // expression
+        (m : tr.Decl.TypedMethod) => formatMethod(Left(m))  // method definition
+      , (m : tr.Defn.TypedMethod) => formatMethod(Right(m)) // method declaration
+      , (e : tr.TypedExpr) => formatExpr(e)                 // expression
     )
     DotEdge(formatMethod(Right(e.caller)), callee)
   }

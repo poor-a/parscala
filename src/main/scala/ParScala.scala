@@ -62,23 +62,23 @@ object ParScala {
   private def mkCallGraph(pg : ProgramGraph) : DotGraph =
     CallGraphVisualiser.format(CallGraphBuilder.fullCallGraph(pg))
 
-  private def findMethod(name : String, pg : ProgramGraph) : Option[Either[tree.Decl.Method, tree.Defn.Method]] = {
-    val methods : List[Either[tree.Decl.Method, tree.Defn.Method]] =
+  private def findMethod(name : String, pg : ProgramGraph) : Option[Either[tree.Decl.TypedMethod, tree.Defn.TypedMethod]] = {
+    val methods : List[Either[tree.Decl.TypedMethod, tree.Defn.TypedMethod]] =
       pg.classes.flatMap(_.methods) ++ pg.objects.flatMap(_.methods)
     methods.find(_.fold(_.symbols, _.symbols).map(_.fullName) contains name)
   }
 
-  private def onMethod[A](name : String, defn : tree.Defn.Method => A, decl : tree.Decl.Method => A, notFound : => A, pg : ProgramGraph) : A =
+  private def onMethod[A](name : String, defn : tree.Defn.TypedMethod => A, decl : tree.Decl.TypedMethod => A, notFound : => A, pg : ProgramGraph) : A =
     findMethod(name, pg) match {
       case Some(Right(m)) => defn(m)
       case Some(Left(m)) => decl(m)
       case None => notFound
     }
 
-  private def mkCfg(m : tree.Defn.Method, pg : ProgramGraph) : CFGraph =
+  private def mkCfg(m : tree.Defn.TypedMethod, pg : ProgramGraph) : CFGraph =
     CFGraph.fromMethod(m, pg)
 
-  private def mkDataflow(m : tree.Defn.Method, cfg : CFGraph) : DotGraph = {
+  private def mkDataflow(m : tree.Defn.TypedMethod, cfg : CFGraph) : DotGraph = {
     val usedef : UseDefinition = UseDefinition.fromCFGraph(cfg)
     val dataflow : DFGraph = DFGraph(m.body, usedef)
     tree.Expr.toDot(m.body).addEdges(dataflow.toDotEdges)
@@ -99,12 +99,12 @@ object ParScala {
   private def noMethod(name : String) : String =
     s"Method $name is not found."
 
-  private def rewriteFileOf(m : tree.Defn.Method, pgraph : ProgramGraph) : Unit = {
+  private def rewriteFileOf(m : tree.Defn.TypedMethod, pgraph : ProgramGraph) : Unit = {
     def path(s : Symbol) : String = s.pos.source.path
     m.symbols match {
       case s :: _ =>
         val p : String = path(s)
-        val topLevels : List[Either[tree.Decl, tree.Defn]] = pgraph.topLevels.filter(_.fold(decl => tree.Decl.symbols(decl).exists(s => path(s) == p), defn => tree.Defn.symbols(defn).exists(s => path(s) == p)))
+        val topLevels : List[Either[tree.TypedDecl, tree.TypedDefn]] = pgraph.topLevels.filter(_.fold(decl => tree.Decl.symbols(decl).exists(s => path(s) == p), defn => tree.Defn.symbols(defn).exists(s => path(s) == p)))
         val code : List[String] = topLevels.map(_.fold(tree.Decl.prettyPrint(_).render(80), tree.Defn.prettyPrint(_).render(80)))
         if (!code.isEmpty) {
           val f = new java.io.PrintWriter(new java.io.BufferedWriter(new java.io.FileWriter(p)))
@@ -151,7 +151,7 @@ object ParScala {
                     pgraph.topLevels.foreach(d => println(d.fold(tree.Decl.prettyPrint, tree.Defn.prettyPrint).render(100)))
                   scalaz.std.option.cata(c.method) (
                     mName => {
-                      val oMethod : Option[Either[tree.Decl.Method, tree.Defn.Method]] = findMethod(mName, pgraph)
+                      val oMethod : Option[Either[tree.Decl.TypedMethod, tree.Defn.TypedMethod]] = findMethod(mName, pgraph)
                       oMethod match {
                         case Some(Right(method)) =>
                           println(s"$mName refers to a method definition.")

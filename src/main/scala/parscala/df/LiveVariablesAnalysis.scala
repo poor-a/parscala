@@ -23,18 +23,18 @@ object LiveVariablesAnalysis {
           val const3 : (Any, Any, Any) => Set[LV] = (_, _, _) => live
           val const4 : (Any, Any, Any, Any) => Set[LV] = (_, _, _, _) => live
           val const5 : (Any, Any, Any, Any, Any) => Set[LV] = (_, _, _, _, _) => live
-          tr.Expr.cata(
+          node.cata(
               const3 // literal
-            , (_, _, symbols, _) => // identifier
-                live ++ symbols
+            , (_, _, symbol, _) => // identifier
+                live + symbol
 //            , (_, pat, _, _) => { // pattern definition
 //                live -- tr.Pat.identifiers(pat)
 //            }
             , (_, lhs, _, _) => // assignment
-                tr.Expr.cata(
+                lhs.cata(
                     const3 // literal
-                  , (_, _, symbols, _) => // identifier
-                      live -- symbols
+                  , (_, _, symbol, _) => // identifier
+                      live - symbol
                   , const4 // assignment
                   , const4 // application
                   , const5 // infix application
@@ -56,7 +56,7 @@ object LiveVariablesAnalysis {
                   , const3 // block
 //                  , const4 // lambda expression
                   , const3 // other expression
-                  , lhs)
+                  )
             , const4 // application
             , const5 // infix application
             , const4 // unary application
@@ -77,7 +77,7 @@ object LiveVariablesAnalysis {
             , const3 // block
 //            , const4 // lambda expression
             , const3 // other expression
-            , node)
+            )
     }
 
     def updateIfObsolete(l : SLabel, exitLV : Set[LV], succEntryLV : Set[LV], analysis : LVMap) : (Set[LV],LVMap) = 

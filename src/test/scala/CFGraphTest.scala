@@ -7,7 +7,7 @@ import parscala.{tree => tr}
 
 class ControlDependencySuite extends AnyFlatSpec {
   val condLabel : SLabel = new SLabel(0)
-  val cond : tr.Expr = tr.Literal(condLabel, scala.meta.Lit.Boolean(true), List(parscala.ParScala.astOfExpr("true").get.tpe))
+  val cond : tr.TypedExpr = tr.Literal(condLabel, scala.meta.Lit.Boolean(true), List(parscala.ParScala.astOfExpr("true").get.tpe))
   val pgraph : ProgramGraph = ProgramGraph(Map(), Map(), Map(), Map(), Map(), List(), Map())
 
   val labels : Array[BLabel] = BLabel.stream.take(10).toArray

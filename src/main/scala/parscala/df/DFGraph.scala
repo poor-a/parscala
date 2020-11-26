@@ -2,7 +2,7 @@ package parscala
 package df
 
 import parscala.controlflow._
-import tree.{Expr, ExprTree}
+import tree.Expr
 import parscala.{tree => tr}
 
 import scala.collection.immutable.Traversable
@@ -64,30 +64,20 @@ object DFGraph {
   type Edge = ((Either[DLabel, SLabel], SLabel), DEdgeLabel)
 
  /**
-  * Constructs a dataflow graph from a `ExprTree`
-  * (extended abstract syntax tree) and use-definition information.
-  *
-  * @see [[UseDefinition]]
-  * @see [[tree.ExprTree]]
-  */
-  def apply(tree : ExprTree, ud : UseDefinition) : DFGraph =
-    new DFGraph(traverse(tree.root, ud).toList)
-
- /**
   * Constructs a dataflow graph from an abstract syntax tree
   * and use-definition information.
   *
   * @see [[UseDefinition]]
-  * @see [[tree.ExprTree]]
+  * @see [[tree.TypedExpr]]
   */
-  def apply(ast : Expr, ud : UseDefinition) : DFGraph =
+  def apply(ast : tree.TypedExpr, ud : UseDefinition) : DFGraph =
     new DFGraph(traverse(ast, ud).toList)
 
-  private def traverse(root : Expr, ud : UseDefinition) : Set[Edge] = {
+  private def traverse(root : tree.TypedExpr, ud : UseDefinition) : Set[Edge] = {
     def const2[A](x : A) : (Any, Any) => A = (_, _) => x
     def const3[A](x : A) : (Any, Any, Any) => A = (_, _, _) => x
     def const4[A](x : A) : (Any, Any, Any, Any) => A = (_, _, _, _) => x
-    tree.Expr.cata(
+    root.cata(
         const3(Set())  // literal
       , (label, _, _symbols, _) => { // identifier
           ud(label).map { assignment => ((assignment -> label), F()) }}
@@ -131,9 +121,9 @@ object DFGraph {
           traverse(expr, ud)
       , (label, statements, _) => { // block expression
           val edges : Set[Edge] = statements.foldLeft(Set.empty[Edge]){ (acc, stmt) => 
-            stmt.fold(_ => acc
-                     ,_ => acc
-                     ,expr => acc union traverse(expr, ud)
+            stmt.fold((_ : tree.TypedDecl) => acc
+                     ,(_ : tree.TypedDefn) => acc
+                     ,(expr : tree.TypedExpr) => acc union traverse(expr, ud)
                      )
           }
           if (statements.isEmpty) edges
@@ -144,8 +134,7 @@ object DFGraph {
 //        }
       , (label, _, _) => // other expression
           Set.empty[Edge]
-      , root
-    )
+      )
   }
 }
 

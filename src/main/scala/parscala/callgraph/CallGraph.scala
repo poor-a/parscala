@@ -5,49 +5,49 @@ import parscala.{tree => tr}
 
 import scalaz.Either3
 
-class CallGraph(val methods : Set[Either[tr.Decl.Method, tr.Defn.Method]], val calls : Set[Edge]) {
+class CallGraph(val methods : Set[Either[tr.Decl.TypedMethod, tr.Defn.TypedMethod]], val calls : Set[Edge]) {
   def ++(other : CallGraph) : CallGraph = {
     new CallGraph(methods ++ other.methods, calls ++ other.calls)
   }
 
-  def addMethod(m : tr.Defn.Method) : CallGraph =
+  def addMethod(m : tr.Defn.TypedMethod) : CallGraph =
     new CallGraph(methods + Right(m), calls)
 
-  def addMethod(m : tr.Decl.Method) : CallGraph =
+  def addMethod(m : tr.Decl.TypedMethod) : CallGraph =
     new CallGraph(methods + Left(m), calls)
 
-  type Callee = Either3[tree.Decl.Method, tree.Defn.Method, tree.Expr]
+  type Callee = Either3[tree.Decl.TypedMethod, tree.Defn.TypedMethod, tree.TypedExpr]
 
-  def call(m : tr.Defn.Method) : Set[Callee] =
+  def call(m : tr.Defn.TypedMethod) : Set[Callee] =
     for (e <- calls; if (e.caller == m)) yield e.callee
 
-  private def calledBy(m : Callee) : Set[tr.Defn.Method] =
+  private def calledBy(m : Callee) : Set[tr.Defn.TypedMethod] =
     for (e <- calls; if (e.callee == m)) yield e.caller
 
-  def calledBy(m : tr.Defn.Method) : Set[tr.Defn.Method] =
+  def calledBy(m : tr.Defn.TypedMethod) : Set[tr.Defn.TypedMethod] =
     calledBy(Either3.middle3(m) : Callee)
 
-  def calledBy(m : tr.Decl.Method) : Set[tr.Defn.Method] =
+  def calledBy(m : tr.Decl.TypedMethod) : Set[tr.Defn.TypedMethod] =
     calledBy(Either3.left3(m) : Callee)
 }
 
 object CallGraphBuilder {
   def fullCallGraph(pgraph : ProgramGraph) : CallGraph = {
-    pgraph.definitions.foldLeft(empty){ case (acc, (label @ _, defn : tr.Defn)) =>
-      scalaz.std.option.cata(tr.Defn.asMethod(defn))(
+    pgraph.definitions.foldLeft(empty){ case (acc, (label @ _, defn : tr.TypedDefn)) =>
+      scalaz.std.option.cata(defn.asMethod)(
           method => acc ++ calls(method, pgraph)
         , acc
         )
     }
   }
 
-  def calls(method : tr.Defn.Method, pgraph : ProgramGraph) : CallGraph = {
-    def collectCalls(ast : tr.Expr) : CallGraph = {
+  def calls(method : tr.Defn.TypedMethod, pgraph : ProgramGraph) : CallGraph = {
+    def collectCalls(ast : tr.TypedExpr) : CallGraph = {
       val const2 : (Any, Any) => CallGraph = Function.const2(empty)
       val const3 : (Any, Any, Any) => CallGraph = Function.const3(empty)
       val const4 : (Any, Any, Any, Any) => CallGraph = Function.const4(empty)
       val const5 : (Any, Any, Any, Any, Any) => CallGraph = Function.const5(empty)
-      tr.Expr.cata(
+      ast.cata(
           const3 // literal
         , const4 // identifier
         , (_, lhs, rhs, _) => // assignment todo: add an update or setter edge if lhs is not a mutable variable
@@ -67,11 +67,11 @@ object CallGraphBuilder {
                         (dl : DLabel) => {
                           val calleeIsDecl : Option[Set[Edge]] =
                             for (decl <- pgraph.declarations.get(dl);
-                                 callee <- tr.Decl.asMethod(decl).map[CallGraph#Callee](Either3.left3(_)))
+                                 callee <- decl.asMethod.map[CallGraph#Callee](Either3.left3(_)))
                             yield Set(Edge(method, callee))
                           lazy val calleeIsDefn : Option[Set[Edge]] =
                             for (defn <- pgraph.definitions.get(dl);
-                                 callee <- tr.Defn.asMethod(defn).map[CallGraph#Callee](Either3.middle3(_)))
+                                 callee <- defn.asMethod.map[CallGraph#Callee](Either3.middle3(_)))
                             yield Set(Edge(method, callee))
                           (calleeIsDecl orElse calleeIsDefn).getOrElse(Set[Edge]())
                         }
@@ -133,14 +133,14 @@ object CallGraphBuilder {
         , (_, statements, _) => // block
             statements.foldLeft(empty)(
                 (acc, stmt) => 
-                  stmt.fold(_ => acc // declaration
+                  stmt.fold(
+                            _ => acc // declaration
                            ,_ => acc // definition
                            ,expr => acc ++ collectCalls(expr) // expression
                            )
               )
 //        , const4 // lambda
         , const3 // other expression
-        , ast
         )
     }
   

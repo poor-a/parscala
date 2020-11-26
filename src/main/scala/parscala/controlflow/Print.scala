@@ -87,7 +87,7 @@ object CFGPrinter {
     }
   }
 
-  private def formatNode(n : Node[_,_], nodes : ExprMap) : String = {
+  private def formatNode(n : Node[_,_], nodes : tree.ExprMap[_,_]) : String = {
     def showExpr(expr : SLabel) : String = 
       "%-3d: %s".format(expr.toInt, scalaz.std.option.cata(nodes.get(expr))(node => Dot.dotEscape(node.toString()), "##Err##"))
 
@@ -129,31 +129,31 @@ object CFGPrinter {
   def methodsOfLabels(graph : CFGraph) : Map[BLabel, String] =
     graph.methods.toList.flatMap{
       case (Left(method), (start, end)) =>
-	graph.pgraph.lookupDeclDefn(method) match {
-	  case Some(Left3(decl)) =>
-	    tree.Decl.asMethod(decl) match {
-	      case None =>
-		List()
-	      case Some(m) =>
-		val name : String = m.name.toString
-		List((start, s" start of $name"), (end, s" end of $name"))
-	    }
-	  case Some(Middle3(defn)) =>
-	    tree.Defn.asMethod(defn) match {
-	      case None =>
-		List()
-	      case Some(m) =>
-		val name : String = m.name.toString
-		List((start, s" start of $name"), (end, s" end of $name"))
-	    }
-	  case Some(Right3(foreignSymbol)) =>
-	    val name : String = foreignSymbol.fullName
-	    List((start, s" start of $name"), (end, s" end of $name"))
-	  case _ =>
-	    List()
-	}
+    graph.pgraph.lookupDeclDefn(method) match {
+      case Some(Left3(decl)) =>
+        decl.asMethod match {
+          case None =>
+            List()
+          case Some(m) =>
+            val name : String = m.name.toString
+            List((start, s" start of $name"), (end, s" end of $name"))
+        }
+      case Some(Middle3(defn)) =>
+        defn.asMethod match {
+          case None =>
+            List()
+          case Some(m) =>
+            val name : String = m.name.toString
+            List((start, s" start of $name"), (end, s" end of $name"))
+        }
+      case Some(Right3(foreignSymbol)) =>
+        val name : String = foreignSymbol.fullName
+        List((start, s" start of $name"), (end, s" end of $name"))
+      case _ =>
+        List()
+    }
       case _ => 
-	List()
+        List()
     }.toMap
 
   def annotateLabels(labels : List[BLabel], annotations : Map[BLabel, String]) : List[(BLabel, Option[String])] =

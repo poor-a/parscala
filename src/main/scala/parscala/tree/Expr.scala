@@ -12,174 +12,40 @@ import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 import parscala.Control.{mapM, forM, forM_}
 import dot.{DotGraph, DotNode, DotGen}
 
-class ExprTree (val root : Expr, val nodes : ExprMap)
-
-sealed abstract class Expr {
+sealed abstract class Expr[IdentInfo, SemanticInfo] {
   def label : SLabel
-}
 
-case class Literal(l : SLabel, sugared : meta.Lit, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-
-  override def toString : String = sugared.toString
-}
-
-case class Ident(l : SLabel, name : String, symbols : List[Symbol], typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-
-  override def toString : String = name
-}
-
-case class Assign(l : SLabel, lhs : Expr, rhs : Expr, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-
-  override def toString : String = s"$lhs = $rhs"
-}
-
-case class App(l : SLabel, method : Expr, args : List[Expr], typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-
-  override def toString : String = {
-    val args_ : String = args.mkString("(",",",")")
-    s"$method$args_"
-  }
-}
-
-case class AppInfix(l : SLabel, lhs : Expr, method : meta.Term.Name, args : List[Expr], typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-
-  override def toString : String = {
-    val args_ : String = args match {
-      case List(arg) => arg.toString
-      case _ => args.mkString("(",",",")")
-    }
-    s"$lhs $method $args_"
-  }
-}
-
-case class AppUnary(l : SLabel, method : meta.Name, arg : Expr, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class New(l : SLabel, tpe : meta.Type, args : List[List[Expr]], typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class NewAnonymous(l : SLabel, template : Template, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class Select(l : SLabel, qualifier : Expr, sel : meta.Term.Name, sym : List[Symbol], typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-
-  override def toString : String = s"$qualifier.$sel"
-}
-
-case class ThisApply(l : SLabel, argss : List[List[Expr]]) extends Expr {
-  def label : SLabel = l
-}
-
-case class This(l : SLabel, qualifier : meta.Name, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class Super(l : SLabel, thisp : meta.Name, superp : meta.Name, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class Tuple(l : SLabel, components : List[Expr], typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class If(l : SLabel, pred : Expr, thenE : Expr, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class IfElse(l : SLabel, pred : Expr, thenE : Expr, elseE : Expr, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class While(l : SLabel, pred : Expr, body : Expr, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class For(l : SLabel, enums : List[meta.Enumerator], body : Expr, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class ForYield(l : SLabel, enums : List[meta.Enumerator], body : Expr, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class ReturnUnit(l : SLabel, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class Return(l : SLabel, e : Expr, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class Throw(l : SLabel, e : Expr, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class Block(l : SLabel, statements : List[Statement], typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class Lambda(l : SLabel, args : List[Expr], body : Expr, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-case class Other(l : SLabel, expr : meta.Term, typ : List[scalac.Type]) extends Expr {
-  def label : SLabel = l
-}
-
-final case class Template(early : List[Statement], inits : List[Initializer], self : meta.Self, statements : List[Statement])
-
-final case class Initializer(tpe : meta.Type, argss : List[List[Expr]])
-
-sealed abstract class Reference
-
-final case class RefThis(expr : This) extends Reference
-final case class RefSuper(expr : Super) extends Reference
-final case class RefIdent(expr : Ident) extends Reference
-final case class RefSelect(expr : Select) extends Reference
-final case class RefAppUnary(expr : AppUnary) extends Reference
-
-object Expr {
-  def cata[A](literal : (SLabel, meta.Lit, List[scalac.Type]) => A,
-              ident : (SLabel, String, List[Symbol], List[scalac.Type]) => A,
-              assign : (SLabel, Expr, Expr, List[scalac.Type]) => A,
-              app : (SLabel, Expr, List[Expr], List[scalac.Type]) => A,
-              appInfix : (SLabel, Expr, meta.Term.Name, List[Expr], List[scalac.Type]) => A,
-              appUnary : (SLabel, meta.Name, Expr, List[scalac.Type]) => A,
-              new_ : (SLabel, meta.Type, List[List[Expr]], List[scalac.Type]) => A,
-              select : (SLabel, Expr, meta.Term.Name, List[Symbol], List[scalac.Type]) => A,
-              thisApply : (SLabel, List[List[Expr]]) => A,
-              this_ : (SLabel, meta.Name, List[scalac.Type]) => A,
-              super_ : (SLabel, meta.Name, meta.Name, List[scalac.Type]) => A,
-              tuple : (SLabel, List[Expr], List[scalac.Type]) => A,
-              if_ : (SLabel, Expr, Expr, List[scalac.Type]) => A,
-              ifElse : (SLabel, Expr, Expr, Expr, List[scalac.Type]) => A,
-              while_ : (SLabel, Expr, Expr, List[scalac.Type]) => A,
-              for_ : (SLabel, List[meta.Enumerator], Expr, List[scalac.Type]) => A,
-              forYield : (SLabel, List[meta.Enumerator], Expr, List[scalac.Type]) => A,
-              returnUnit : (SLabel, List[scalac.Type]) => A,
-              return_ : (SLabel, Expr, List[scalac.Type]) => A,
-              throw_ : (SLabel, Expr, List[scalac.Type]) => A,
-              block : (SLabel, List[Statement], List[scalac.Type]) => A,
-              nOther : (SLabel, meta.Term, List[scalac.Type]) => A,
-              n : Expr) : A =
-    n match {
+  def cata[A](literal : (SLabel, meta.Lit, SemanticInfo) => A,
+              ident : (SLabel, String, IdentInfo, SemanticInfo) => A,
+              assign : (SLabel, Expr[IdentInfo, SemanticInfo], Expr[IdentInfo, SemanticInfo], SemanticInfo) => A,
+              app : (SLabel, Expr[IdentInfo, SemanticInfo], List[Expr[IdentInfo, SemanticInfo]], SemanticInfo) => A,
+              appInfix : (SLabel, Expr[IdentInfo, SemanticInfo], meta.Term.Name, List[Expr[IdentInfo, SemanticInfo]], SemanticInfo) => A,
+              appUnary : (SLabel, meta.Name, Expr[IdentInfo, SemanticInfo], SemanticInfo) => A,
+              new_ : (SLabel, meta.Type, List[List[Expr[IdentInfo, SemanticInfo]]], SemanticInfo) => A,
+              select : (SLabel, Expr[IdentInfo, SemanticInfo], meta.Term.Name, IdentInfo, SemanticInfo) => A,
+              thisApply : (SLabel, List[List[Expr[IdentInfo, SemanticInfo]]]) => A,
+              this_ : (SLabel, meta.Name, SemanticInfo) => A,
+              super_ : (SLabel, meta.Name, meta.Name, SemanticInfo) => A,
+              tuple : (SLabel, List[Expr[IdentInfo, SemanticInfo]], SemanticInfo) => A,
+              if_ : (SLabel, Expr[IdentInfo, SemanticInfo], Expr[IdentInfo, SemanticInfo], SemanticInfo) => A,
+              ifElse : (SLabel, Expr[IdentInfo, SemanticInfo], Expr[IdentInfo, SemanticInfo], Expr[IdentInfo, SemanticInfo], SemanticInfo) => A,
+              while_ : (SLabel, Expr[IdentInfo, SemanticInfo], Expr[IdentInfo, SemanticInfo], SemanticInfo) => A,
+              for_ : (SLabel, List[meta.Enumerator], Expr[IdentInfo, SemanticInfo], SemanticInfo) => A,
+              forYield : (SLabel, List[meta.Enumerator], Expr[IdentInfo, SemanticInfo], SemanticInfo) => A,
+              returnUnit : (SLabel, SemanticInfo) => A,
+              return_ : (SLabel, Expr[IdentInfo, SemanticInfo], SemanticInfo) => A,
+              throw_ : (SLabel, Expr[IdentInfo, SemanticInfo], SemanticInfo) => A,
+              block : (SLabel, List[Statement[IdentInfo, SemanticInfo]], SemanticInfo) => A,
+              nOther : (SLabel, meta.Term, SemanticInfo) => A) : A =
+    this match {
       case Literal(sl, lit, t) => literal(sl, lit, t)
-      case Ident(sl, name, syms, t) => ident(sl, name, syms, t)
+      case Ident(sl, name, sym, t) => ident(sl, name, sym, t)
       case Assign(sl, lhs, rhs, t) => assign(sl, lhs, rhs, t)
       case App(sl, f, args, t) => app(sl, f, args, t)
       case AppInfix(sl, lhs, op, rhs, t) => appInfix(sl, lhs, op, rhs, t)
       case AppUnary(sl, op, rhs, t) => appUnary(sl, op, rhs, t)
       case New(sl, cls, argss, t) => new_(sl, cls, argss, t)
-      case Select(sl, qual, name, syms, t) => select(sl, qual, name, syms, t)
+      case Select(sl, qual, name, sym, t) => select(sl, qual, name, sym, t)
       case ThisApply(sl, argss) => thisApply(sl, argss)
       case This(sl, qual, t) => this_(sl, qual, t)
       case Super(sl, thisp, superp, t) => super_(sl, thisp, superp, t)
@@ -195,16 +61,147 @@ object Expr {
       case Block(sl, statements, t) => block(sl, statements, t)
       case Other(sl, expr, t) => nOther(sl, expr, t)
     }
+}
 
+case class Literal[IdentInfo, SemanticInfo](l : SLabel, sugared : meta.Lit, info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+
+  override def toString : String = sugared.toString
+}
+
+case class Ident[IdentInfo, SemanticInfo](l : SLabel, name : String, identInfo : IdentInfo, info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+
+  override def toString : String = name
+}
+
+case class Assign[IdentInfo, SemanticInfo](l : SLabel, lhs : Expr[IdentInfo, SemanticInfo], rhs : Expr[IdentInfo, SemanticInfo], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+
+  override def toString : String = s"$lhs = $rhs"
+}
+
+case class App[IdentInfo, SemanticInfo](l : SLabel, method : Expr[IdentInfo, SemanticInfo], args : List[Expr[IdentInfo, SemanticInfo]], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+
+  override def toString : String = {
+    val args_ : String = args.mkString("(",",",")")
+    s"$method$args_"
+  }
+}
+
+case class AppInfix[IdentInfo, SemanticInfo](l : SLabel, lhs : Expr[IdentInfo, SemanticInfo], method : meta.Term.Name, args : List[Expr[IdentInfo, SemanticInfo]], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+
+  override def toString : String = {
+    val args_ : String = args match {
+      case List(arg) => arg.toString
+      case _ => args.mkString("(",",",")")
+    }
+    s"$lhs $method $args_"
+  }
+}
+
+case class AppUnary[IdentInfo, SemanticInfo](l : SLabel, method : meta.Name, arg : Expr[IdentInfo, SemanticInfo], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class New[IdentInfo, SemanticInfo](l : SLabel, tpe : meta.Type, args : List[List[Expr[IdentInfo, SemanticInfo]]], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class NewAnonymous[IdentInfo, SemanticInfo](l : SLabel, template : Template[IdentInfo, SemanticInfo], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class Select[IdentInfo, SemanticInfo](l : SLabel, qualifier : Expr[IdentInfo, SemanticInfo], sel : meta.Term.Name, identInfo : IdentInfo, info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+
+  override def toString : String = s"$qualifier.$sel"
+}
+
+case class ThisApply[IdentInfo, SemanticInfo](l : SLabel, argss : List[List[Expr[IdentInfo, SemanticInfo]]]) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class This[IdentInfo, SemanticInfo](l : SLabel, qualifier : meta.Name, info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class Super[IdentInfo, SemanticInfo](l : SLabel, thisp : meta.Name, superp : meta.Name, info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class Tuple[IdentInfo, SemanticInfo](l : SLabel, components : List[Expr[IdentInfo, SemanticInfo]], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class If[IdentInfo, SemanticInfo](l : SLabel, pred : Expr[IdentInfo, SemanticInfo], thenE : Expr[IdentInfo, SemanticInfo], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class IfElse[IdentInfo, SemanticInfo](l : SLabel, pred : Expr[IdentInfo, SemanticInfo], thenE : Expr[IdentInfo, SemanticInfo], elseE : Expr[IdentInfo, SemanticInfo], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class While[IdentInfo, SemanticInfo](l : SLabel, pred : Expr[IdentInfo, SemanticInfo], body : Expr[IdentInfo, SemanticInfo], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class For[IdentInfo, SemanticInfo](l : SLabel, enums : List[meta.Enumerator], body : Expr[IdentInfo, SemanticInfo], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class ForYield[IdentInfo, SemanticInfo](l : SLabel, enums : List[meta.Enumerator], body : Expr[IdentInfo, SemanticInfo], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class ReturnUnit[IdentInfo, SemanticInfo](l : SLabel, info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class Return[IdentInfo, SemanticInfo](l : SLabel, e : Expr[IdentInfo, SemanticInfo], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class Throw[IdentInfo, SemanticInfo](l : SLabel, e : Expr[IdentInfo, SemanticInfo], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class Block[IdentInfo, SemanticInfo](l : SLabel, statements : List[Statement[IdentInfo, SemanticInfo]], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class Lambda[IdentInfo, SemanticInfo](l : SLabel, args : List[Expr[IdentInfo, SemanticInfo]], body : Expr[IdentInfo, SemanticInfo], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+case class Other[IdentInfo, SemanticInfo](l : SLabel, expr : meta.Term, info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
+  def label : SLabel = l
+}
+
+final case class Template[IdentInfo, SemanticInfo](early : List[Statement[IdentInfo, SemanticInfo]], inits : List[Initializer[IdentInfo, SemanticInfo]], self : meta.Self, statements : List[Statement[IdentInfo, SemanticInfo]])
+
+final case class Initializer[IdentInfo, SemanticInfo](tpe : meta.Type, argss : List[List[Expr[IdentInfo, SemanticInfo]]])
+
+sealed abstract class Reference[IdentInfo, SemanticInfo]
+
+final case class RefThis[IdentInfo, SemanticInfo](expr : This[IdentInfo, SemanticInfo]) extends Reference[IdentInfo, SemanticInfo]
+final case class RefSuper[IdentInfo, SemanticInfo](expr : Super[IdentInfo, SemanticInfo]) extends Reference[IdentInfo, SemanticInfo]
+final case class RefIdent[IdentInfo, SemanticInfo](expr : Ident[IdentInfo, SemanticInfo]) extends Reference[IdentInfo, SemanticInfo]
+final case class RefSelect[IdentInfo, SemanticInfo](expr : Select[IdentInfo, SemanticInfo]) extends Reference[IdentInfo, SemanticInfo]
+final case class RefAppUnary[IdentInfo, SemanticInfo](expr : AppUnary[IdentInfo, SemanticInfo]) extends Reference[IdentInfo, SemanticInfo]
+
+object Expr {
   case class St
     ( pGen : PLabelGen
     , sGen : SLabelGen
     , dGen : DLabelGen
-    , exprs : ExprMap
+    , exprs : TypedExprMap
     , symbolTable : SymbolTable
-    , decls : DeclMap
-    , defns : DefnMap
-    , topLevels : List[Either[Decl, Defn]]
+    , decls : TypedDeclMap
+    , defns : TypedDefnMap
+    , topLevels : List[Either[TypedDecl, TypedDefn]]
     , callTargets : Map[SLabel, List[Either[DLabel, SLabel]]]
     )
 
@@ -273,7 +270,7 @@ object Expr {
       case Some(x) => m.updated(k, f(x))
     }
 
-  private def label[E <: Expr](f : SLabel => E) : NodeGen[E] =
+  private def label[E <: TypedExpr](f : SLabel => E) : NodeGen[E] =
     for (l <- genSLabel;
          n = f(l);
          _ <- modifySt{ s => ((), s.copy(exprs = s.exprs.updated(l, n))) })
@@ -299,20 +296,21 @@ object Expr {
   private def symbolsOf(trees : List[Tree]) : List[Symbol] =
     for (t <- trees; s = t.symbol; if s != null) yield s
 
-  def genExpr(sugared : meta.Term, ts : List[Tree]) : NodeGen[Expr] = {
+  def genExpr(sugared : meta.Term, ts : List[Tree]) : NodeGen[TypedExpr] = {
     val samePos : List[Tree] = searchSamePosition(sugared.pos, ts, StopOnExactPosition())
     val types : List[scalac.Type] = samePos map (_.tpe)
-    lazy val symbols : List[Symbol] = samePos map (_.symbol)
+    lazy val symbols : List[Symbol] = symbolsOf(samePos)
     val childSearchScope : List[Tree] = if (!samePos.isEmpty) samePos else ts
     val childSamePos : (meta.Tree, PositionSearchSetting) => List[Tree] =
         (child, setting) => searchSamePosition(child.pos, childSearchScope, setting)
 
-    def resugarChild(child : meta.Term) : NodeGen[Expr] =
+    def resugarChild(child : meta.Term) : NodeGen[TypedExpr] =
       genExpr(child, childSearchScope)
 
-    Control.exprCataMeta(
+    Control.exprCataMeta[NodeGen[TypedExpr]](
         lit => label(Literal(_, lit, types)) // literal
-      , name => label(Ident(_, name, symbolsOf(samePos), types)) // name
+      , name => singleton(symbols){symbol => label[TypedExpr](Ident(_, name, symbol, types))} // name
+                  (raiseError(s"Found ${symbols.length} matching ast symbols for identifier $name, expected 1."))
       , metaComponents => // tuple
           for (components <- forM(metaComponents)(resugarChild(_));
                tuple <- label(Tuple(_, components, types)))
@@ -327,9 +325,11 @@ object Expr {
       , metaName => label(This(_, metaName, types)) // this
         // metaName should be inspected for symbols
       , (metaQualifier, metaName) => // select
-          for (qualifier <- resugarChild(metaQualifier);
-               select <- label(Select(_, qualifier, metaName, symbols, types)))
-          yield select
+          singleton(symbols){symbol =>
+            for (qualifier <- resugarChild(metaQualifier);
+                 select <- label[TypedExpr](Select(_, qualifier, metaName, symbol, types)))
+            yield select}
+            (raiseError(s"Found ${symbols.length} matching ast symbols for select $metaName, expected 1."))
       , (metaFun, metaArgs) => // apply
           for (fun <- resugarChild(metaFun);
                args <- forM(metaArgs)(resugarChild(_));
@@ -389,11 +389,11 @@ object Expr {
       )
   }
 
-  private def putDecl[D <: Decl](genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[D]) : NodeGen[D] =
+  private def putDecl[D <: TypedDecl](genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[D]) : NodeGen[D] =
     for (l <- genLabel;
          decl <- f(l);
          _ <- modifySt { st => (decl, st.copy( decls = st.decls + (l -> decl)
-                                             , topLevels = if (Decl.isTopLevel(decl))
+                                             , topLevels = if (decl.isTopLevel)
                                                              Left(decl) :: st.topLevels
                                                            else
                                                              st.topLevels
@@ -403,11 +403,11 @@ object Expr {
          )
     yield decl
 
-  private def putDefn[D <: Defn](genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[D]) : NodeGen[D] =
+  private def putDefn[D <: TypedDefn](genLabel : NodeGen[DLabel])(f : DLabel => NodeGen[D]) : NodeGen[D] =
     for (l <- genLabel;
          defn <- f(l);
          _ <- modifySt { st => (defn, st.copy( defns = st.defns + (l -> defn)
-                                             , topLevels = if (Defn.isTopLevel(defn))
+                                             , topLevels = if (defn.isTopLevel)
                                                              Right(defn) :: st.topLevels
                                                            else
                                                              st.topLevels
@@ -417,10 +417,10 @@ object Expr {
          )
     yield defn
 
-  private def putDefn[D <: Defn](m : NodeGen[D]) : NodeGen[D] =
+  private def putDefn[D <: TypedDefn](m : NodeGen[D]) : NodeGen[D] =
     for (defn <- m;
          _ <- modifySt { st => (defn, st.copy( defns = st.defns + (defn.label -> defn)
-                                             , topLevels = if (Defn.isTopLevel(defn))
+                                             , topLevels = if (defn.isTopLevel)
                                                              Right(defn) :: st.topLevels
                                                            else
                                                              st.topLevels
@@ -483,7 +483,7 @@ object Expr {
     forM_(metaStats){ stat => genStat(stat, searchSamePosition(stat.pos, List(desugared), SearchChildrenOnExactPosition())) }
   }
 
-  def genStat(sugared : meta.Stat, ts : List[Tree]) : NodeGen[Statement] = {
+  def genStat(sugared : meta.Stat, ts : List[Tree]) : NodeGen[TypedStatement] = {
     Control.metaStatKindCata(
         term => // term
           stateInstance.map(genExpr(term, ts))(Statement.fromExpr(_))
@@ -502,7 +502,7 @@ object Expr {
       , sugared
       )
   }
-  def genDefn(sugared : meta.Defn, scope : List[Tree]) : NodeGen[Defn] = {
+  def genDefn(sugared : meta.Defn, scope : List[Tree]) : NodeGen[TypedDefn] = {
     // used for definitions other than vals or vars
     lazy val samePos : List[Tree] = searchSamePosition(sugared.pos, scope, SearchChildrenOnExactPosition())
 
@@ -515,7 +515,7 @@ object Expr {
 
     lazy val symbols : List[Symbol] = symbolsOf(samePos)
 
-    val res:NodeGen[Defn] = Control.defnCataMeta(
+    Control.defnCataMeta(
         (mods, pats, oDeclType, metaRhs) => _ => // value
           putDefn(genDLabel){ l => {
               val valSymbols : List[Symbol] = extractVarValSymbols(pats, sugared, scope)
@@ -610,10 +610,9 @@ object Expr {
           }
       , sugared
       )
-    res
   }
 
-  private def genCtor(ctor : meta.Ctor.Secondary, scope : List[Tree]) : NodeGen[Defn] = {
+  private def genCtor(ctor : meta.Ctor.Secondary, scope : List[Tree]) : NodeGen[TypedDefn] = {
     val meta.Ctor.Secondary(mods, name, paramss, meta.Init(_, _, argss), stats) = ctor
     val samePos : List[Tree] = searchSamePosition(ctor.pos, scope, SearchChildrenOnExactPosition())
     val symbols : List[Symbol] = symbolsOf(samePos)
@@ -695,13 +694,13 @@ object Expr {
   /**
    * Elements of 'ts' need not represent templates. It suffices if they have Template descendants.
    */
-  def resugarTemplate(sugared : meta.Template, scope : List[Tree]) : NodeGen[List[Statement]] = {
+  def resugarTemplate(sugared : meta.Template, scope : List[Tree]) : NodeGen[List[TypedStatement]] = {
     val metaStatements : List[meta.Stat] = sugared.stats
     val listTraverse : Traverse[List] = scalaz.std.list.listInstance
     m.traverse(metaStatements){ statement => genStat(statement, scope) }(listTraverse)
   }
 
-  def genPkg(sugared : meta.Pkg, ts : List[Tree]) : NodeGen[Defn.Package] = {
+  def genPkg(sugared : meta.Pkg, ts : List[Tree]) : NodeGen[Defn.TypedPackage] = {
     val symbols : List[Symbol] = symbolsOf(ts)
     putDefn(genDLabel){ l =>
       for ( _ <- forM_(symbols)(addSymbol(_, l));
@@ -721,7 +720,7 @@ object Expr {
 */
   }
 
-  def genImport(sugared : meta.Import, ts : List[Tree]) : NodeGen[Decl.Import] = {
+  def genImport(sugared : meta.Import, ts : List[Tree]) : NodeGen[Decl.TypedImport] = {
     val symbols : List[Symbol] = symbolsOf(ts)
     putDecl(genDLabel){ l =>
       for (_ <- forM_(symbols)(addSymbol(_, l)))
@@ -736,7 +735,7 @@ object Expr {
 */
   }
 
-  def genPkgObj(sugared : meta.Pkg.Object, ts : List[Tree]) : NodeGen[Defn.PackageObject] = {
+  def genPkgObj(sugared : meta.Pkg.Object, ts : List[Tree]) : NodeGen[Defn.TypedPackageObject] = {
     val meta.Pkg.Object(mods, name, metaBody) = sugared
     val symbols : List[Symbol] = symbolsOf(ts)
     putDefn(genDLabel){ l =>
@@ -757,7 +756,7 @@ object Expr {
 */
   }
 
-  def genDecl(sugared : meta.Decl, scope : List[Tree]) : NodeGen[Decl] = {
+  def genDecl(sugared : meta.Decl, scope : List[Tree]) : NodeGen[TypedDecl] = {
     val samePos : List[Tree] = searchSamePosition(sugared.pos, scope, SearchChildrenOnExactPosition())
     val symbols : List[Symbol] = symbolsOf(samePos)
     Control.declCataMeta(
@@ -852,34 +851,22 @@ object Expr {
           )
       , t
       )
-/*
-  def fromTree(t : Tree) : (ProgramGraph, Option[ExprTree]) = {
-    val (st, nodes) : (St, Option[ExprTree]) = 
-      if (t.isTerm) {
-        val (st, node) = run(genExpr(t))
-        (st, Some(new ExprTree(node, st.exprs)))
-      } else {
-        val (st, _) = run(genDecl(t))
-        (st, None)
-      }
-    (new ProgramGraph(st.decls, st.exprs, st.symbols, st.packages), nodes)
-  }*/
 
   def runNodeGen[A](m : NodeGen[A]) : String \/ (List[String], (St, A)) = {
     val startSt : St = St(PLabel.stream, SLabel.stream, DLabel.stream, Map(), Map(), Map(), Map(), List(), Map())
     m.run(startSt).run
   }
 
-  def prettyPrint(e : Expr) : Doc = {
+  def prettyPrint[IdentInfo, SemanticInfo](e : Expr[IdentInfo, SemanticInfo]) : Doc = {
     import PrettyPrint.{lparen, rparen, paren}
-    def prettyArgs(args : List[Expr]) : Doc =
+    def prettyArgs(args : List[Expr[IdentInfo, SemanticInfo]]) : Doc =
       paren(Doc.intercalate(Doc.text(",") + Doc.lineOrSpace, args.map(prettyPrint)).aligned)
 
-    def prettyArgss(argss : List[List[Expr]]) : Doc =
+    def prettyArgss(argss : List[List[Expr[IdentInfo, SemanticInfo]]]) : Doc =
       Doc.intercalate(Doc.lineOrEmpty,
                       argss.map(args => lparen + Doc.intercalate(Doc.text(","), args.map(prettyPrint)) + rparen))
 
-    cata(
+    e.cata(
         (_l, lit, _typ) => // literal
           Doc.str(lit)
       , (_l, ident, _, _typ) => // identifier reference
@@ -931,18 +918,17 @@ object Expr {
          Doc.text("{") + Doc.stack(Doc.empty :: stmts.map(Statement.prettyPrint)).nested(2) + Doc.line + Doc.text("}")
       , (_l, expr, _t) => // other expression
          Doc.str(expr)
-      , e
       )
   }
 
-  def prettyPrintLint(e : Expr) : Doc = {
+  def prettyPrintLint(e : TypedExpr) : Doc = {
     import PrettyPrint.{paren, curly}
     import Doc.comma
 
-    def prettyArgs(args : List[Expr]) : Doc =
+    def prettyArgs(args : List[TypedExpr]) : Doc =
       paren(Doc.intercalate(Doc.text(",") + Doc.lineOrSpace, args.map(prettyPrintLint)).aligned)
 
-    def prettyArgss(argss : List[List[Expr]]) : Doc =
+    def prettyArgss(argss : List[List[TypedExpr]]) : Doc =
       Doc.intercalate(Doc.lineOrEmpty,
                       argss.map(args => paren(Doc.intercalate(Doc.text(","), args.map(prettyPrintLint)))))
 
@@ -983,12 +969,12 @@ object Expr {
         e
     }
 
-    cata(
+    e.cata(
         (_l, lit, typ) => // literal
           typeAnnot(Doc.str(lit), typ)
-      , (_l, ident, symbols, typ) => { // identifier reference
+      , (_l, ident, symbol, typ) => { // identifier reference
           val i : Doc = Doc.text(ident)
-          if (symbols.exists(_.hasPackageFlag))
+          if (symbol.hasPackageFlag)
             i
           else
             typeAnnot(i, typ)
@@ -1007,9 +993,9 @@ object Expr {
           typeAnnot(Doc.str(op) + Doc.space + prettyPrintLint(arg), t)
       , (_l, class_, argss, t) => // new
           typeAnnot(Doc.text("new") + Doc.space + Doc.str(class_) + prettyArgss(argss), t)
-      , (_l, obj, termName, syms, t) => { // selection
+      , (_l, obj, termName, symbol, t) => { // selection
           val sel : Doc = prettyPrintLint(obj) + Doc.text(".") + Doc.str(termName)
-          if (syms.exists(_.hasPackageFlag))
+          if (symbol.hasPackageFlag)
             sel
           else
             typeAnnot(sel, t)
@@ -1060,17 +1046,16 @@ object Expr {
          typeAnnot(curly(Doc.stack(Doc.empty :: stmts.map(Statement.prettyPrintLint)).nested(2) + Doc.line), t)
       , (_l, expr, t) => // other expression
          typeAnnot(paren(Doc.str(expr)), t)
-      , e
       )
   }
 
-  def toDot(n : Expr) : DotGraph = {
+  def toDot(n : TypedExpr) : DotGraph = {
     val (nodes, edges) = DotGen.exec(toDotGen(n))
     DotGraph("", nodes, edges)
   }
 
-  def toDotGen(n : Expr) : DotGen.DotGen[DotNode] = {
-      cata(
+  def toDotGen(n : TypedExpr) : DotGen.DotGen[DotNode] = {
+      n.cata(
           (l, lit, t) => { // literal
             val types : String = t.mkString(" or ")
             DotGen.node(DotNode.record(l, "Literal", s"$lit : $types"))
@@ -1107,7 +1092,7 @@ object Expr {
             yield app
         , (l, class_, argss, t) => // new
             for (newE <- DotGen.node(DotNode.record(l, "New", class_.toString));
-                 nodess <- mapM(mapM(toDotGen, _ : List[Expr]), argss);
+                 nodess <- mapM(mapM(toDotGen, _ : List[TypedExpr]), argss);
                  _ <- DotGen.deepEnum(newE, nodess, "arg(%s, %s)".format(_, _)))
             yield newE
         , (l, obj, termName, _syms, t) => // selection
@@ -1172,11 +1157,11 @@ object Expr {
                  _ <- DotGen.edge(throwE, e, "throw"))
             yield throwE
         , (l, stmts, _) => // block
-            for (nodes <- mapM[DotGen.DotGen, Statement, DotNode](
-                              (stmt : Statement) =>
-                                stmt.fold((decl : Decl) => Decl.toDotGen(decl)
-                                         ,(defn : Defn) => Defn.toDotGen(defn)
-                                         ,(e : Expr) => toDotGen(e)
+            for (nodes <- mapM[DotGen.DotGen, TypedStatement, DotNode](
+                              (stmt : TypedStatement) =>
+                                stmt.fold((decl : TypedDecl) => Decl.toDotGen(decl)
+                                         ,(defn : TypedDefn) => Defn.toDotGen(defn)
+                                         ,(e : TypedExpr) => toDotGen(e)
                                          )
                             , stmts
                             );
@@ -1194,7 +1179,6 @@ object Expr {
 */
         , (l, expr, _t) => // other expression
             DotGen.node(DotNode.record(l, "Expression", expr.toString()))
-        , n
         )
   }
 }

@@ -14,7 +14,7 @@ abstract class O // Open
 abstract class C // Closed
 
 object CFGraph {
-  def fromMethod(m : tr.Defn.Method, pgraph : ProgramGraph) : CFGraph = {
+  def fromMethod(m : tr.Defn.TypedMethod, pgraph : ProgramGraph) : CFGraph = {
     val (b, st) : (Block[Node, C, O], St) = initSt(pgraph)
     stToCFGraph(
       execCFGAnalyser( for (end <- emptyBlock(cfgASt);
@@ -29,7 +29,7 @@ object CFGraph {
     )
   }
 
-  def fromExpression(n : tr.Expr, pgraph : ProgramGraph) : CFGraph = {
+  def fromExpression(n : tr.TypedExpr, pgraph : ProgramGraph) : CFGraph = {
     val (b, st) : (Block[Node, C, O], St) = initSt(pgraph)
     stToCFGraph(execCFGAnalyser(cfgStmts(n, b)(cfgASt), st))
   }
@@ -174,7 +174,8 @@ object CFGraph {
       case Left(dLabel) =>
         programgraph.lookupDeclDefn(dLabel) match {
           case Some(Left3(decl)) => 
-            tr.Decl.cata( const5 // var
+            decl.cata(
+                          const5 // var
                         , const5 // val
                         , (_, _, _, _, _, _, _) => // method
                             for (start <- emptyBlock;
@@ -187,10 +188,10 @@ object CFGraph {
                             yield Some((start.entryLabel, (end.entryLabel, done)))
                         , const6 // type
                         , const2 // import
-                        , decl
                         )
           case Some(Middle3(defn)) =>
-            tr.Defn.cata( const6 // value
+            defn.cata(
+                          const6 // value
                         , const6 // variable
                         , (_, _, _, _, _, _, _, body) => // method
                             for (start <- emptyBlock;
@@ -220,7 +221,6 @@ object CFGraph {
                         , const5 // object
                         , const5 // package object
                         , const4 // package
-                        , defn
                         )
           case Some(Right3(foreignMethod @ _)) =>
             for (res @ (start, (end, done)) <- unknownMethod;
@@ -290,14 +290,14 @@ object CFGraph {
   }
 
   private def cfgStmts
-    ( node : tr.Expr, b : Block[Node, C, O] )
+    ( node : tree.TypedExpr, b : Block[Node, C, O] )
     ( implicit m : MonadState[CFGAnalyser, St] )
     : CFGAnalyser[Block[Node, C, O]] = {
 
-    def foldArgs(init : Block[Node, C, O], args : List[tr.Expr]) : CFGAnalyser[Block[Node, C, O]] =
-      foldM((acc : Block[Node, C, O], x : tr.Expr) => cfgStmts(x, acc), init, args)
+    def foldArgs(init : Block[Node, C, O], args : List[tree.TypedExpr]) : CFGAnalyser[Block[Node, C, O]] =
+      foldM((acc : Block[Node, C, O], x : tree.TypedExpr) => cfgStmts(x, acc), init, args)
 
-    tr.Expr.cata(
+    node.cata(
         (l, _, _) => { // literal
           val literal = Expr(l)
           m.pure(append(b, literal))
@@ -320,7 +320,7 @@ object CFGraph {
           cfgStmts(arg, b) >>= (afterArg =>
           cfgMethodCall(l, afterArg))
       , (l, class_, argss, _) => // new
-          m.map(foldM((acc : Block[Node, C, O], x : tr.Expr) => cfgStmts(x, acc), b, argss.flatten)(m))(append(_, Expr(l)))
+          m.map(foldM((acc : Block[Node, C, O], x : tree.TypedExpr) => cfgStmts(x, acc), b, argss.flatten)(m))(append(_, Expr(l)))
       , (l, expr, tname, _, _) => // selection
           m.map(cfgStmts(expr, b))(append(_, Expr(l)))
       , (l, argss) => // this(...) application TODO: edge to called constructor
@@ -330,8 +330,8 @@ object CFGraph {
           m.pure(append(b, Expr(l)))
       , (l, _, _, _) => // qualified super
           m.pure(append(b, Expr(l)))
-      , (l, components, t) => // tuple
-          m.map(foldM((acc : Block[Node, C, O], x : tr.Expr) => cfgStmts(x, acc), b, components)(m))(append(_, Expr(l)))
+      , (l, components : List[tree.TypedExpr], t) => // tuple
+          m.map(foldM((acc : Block[Node, C, O], x : tree.TypedExpr) => cfgStmts(x, acc), b, components)(m))(append(_, Expr(l)))
       , (l, p, t, _) => // if-then
           for (afterP <- cfgStmts(p, b);
                tBranch <- emptyBlock;
@@ -404,13 +404,14 @@ object CFGraph {
           raiseError()))
       , (l, statements, _) => // block
           foldM(
-              (acc : Block[Node, C, O], stmt : tr.Statement) =>
+              (acc : Block[Node, C, O], stmt : tree.TypedStatement) =>
                 stmt.fold(
-                    _ => m.pure(acc) // declaration
+                    (_ : tree.TypedDecl) => m.pure(acc) // declaration
                     // TODO: of course, this is much harder than it is implemented
                     // statements in an object, for example, are run at the first
                     // invocation of a member method or reference to a member field
-                  , defn => tr.Defn.cata(
+                  , (defn : tree.TypedDefn) =>
+                      defn.cata(
                                 (l, _, _, _, _, rhs) => // value
                                   for (afterRhs <- cfgStmts(rhs, acc))
                                   yield append(afterRhs, Defn(l))
@@ -440,16 +441,15 @@ object CFGraph {
                                   m.pure(append(acc, Defn(l)))
                               , (l, _, _, _) => // package
                                   m.pure(append(acc, Defn(l)))
-                              , defn
                               )
-                  , expr => cfgStmts(expr, acc)
+                  , (expr : tree.TypedExpr) => cfgStmts(expr, acc)
                   )
             , b
             , statements
             )
       , (l, _, _) => // other expression
           m.pure(append(b, Expr(l)))
-      , node)
+      )
 /*
       case (x @ q"do $loopBody while ($p)") :: xs => 
         for (succ <- liftM(emptyBlock);
@@ -733,6 +733,6 @@ class CFGraph ( val graph : Map[BLabel, Block[Node,C,C]]
   def bLabels : List[BLabel] =
     flow flatMap { case (s, t, _) => List(s, t) }
 
-  def apply(l : SLabel) : Option[tr.Expr] =
+  def apply(l : SLabel) : Option[tree.TypedExpr] =
     pgraph.expressions.get(l)
 }
