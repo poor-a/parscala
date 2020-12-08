@@ -187,7 +187,7 @@ object Defn {
     override def toString : String = symbols.toString
 
     def classes : List[Class[IdentInfo, SemanticInfo]] = {
-      def asClass[IdentInfo, SemanticInfo](defn : Defn[IdentInfo, SemanticInfo]) : Option[Class[IdentInfo, SemanticInfo]] =
+      def asClass(defn : Defn[IdentInfo, SemanticInfo]) : Option[Class[IdentInfo, SemanticInfo]] =
         defn match {
           case c : Class[IdentInfo, SemanticInfo] => Some(c)
           case _ => None
@@ -221,7 +221,7 @@ object Defn {
   def filterMethods[IdentInfo, SemanticInfo](statements : List[Statement[IdentInfo, SemanticInfo]]) : List[Either[Decl.Method[IdentInfo, SemanticInfo], Method[IdentInfo, SemanticInfo]]] = {
     val bitraverse : scalaz.Bitraverse[Either] = scalaz.std.either.eitherInstance
     val optionApplicative : scalaz.Applicative[Option] = scalaz.std.option.optionInstance
-    def asMethodDecl[IdentInfo, SemanticInfo](d : Decl[IdentInfo, SemanticInfo]) : Option[Decl.Method[IdentInfo, SemanticInfo]] =
+    def asMethodDecl(d : Decl[IdentInfo, SemanticInfo]) : Option[Decl.Method[IdentInfo, SemanticInfo]] =
       d match {
         case m : Decl.Method[IdentInfo, SemanticInfo] => Some(m)
         case _ => None
@@ -270,7 +270,7 @@ object Defn {
   def prettyPrintLint(defn : TypedDefn) : Doc = prettyPrintConfigurable(defn, Statement.prettyPrintLint, Expr.prettyPrintLint)
 
   def prettyPrintConfigurable[IdentInfo, SemanticInfo](defn : Defn[IdentInfo, SemanticInfo], prettyStatement : Statement[IdentInfo, SemanticInfo] => Doc, prettyExpression : Expr[IdentInfo, SemanticInfo] => Doc) : Doc = {
-    import PrettyPrint.{paren, bracket, lcurly, rcurly, eachFollowedBy, when}
+    import PrettyPrint.{paren, eachFollowedBy, when}
 
     def prettyArgss(argss : List[List[meta.Term.Param]]) : Doc =
       Doc.fill(Doc.lineOrEmpty, argss.map(args => paren(Doc.str(args.mkString(", ")))))
@@ -283,31 +283,31 @@ object Defn {
       t.fold(Doc.empty)(declType => Doc.text(":") + Doc.space + Doc.str(declType) + Doc.space)
 
     defn.cata(
-        (_l, mods, pats, symbols, oDeclType, rhs) => // val
+        (_, mods, pats, _, oDeclType, rhs) => // val
           eachFollowedBy(Doc.space, mods) + Doc.text("val") + Doc.space + PrettyPrint.sepBy(Doc.comma + Doc.space, pats) + Doc.space + typ(oDeclType) + Doc.text("=") + Doc.space + prettyExpression(rhs)
-      , (_l, mods, pats, symbols, oDeclType, oRhs) => // var
+      , (_, mods, pats, _, oDeclType, oRhs) => // var
           eachFollowedBy(Doc.space, mods) + Doc.text("var") + Doc.space + PrettyPrint.sepBy(Doc.comma + Doc.space, pats) + Doc.space + typ(oDeclType) + Doc.text("=") + Doc.space + oRhs.fold(Doc.text("_"))(prettyExpression)
-      , (_l, _symbols, mods, name, typeArgs, argss, oDeclType, body) => // method
+      , (_, _, mods, name, typeArgs, argss, oDeclType, body) => // method
           eachFollowedBy(Doc.space, mods) + Doc.text("def") + Doc.space + Doc.str(name) + PrettyPrint.bracketMany1(Doc.comma + Doc.space, typeArgs) +
           prettyArgss(argss) + spaceIf(!argss.isEmpty) + typ(oDeclType) + Doc.space + Doc.text("=") + Doc.lineOrSpace +
           prettyExpression(body)
-      , (_l, _symbols, mods, name, params, body) => // type
+      , (_, _, mods, name, params, body) => // type
           eachFollowedBy(Doc.space, mods) + Doc.text("type") + Doc.space + Doc.str(name) + PrettyPrint.bracketMany1(Doc.comma + Doc.space, params) + Doc.space + Doc.text("=") + Doc.lineOrSpace + Doc.str(body)
-      , (_l, _symbols, mods, name, argss, body) => // macro
+      , (_, _, mods, name, argss, body) => // macro
            eachFollowedBy(Doc.space, mods) + Doc.spread(List(Doc.text("def"), Doc.str(name), prettyArgss(argss), Doc.text("="))) + Doc.lineOrSpace + prettyExpression(body)
-      , (_l, _symbols, mods, name, paramss, body) => { // secondary constructor
+      , (_, _, mods, _, paramss, body) => { // secondary constructor
           val (initializer, stmts) = body
           eachFollowedBy(Doc.space, mods) + Doc.text("def") + Doc.space + Doc.text("this") + prettyArgss(paramss) + Doc.space + Doc.text("=") + Doc.space + prettyStatements(Statement.fromExpr(initializer) :: stmts)
         }
-      , (_l, _symbols, mods, name, statements) => // class
+      , (_, _, mods, name, statements) => // class
           eachFollowedBy(Doc.space, mods) + Doc.text("class") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
-      , (_l, _symbols, mods, name, statements) => // trait
+      , (_, _, mods, name, statements) => // trait
           eachFollowedBy(Doc.space, mods) + Doc.text("trait") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
-      , (_l, _symbols, mods, name, statements) => // object
+      , (_, _, mods, name, statements) => // object
           eachFollowedBy(Doc.space, mods) + Doc.text("object") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
-      , (_l, _symbols, mods, name, statements) => // package object
+      , (_, _, mods, name, statements) => // package object
           eachFollowedBy(Doc.space, mods) + Doc.spread(List(Doc.text("package"), Doc.text("object"), Doc.str(name), prettyStatements(statements)))
-      , (_l, _symbols, name, statements) => // package
+      , (_, _, name, statements) => // package
           Doc.text("package") + Doc.space + Doc.str(name) + Doc.space + prettyStatements(statements)
       )
   }
@@ -321,12 +321,12 @@ object Defn {
         )
 
       defn.cata(
-          (l, _mods, pats, symbols, _, rhs) => // val
+          (l, _, pats, symbols, _, rhs) => // val
             for (right <- Expr.toDotGen(rhs);
                  val_ <- DotGen.node(DotNode.record(l, "Val", pats.mkString(", ") + " : " + symbols.map(_.info).mkString(", ")));
                  _ <- DotGen.edge(val_, right, "rhs"))
             yield val_
-        , (l, _mods, pats, symbols, _, oRhs) => // var
+        , (l, _, pats, symbols, _, oRhs) => // var
             for (var_ <- DotGen.node(DotNode.record(l, "Var", pats.mkString(", ") + " : " + symbols.map(_.info).mkString(", ")));
                  optionTraverse : scalaz.Traverse[Option] = scalaz.std.option.optionInstance;
                  _ <- optionTraverse.traverse[DotGen.DotGen, TypedExpr, Unit](oRhs)(rhs =>
@@ -336,47 +336,47 @@ object Defn {
                       )
                 )
             yield var_
-        , (l, _symbols, _mods, name, typeArgs, argss, _, body) => // method
+        , (l, _, _, _, _, _, _, body) => // method
             for (b <- Expr.toDotGen(body);
                  m <- DotGen.node(DotNode.record(l, "Method", defn.toString));
                  _ <- DotGen.edge(m, b, "body"))
             yield m
-        , (l, _symbols, _mods, name, _params, _body) => // type
+        , (l, _, _, name, _, _) => // type
             for (tpe <- DotGen.node(DotNode.record(l, "Type member", name.toString)))
             yield tpe
-        , (l, _symbols, _mods, name, argss, body) => // macro
+        , (l, _, _, _, _, body) => // macro
             for (b <- Expr.toDotGen(body);
                  mcro <- DotGen.node(DotNode.record(l, "Macro", defn.toString));
                  _ <- DotGen.edge(mcro, b, "body"))
              yield mcro
-        , (l, _symbols, _mods, name, paramss, body) => { // secondary constructor
+        , (l, _, _, _, _, body) => { // secondary constructor
             val (initializer, statements) = body
             for (b <- mapM(formatStatement, Statement.fromExpr(initializer) :: statements);
                  ctor <- DotGen.node(DotNode.record(l, "Secondary constructor", defn.toString));
                  _ <- DotGen.enum(ctor, b, Function.const("")))
             yield ctor
           }
-        , (l, _symbols, _mods, name, statements) => // class
+        , (l, _, _, name, statements) => // class
             for (stmts <- mapM(formatStatement, statements);
                  class_ <- DotGen.node(DotNode.record(l, "Class", name.toString));
                  _ <- DotGen.enum(class_, stmts, Function.const("")))
             yield class_
-        , (l, _symbols, _mods, name, statements) => // trait
+        , (l, _, _, name, statements) => // trait
             for (stmts <- mapM(formatStatement, statements);
                  trait_ <- DotGen.node(DotNode.record(l, "Trait", name.toString));
                  _ <- DotGen.enum(trait_, stmts, Function.const("")))
             yield trait_
-        , (l, _symbols, _mods, name, statements) => // object
+        , (l, _, _, name, statements) => // object
             for (stmts <- mapM(formatStatement, statements);
                  object_ <- DotGen.node(DotNode.record(l, "Object", name.toString));
                  _ <- DotGen.enum(object_, stmts, Function.const("")))
             yield object_
-        , (l, _symbols, _mods, name, statements) => // package object
+        , (l, _, _, name, statements) => // package object
             for (stmts <- mapM(formatStatement, statements);
                  pobject <- DotGen.node(DotNode.record(l, "Package object", name.toString));
                  _ <- DotGen.enum(pobject, stmts, Function.const("")))
             yield pobject
-        , (l, _symbols, name, statements) => // package
+        , (l, _, name, statements) => // package
             for (stmts <- mapM(formatStatement, statements);
                  package_ <- DotGen.node(DotNode.record(l, "Package", name.toString));
                  _ <- DotGen.enum(package_, stmts, Function.const("")))

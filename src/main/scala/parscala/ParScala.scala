@@ -59,8 +59,6 @@ object ParScala {
   }
 
   def astOfExprWithSource(expr : String) : Option[(Tree, SourceFile)] = {
-    import scalac.Quasiquote
-
     val freshGen = scalac.currentFreshNameCreator
     val packageName : TermName = scalac.freshTermName("p")(freshGen)
     val objectName : TermName = scalac.freshTermName("o")(freshGen)
@@ -75,7 +73,9 @@ object ParScala {
     r.compileSources(List(source))
     val units : Iterator[CompilationUnit] = r.units
     if (units.nonEmpty) {
-      val q"package $_ { object $_ { def $_(...$_) : $_ = $body } }" = units.next().body
+      // import scalac.Quasiquote
+      // val q"package $_ { object $_ { def $_(...$_) : $_ = $body } }" = units.next().body // Generates many unused pattern var warnings
+      val scalac.PackageDef(_, List(scalac.ModuleDef(_, _, scalac.Template(_, _, List(scalac.DefDef(_, _, _, _, _, body)))))) = units.next().body
       Some((body, source))
     } else {
       None
@@ -85,8 +85,6 @@ object ParScala {
   def astOfExpr : String => Option[Tree] = (astOfExprWithSource _) andThen (_.map(_._1))
 
   def astOfClassWithSource(cls : String) : Option[(Tree, SourceFile)] = {
-    import scalac.Quasiquote
-
     val freshGen = scalac.currentFreshNameCreator
     val packageName : TermName = scalac.freshTermName("p")(freshGen)
     val code : String = "package %s { %s }".format(packageName, cls)
@@ -95,7 +93,9 @@ object ParScala {
     r.compileSources(List(source))
     val units : Iterator[CompilationUnit] = r.units
     if (units.nonEmpty) {
-      val q"package $_ { $clsAst }" = units.next().body
+      // import scalac.Quasiquote
+      // val q"package $_ { $clsAst }" = units.next().body // Generates many unused pattern var warnings
+      val scalac.PackageDef(_, List(clsAst)) = units.next().body
       Some((clsAst, source))
     } else {
       None

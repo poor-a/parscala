@@ -91,6 +91,9 @@ object CFGPrinter {
     def showExpr(expr : SLabel) : String = 
       "%-3d: %s".format(expr.toInt, scalaz.std.option.cata(nodes.get(expr))(node => Dot.dotEscape(node.toString()), "##Err##"))
 
+    def showDefn(defn : DLabel) : String =
+      "%-3d: %s".format(defn.toInt, "<definition>")
+
     def blockHeader(l : BLabel) : String =
       "Block " + l
 
@@ -99,6 +102,7 @@ object CFGPrinter {
       , (pat, _, _) => // pattern
           Dot.dotEscape(pat.toString)
       , showExpr // expr
+      , showDefn // defn
       , (expr, _, _) => // call
           showExpr(expr)
       , (l, _, _) => // return

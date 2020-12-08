@@ -2,9 +2,8 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import parscala.SLabel
 import parscala.controlflow.CFGraph
-import parscala.tree.{Block, Select, AppInfix}
+import parscala.tree.{Block, AppInfix}
 import parscala.tree.Defn.Var
-import parscala.{tree => tr}
 import parscala.df.UseDefinition
 
 class UseDefinitionTestSuite extends AnyFlatSpec {
@@ -18,7 +17,7 @@ class UseDefinitionTestSuite extends AnyFlatSpec {
       val List(Right(f)) = o.methods
       val Block(_, List(xdef_, res_), _) = f.body
 
-      val Some(xdef @ Var(_, _, _, List(x), _, x_oRhs)) = xdef_.toDefn
+      val Some(xdef @ Var(_, _, _, List(_), _, x_oRhs)) = xdef_.toDefn
       val Some(AppInfix(_, xref, _, _, _)) = res_.toExpr
 
       val usedefs : Map[(SLabel, String), Set[UseDefinition.Assignment]] = Map(

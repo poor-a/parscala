@@ -111,7 +111,7 @@ object Block {
   def sLabels(b : Block[Node,_,_]) : List[SLabel] = {
     b.foldRight[List[SLabel]](
        (_, ls) => ls
-     , (n, ls) => Node.OOCata(l => l :: ls, n)
+     , (n, ls) => Node.OOCata(l => l :: ls, _ => ls, n)
      , (_, ls) => ls
      , List.empty[SLabel]
      )

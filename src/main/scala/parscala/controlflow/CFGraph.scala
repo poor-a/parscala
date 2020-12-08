@@ -105,9 +105,6 @@ object CFGraph {
   private def stToCFGraph(st : St) : CFGraph =
     new CFGraph(st.blocks, st.start, st.done, st.methods, st.pgraph)
 
-  private def stToExtensibleCFGraph(st : St) : ExtensibleCFGraph =
-    new ExtensibleCFGraph(stToCFGraph(st), st.bGen, st.sGen)
-
   /**
    * Default state with an empty control flow graph and an empty set of
    * declarations.
@@ -165,7 +162,6 @@ object CFGraph {
 
   private def analyseMethod(method : MLabel)(implicit mSt : MonadState[CFGAnalyser, St], monadTrans : Hoist[({type λ[M[_], A] = EitherT[Unit, M, A]})#λ]) : CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = {
     val const2 : (Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const2(mSt.pure(None))
-    val const3 : (Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const3(mSt.pure(None))
     val const4 : (Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const4(mSt.pure(None))
     val const5 : (Any, Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const5(mSt.pure(None))
     val const6 : (Any, Any, Any, Any, Any, Any) => CFGAnalyser[Option[(BLabel, (BLabel, Done))]] = Function.const6(mSt.pure(None))
@@ -312,16 +308,16 @@ object CFGraph {
           cfgStmts(fun, b) >>= (afterFun =>
           foldArgs(afterFun, args) >>= (afterArgs =>
           cfgMethodCall(l, afterArgs)))
-      , (l, lhs, _op, args, _) => // infix application
+      , (l, lhs, _, args, _) => // infix application
           cfgStmts(lhs, b) >>= (afterLhs =>
           foldArgs(afterLhs, args) >>= (afterArgs =>
           cfgMethodCall(l, afterArgs)))
-      , (l, _op, arg, _) => // unary application
+      , (l, _, arg, _) => // unary application
           cfgStmts(arg, b) >>= (afterArg =>
           cfgMethodCall(l, afterArg))
-      , (l, class_, argss, _) => // new
+      , (l, _, argss, _) => // new
           m.map(foldM((acc : Block[Node, C, O], x : tree.TypedExpr) => cfgStmts(x, acc), b, argss.flatten)(m))(append(_, Expr(l)))
-      , (l, expr, tname, _, _) => // selection
+      , (l, expr, _, _, _) => // selection
           m.map(cfgStmts(expr, b))(append(_, Expr(l)))
       , (l, argss) => // this(...) application TODO: edge to called constructor
           foldM((acc, args) => foldArgs(acc, args), b, argss) >>= (afterArgss =>
@@ -330,9 +326,9 @@ object CFGraph {
           m.pure(append(b, Expr(l)))
       , (l, _, _, _) => // qualified super
           m.pure(append(b, Expr(l)))
-      , (l, components : List[tree.TypedExpr], t) => // tuple
+      , (l, components : List[tree.TypedExpr], _) => // tuple
           m.map(foldM((acc : Block[Node, C, O], x : tree.TypedExpr) => cfgStmts(x, acc), b, components)(m))(append(_, Expr(l)))
-      , (l, p, t, _) => // if-then
+      , (_, p, t, _) => // if-then
           for (afterP <- cfgStmts(p, b);
                tBranch <- emptyBlock;
                succ <- emptyBlock;
@@ -342,7 +338,7 @@ object CFGraph {
                _ <- close(afterTBranch, Jump(succ.entryLabel))
               )
           yield succ
-      , (l, p, t, f, _) => // if-then-else
+      , (_, p, t, f, _) => // if-then-else
           for (afterP <- cfgStmts(p, b);
                tBranch <- emptyBlock;
                fBranch <- emptyBlock;
@@ -367,14 +363,14 @@ object CFGraph {
                              raiseError()
                     })
           yield succ
-      , (l, p, loopBody, _) => // while loop
+      , (_, p, loopBody, _) => // while loop
           for (testP <- emptyBlock;
                _ <- close(b, Jump(testP.entryLabel));
                afterP <- cfgStmts(p, testP);
                body <- emptyBlock;
                succ <- emptyBlock;
                cond = Cond(p.label, body.entryLabel, succ.entryLabel);
-               _ <- close(body, cond);
+               _ <- close(afterP, cond);
                _ <- handleError {
                    for (afterBody <- cfgStmts(loopBody, body);
                         _ <- close(afterBody, Jump(testP.entryLabel)))
@@ -383,9 +379,9 @@ object CFGraph {
                    _ => m.pure(())
                  })
           yield succ
-      , (l, enums, body, _) => // for loop
+      , (l, _, _, _) => // for loop
           m.pure(append(b, Expr(l))) 
-      , (l, enums, body, _) => // for-yield loop
+      , (l, _, _, _) => // for-yield loop
           m.pure(append(b, Expr(l))) 
       , (l, _) => // return
           liftM(getAbruptNext) >>= (abruptNext =>
@@ -402,7 +398,7 @@ object CFGraph {
           liftM(getAbruptNext) >>= (abruptNext =>
           close(append(afterExpr, Expr(l)), Jump(abruptNext)) >>
           raiseError()))
-      , (l, statements, _) => // block
+      , (_, statements, _) => // block
           foldM(
               (acc : Block[Node, C, O], stmt : tree.TypedStatement) =>
                 stmt.fold(

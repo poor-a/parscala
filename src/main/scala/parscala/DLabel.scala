@@ -9,6 +9,8 @@ class DLabel (val l : Int) extends AnyVal {
   override def toString : String = s"DLabel_${l.toString}"
 
   def toShortString : String = l.toString
+
+  def toInt : Int = l
 }
 
 /**

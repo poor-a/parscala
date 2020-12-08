@@ -1,8 +1,6 @@
 package parscala
 package df
 
-import parscala.controlflow._
-import tree.Expr
 import parscala.{tree => tr}
 
 import scala.collection.immutable.Traversable
@@ -79,7 +77,7 @@ object DFGraph {
     def const4[A](x : A) : (Any, Any, Any, Any) => A = (_, _, _, _) => x
     root.cata(
         const3(Set())  // literal
-      , (label, _, _symbols, _) => { // identifier
+      , (label, _, _, _) => { // identifier
           ud(label).map { assignment => ((assignment -> label), F()) }}
       , (label, _, rhs, _) => // assignment
           traverse(rhs, ud) + ((Right(rhs.label) -> label, F()))
@@ -92,13 +90,13 @@ object DFGraph {
             case _                           => edges
           }
         }
-      , (_label, _lhs, _op, _args, _) => Set[Edge]() // infix application TODO
-      , (_label, _op, _arg, _) => Set[Edge]() // unary application TODO
+      , (_, _, _, _, _) => Set[Edge]() // infix application TODO
+      , (_, _, _, _) => Set[Edge]() // unary application TODO
       , (label, _, argss, _) => // new
         (for (args <- argss.toIterator; arg <- args.toIterator) yield traverse(arg, ud) + ((Right(arg.label) -> label, D()))).foldLeft(Set.empty[Edge])(_ union _)
       , (label, obj, _, _, _) => // select
           traverse(obj, ud) + ((Right(obj.label) -> label, D()))
-      , (l, argss) => // this(...) application
+      , (_, argss) => // this(...) application
         (for (args <- argss.toIterator; arg <- args.toIterator) yield traverse(arg, ud)).foldLeft(Set.empty[Edge])(_ union _)
       , const3(Set.empty[Edge]) // this
       , const4(Set.empty[Edge]) // super
@@ -110,14 +108,14 @@ object DFGraph {
           traverse(cond, ud) union traverse(tBranch, ud) union traverse(fBranch, ud)
       , (_, cond, body, _) => // while loop
           traverse(cond, ud) union traverse(body, ud)
-      , (_, enumerators, body, _) => traverse(body, ud) // for loop TODO
+      , (_, _, body, _) => traverse(body, ud) // for loop TODO
 //          enumerators.foldLeft(Set.empty[Edge])( (acc, enum) => traverse(enum, ud) ) union traverse(body, ud)
-      , (_, enumerators, body, _) => traverse(body, ud) // for-yield loop TODO
+      , (_, _, body, _) => traverse(body, ud) // for-yield loop TODO
 //          enumerators.foldLeft(Set.empty[Edge])( (acc, enum) => traverse(enum, ud) ) union traverse(body, ud)
       , const2(Set.empty[Edge]) // return statement
       , (label, expr, _) => // return expr statement
           traverse(expr, ud) + ((Right(expr.label) -> label, F()))
-      , (label, expr, _) => // throw statement
+      , (_, expr, _) => // throw statement
           traverse(expr, ud)
       , (label, statements, _) => { // block expression
           val edges : Set[Edge] = statements.foldLeft(Set.empty[Edge]){ (acc, stmt) => 
@@ -132,7 +130,7 @@ object DFGraph {
 //      , (label, _, body, _) => { // lambda function
 //          traverse(body, ud)
 //        }
-      , (label, _, _) => // other expression
+      , (_, _, _) => // other expression
           Set.empty[Edge]
       )
   }

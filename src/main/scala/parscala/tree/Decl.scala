@@ -113,16 +113,16 @@ object Decl {
       Doc.fill(Doc.lineOrEmpty, argss.map(args => paren(Doc.str(args.mkString(", ")))))
 
     decl.cata(
-        (_l, mods, pats, symbols, declType) => // val
+        (_, mods, pats, _, declType) => // val
           eachFollowedBy(Doc.space, mods) + Doc.spread(List(Doc.text("val"), PrettyPrint.sepBy(Doc.comma + Doc.space, pats), Doc.text(":"), Doc.str(declType)))
-      , (_l, mods, pats, symbols, declType) => // var
+      , (_, mods, pats, _, declType) => // var
           eachFollowedBy(Doc.space, mods) + Doc.spread(List(Doc.text("var"), PrettyPrint.sepBy(Doc.comma + Doc.space, pats), Doc.text(":"), Doc.str(declType)))
-      , (_l, _symbols, mods, name, typeArgs, argss, declType) => // method
+      , (_, _, mods, name, typeArgs, argss, declType) => // method
           eachFollowedBy(Doc.space, mods) + Doc.text("def") + Doc.space + Doc.str(name) + PrettyPrint.bracketMany1(Doc.comma + Doc.space, typeArgs) +
           prettyArgss(argss) + Doc.space + Doc.text(":") + Doc.space + Doc.str(declType)
-      , (_l, _symbols, mods, name, params, _bounds) => // type
-          eachFollowedBy(Doc.space, mods) + Doc.text("type") + Doc.space + Doc.str(name) + PrettyPrint.bracketMany1(Doc.comma + Doc.space, params)
-      , (_l, imports) => // import
+      , (_, _, mods, name, params, bounds) => // type
+          eachFollowedBy(Doc.space, mods) + Doc.text("type") + Doc.space + Doc.str(name) + PrettyPrint.bracketMany1(Doc.comma + Doc.space, params) + Doc.space + Doc.str(bounds)
+      , (_, imports) => // import
           Doc.text("import") + Doc.space + Doc.str(imports)
       )
   }
@@ -136,13 +136,13 @@ object Decl {
 
   def toDotGen(decl : TypedDecl) : dot.DotGen.DotGen[dot.DotNode] =
     decl.cata(
-          (l, _mods, pats, symbols, _declType) => // val
+          (l, _, pats, symbols, _) => // val
             DotGen.node(DotNode.record(l, "Val", pats.mkString(", ") + " : " + symbols.map(_.info).mkString(", ")))
-        , (l, _mods, pats, symbols, _declType) => // var
+        , (l, _, pats, symbols, _) => // var
             DotGen.node(DotNode.record(l, "Var", pats.mkString(", ") + " : " + symbols.map(_.info).mkString(", ")))
-        , (l, symbols, _mods, name, typeArgs, argss, _declType) => // method
+        , (l, _, _, _, _, _, _) => // method
             DotGen.node(DotNode.record(l, "Method", decl.toString))
-        , (l, _symbol, _mods, name, _params, _bounds) => // type
+        , (l, _, _, name, _, _) => // type
             DotGen.node(DotNode.record(l, "Type", name.toString))
         , (l, sugared) => // import
             DotGen.node(DotNode.record(l, "Import", sugared.toString))

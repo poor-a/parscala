@@ -77,6 +77,7 @@ object Node {
   def cata[A](label_ : (BLabel) => A,
               pattern_ : (PLabel, BLabel, BLabel) => A,
               expr_ : (SLabel) => A,
+              defn_ : (DLabel) => A,
               call_ : (SLabel, List[BLabel], BLabel) => A,
               return_ : (BLabel, List[BLabel], Call) => A,
               cond_ : (SLabel, BLabel, BLabel) => A,
@@ -88,6 +89,7 @@ object Node {
       case Label(bl) => label_(bl)
       case Pattern(sl, success, failure) => pattern_(sl, success, failure)
       case Expr(sl) => expr_(sl)
+      case Defn(dl) => defn_(dl)
       case Call(expr, methods, returnPoint) => call_(expr, methods, returnPoint)
       case Return(l, methods, call) => return_(l, methods, call)
       case Cond(sl, t, f) => cond_(sl, t, f)
@@ -97,9 +99,11 @@ object Node {
     }
 
   def OOCata[A](nExpr : (SLabel) => A,
+                nDefn : (DLabel) => A,
                 n : Node[O,O]) : A = 
     n match {
       case Expr(sl) => nExpr(sl)
+      case Defn(dl) => nDefn(dl)
     }
 
   def OCCata[A](pattern_ : (PLabel, BLabel, BLabel) => A,

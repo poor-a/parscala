@@ -3,7 +3,7 @@ package transformation
 
 import parscala.analysis.UnusedVariablesAnalysis
 import parscala.Control.catSomes
-import parscala.tree.{Expr, Defn, Block, Statement}
+import parscala.tree.{Defn, Block, Statement}
 
 object RemoveUnusedVariables {
   // TODO: review ProgramGraph bookkeeping -- symbolTable, declarations
@@ -50,7 +50,7 @@ object RemoveUnusedVariables {
                                     statements,
                                     stmt => stmt.fold((decl : tree.TypedDecl) => Some(decl.label),
                                                       (defn : tree.TypedDefn) => Some(defn.label),
-                                                      (expr : tree.TypedExpr) => None),
+                                                      (_ : tree.TypedExpr) => None),
                                     Statement.fromDefn,
                                     d)))
                 }
@@ -63,7 +63,7 @@ object RemoveUnusedVariables {
                                     statements,
                                     stmt => stmt.fold((decl : tree.TypedDecl) => Some(decl.label),
                                                       (defn : tree.TypedDefn) => Some(defn.label),
-                                                      (expr : tree.TypedExpr) => None),
+                                                      (_ : tree.TypedExpr) => None),
                                     Statement.fromDefn,
                                     d)))
               , (l, symbols, mods, name, statements) => // object
@@ -75,7 +75,7 @@ object RemoveUnusedVariables {
                                      statements,
                                      stmt => stmt.fold((decl : tree.TypedDecl) => Some(decl.label),
                                                        (defn : tree.TypedDefn) => Some(defn.label),
-                                                       (expr : tree.TypedExpr) => None),
+                                                       (_ : tree.TypedExpr) => None),
                                      Statement.fromDefn,
                                      d)))
               , (l, symbols, mods, name, statements) => // package object
@@ -87,7 +87,7 @@ object RemoveUnusedVariables {
                                             statements,
                                             stmt => stmt.fold((decl : tree.TypedDecl) => Some(decl.label),
                                                               (defn : tree.TypedDefn) => Some(defn.label),
-                                                              (expr : tree.TypedExpr) => None),
+                                                              (_ : tree.TypedExpr) => None),
                                             Statement.fromDefn,
                                             d)))
               , (l, symbols, name, statements) => // package
@@ -98,7 +98,7 @@ object RemoveUnusedVariables {
                                       statements,
                                       stmt => stmt.fold((decl : tree.TypedDecl) => Some(decl.label),
                                                         (defn : tree.TypedDefn) => Some(defn.label),
-                                                        (expr : tree.TypedExpr) => None),
+                                                        (_ : tree.TypedExpr) => None),
                                       Statement.fromDefn,
                                       d)))
               )

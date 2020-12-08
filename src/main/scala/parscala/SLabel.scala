@@ -1,7 +1,6 @@
 package parscala
 
 import scalaz.{Show, Cord}
-import scalaz.syntax.ShowSyntax
 
 /**
  * Label type for (sub)expressions and statements

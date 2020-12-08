@@ -1,7 +1,7 @@
 package parscala
 package file
 
-import java.nio.file.{Path, Paths, Files}
+import java.nio.file.{Path, Files}
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.stream.Stream
 

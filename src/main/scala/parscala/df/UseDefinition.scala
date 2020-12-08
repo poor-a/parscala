@@ -2,7 +2,6 @@ package parscala
 package df
 
 import parscala.{controlflow => cf}
-import parscala.{tree => tr}
 import parscala.dot
 
 import scala.collection.immutable.Traversable

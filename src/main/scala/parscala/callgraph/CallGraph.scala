@@ -115,12 +115,12 @@ object CallGraphBuilder {
         , (_, pred, body, _) => // while loop
             collectCalls(pred) ++
             collectCalls(body)
-        , (_, enumerators, outputExpr, _) => // for loop
+        , (_, _, outputExpr, _) => // for loop
 //            enumerators.foldLeft(empty)(
 //                (acc, enum) => acc ++ collectCalls(enum)
 //              ) ++ collectCalls(outputExpr)
             collectCalls(outputExpr)
-        , (_, enumerators, outputExpr, _) => // for-yield loop
+        , (_, _, outputExpr, _) => // for-yield loop
 //            enumerators.foldLeft(empty)(
 //                (acc, enum) => acc ++ collectCalls(enum)
 //              ) ++ collectCalls(outputExpr)

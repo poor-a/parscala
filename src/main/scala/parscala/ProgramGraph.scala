@@ -45,7 +45,7 @@ case class ProgramGraph (
 
   def classes : List[tree.Defn.TypedClass] = parscala.Control.catSomes(
       topLevels map (_.fold(
-          (decl : tree.TypedDecl) => None
+          (_ : tree.TypedDecl) => None
         , (defn : tree.TypedDefn) => defn.asClass
         )
       )
@@ -53,7 +53,7 @@ case class ProgramGraph (
 
   def objects : List[tree.Defn.TypedObject] = parscala.Control.catSomes(
       topLevels map (_.fold(
-          (decl : tree.TypedDecl) => None
+          (_ : tree.TypedDecl) => None
         , (defn : tree.TypedDefn) => defn.asObject
         )
       )

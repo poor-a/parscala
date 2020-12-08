@@ -7,7 +7,7 @@ import scala.meta
 
 import org.typelevel.paiges.Doc
 import scalaz.{StateT, \/, Traverse, Monoid, Monad, MonadState, MonadTrans, IndexedStateT, WriterT}
-import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
+// import scalaz.syntax.bind.ToBindOpsUnapply // >>= and >>
 
 import parscala.Control.{mapM, forM, forM_}
 import dot.{DotGraph, DotNode, DotGen}
@@ -110,9 +110,11 @@ case class New[IdentInfo, SemanticInfo](l : SLabel, tpe : meta.Type, args : List
   def label : SLabel = l
 }
 
+/*
 case class NewAnonymous[IdentInfo, SemanticInfo](l : SLabel, template : Template[IdentInfo, SemanticInfo], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
   def label : SLabel = l
 }
+*/
 
 case class Select[IdentInfo, SemanticInfo](l : SLabel, qualifier : Expr[IdentInfo, SemanticInfo], sel : meta.Term.Name, identInfo : IdentInfo, info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
   def label : SLabel = l
@@ -172,9 +174,11 @@ case class Block[IdentInfo, SemanticInfo](l : SLabel, statements : List[Statemen
   def label : SLabel = l
 }
 
+/*
 case class Lambda[IdentInfo, SemanticInfo](l : SLabel, args : List[Expr[IdentInfo, SemanticInfo]], body : Expr[IdentInfo, SemanticInfo], info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
   def label : SLabel = l
 }
+*/
 
 case class Other[IdentInfo, SemanticInfo](l : SLabel, expr : meta.Term, info : SemanticInfo) extends Expr[IdentInfo, SemanticInfo] {
   def label : SLabel = l
@@ -238,14 +242,13 @@ object Expr {
          _ <- stateInstance.put(sNew))
     yield x
 
-  private def getDLabel (s : Symbol) : NodeGen[Option[DLabel]] =
-    stateInstance.gets[Option[DLabel]](_.symbolTable.get(s))
-
   private val genSLabel : NodeGen[SLabel] =
     modifySt{ s => (s.sGen.head, s.copy(sGen = s.sGen.tail)) }
 
+/*
   private val genPLabel : NodeGen[PLabel] =
     modifySt{ s => (s.pGen.head, s.copy(pGen = s.pGen.tail)) }
+*/
 
   private val genDLabel : NodeGen[DLabel] =
     modifySt { s => (s.dGen.head, s.copy(dGen = s.dGen.tail)) }
@@ -276,7 +279,7 @@ object Expr {
          _ <- modifySt{ s => ((), s.copy(exprs = s.exprs.updated(l, n))) })
     yield n
 
-  private def labelPat(f : PLabel => Pat) : NodeGen[Pat] = 
+/*  private def labelPat(f : PLabel => Pat) : NodeGen[Pat] = 
     for (l <- genPLabel;
          p = f(l))
     yield p
@@ -286,7 +289,7 @@ object Expr {
       m.void(genDLabelFor(t.symbol))
     else
       m.pure(())
-
+*/
   private def singleton[A, B](as : List[A])(f : A => B)(err : => B) : B =
     as match {
       case List(a) => f(a)
@@ -315,7 +318,7 @@ object Expr {
           for (components <- forM(metaComponents)(resugarChild(_));
                tuple <- label(Tuple(_, components, types)))
           yield tuple
-      , (metaType, _name, metaArgss) => // new
+      , (metaType, _, metaArgss) => // new
           for (argss <- forM(metaArgss){args =>
                    forM(args)(resugarChild(_))
                  };
@@ -338,7 +341,7 @@ object Expr {
                _ <- mapM((t : DLabel) => addCallTarget(app.label, t), targets))
           yield app
         // metaOp should be inspected for symbols
-      , (metaArgLeft, metaOp, _metaTypeArgs, metaArgsRight) => // applyInfix
+      , (metaArgLeft, metaOp, _, metaArgsRight) => // applyInfix
           for (argLeft <- resugarChild(metaArgLeft);
                argsRight <- forM(metaArgsRight)(resugarChild(_));
                appInfix <- label(AppInfix(_, argLeft, metaOp, argsRight, types));
@@ -429,12 +432,6 @@ object Expr {
                        }
          )
     yield defn
-
-  private def check(b : Boolean, msg : String) : NodeGen[Unit] =
-    if (b)
-      stateInstance.pure(())
-    else
-      raiseError(msg)
 
   sealed abstract class PositionSearchSetting
   case class SearchChildrenOnExactPosition() extends PositionSearchSetting
@@ -553,7 +550,7 @@ object Expr {
                        body <- genExpr(metaBody, childScope(samePos, scope)))
                   yield Defn.Method(l, symbols, mods, name, typeParams, paramss, oDeclType, body)
                  )
-       , (mods, name, _typeParams, paramss, _oDeclType, metaBody) => _ => // macro
+       , (mods, name, _, paramss, _, metaBody) => _ => // macro
           putDefn(
             for (l <- singleton(samePos){
                         case m : scalac.DefDef => genDLabelFor(m.symbol)
@@ -572,7 +569,7 @@ object Expr {
             for (l <- genDLabel)
             yield Defn.Type(l, symbols, mods, name, typeParams, metaBody)
           )
-      , (mods, name, _typeParams, _constructor, metaBody) => _ => // class
+      , (mods, name, _, _, metaBody) => _ => // class
           putDefn(genDLabel){ l => {
               val matchingClasses : List[Tree] = samePos.filter(t => t.symbol != null && t.symbol.isClass)
               val symbols : List[Symbol] = symbolsOf(matchingClasses)
@@ -583,7 +580,7 @@ object Expr {
                yield Defn.Class(l, symbols, mods, name, statements)
             }
           }
-      , (mods, name, _typeParams, _constructor, metaBody) => _ => // trait
+      , (mods, name, _, _, metaBody) => _ => // trait
           putDefn(genDLabel){ l => {
               val matchingTraits : List[Tree] = samePos.filter(t => t.symbol != null && !t.symbol.isClass)
               val symbols : List[Symbol] = symbolsOf(matchingTraits)
@@ -818,6 +815,7 @@ object Expr {
       )
   }
 
+/*
   private def genPat(t : Tree) : NodeGen[Pat] = 
     Control.patCata(
         (c) => { // literal
@@ -836,7 +834,7 @@ object Expr {
           stateInstance.pure(LiteralPat(l, lit))
           )
         }
-      , (name, pat) => // binding
+      , (_, pat) => // binding
           genPat(pat) >>= (p =>
           genPLabel >>= (l =>
           stateInstance.pure(AsPat(l, t.symbol, p))
@@ -851,6 +849,7 @@ object Expr {
           )
       , t
       )
+*/
 
   def runNodeGen[A](m : NodeGen[A]) : String \/ (List[String], (St, A)) = {
     val startSt : St = St(PLabel.stream, SLabel.stream, DLabel.stream, Map(), Map(), Map(), Map(), List(), Map())
@@ -867,56 +866,56 @@ object Expr {
                       argss.map(args => lparen + Doc.intercalate(Doc.text(","), args.map(prettyPrint)) + rparen))
 
     e.cata(
-        (_l, lit, _typ) => // literal
+        (_, lit, _) => // literal
           Doc.str(lit)
-      , (_l, ident, _, _typ) => // identifier reference
+      , (_, ident, _, _) => // identifier reference
           Doc.text(ident)
-      , (_l, lhs, rhs, _typ) => // assignment
+      , (_, lhs, rhs, _) => // assignment
           prettyPrint(lhs) + Doc.space + Doc.str("=") + Doc.lineOrSpace + prettyPrint(rhs)
-      , (_l, m, args, _t) => // application
+      , (_, m, args, _) => // application
           prettyPrint(m) + prettyArgs(args)
-      , (_l, lhs, op, args, _t) => // infix application
+      , (_, lhs, op, args, _) => // infix application
           prettyPrint(lhs) + Doc.space + Doc.str(op) + Doc.lineOrSpace + 
             (args match {
               case List(arg) => prettyPrint(arg)
               case _ => prettyArgs(args)
             })
-      , (_l, op, arg, _t) => // unary application
+      , (_, op, arg, _) => // unary application
           Doc.str(op) + Doc.space + prettyPrint(arg)
-      , (_l, class_, argss, _t) => // new
+      , (_, class_, argss, _) => // new
           Doc.text("new") + Doc.space + Doc.str(class_) + prettyArgss(argss)
-      , (_l, obj, termName, _syms, _t) => // selection
+      , (_, obj, termName, _, _) => // selection
           prettyPrint(obj) + Doc.text(".") + Doc.str(termName)
-      , (_l, argss) => // this(...) application
+      , (_, argss) => // this(...) application
           Doc.str("this") + prettyArgss(argss)
-      , (_l, typeName, _t) => // this
+      , (_, typeName, _) => // this
           Doc.str(typeName) + Doc.text("this")
-      , (_l, _thisp, _superp, _t) => // super
+      , (_, _, _, _) => // super
           Doc.text("super")
-      , (_l, comps, _t) => // tuple
+      , (_, comps, _) => // tuple
           prettyArgs(comps)
-      , (_l, pred, thenE, _t) => // if-then
+      , (_, pred, thenE, _) => // if-then
           Doc.text("if") + Doc.space + lparen + prettyPrint(pred) + rparen + Doc.space +
           prettyPrint(thenE)
-      , (_l, pred, thenE, elseE, _t) => // if-then-else
+      , (_, pred, thenE, elseE, _) => // if-then-else
           Doc.text("if") + Doc.space + lparen + prettyPrint(pred) + rparen + Doc.space +
           prettyPrint(thenE) + Doc.space + Doc.str("else") + Doc.space + prettyPrint(elseE)
-      , (_l, pred, body, _t) => // while loop
+      , (_, pred, body, _) => // while loop
           Doc.text("while") + Doc.space + lparen + prettyPrint(pred) + rparen + Doc.space +
           prettyPrint(body)
-      , (_l, enums, body, _t) => // for loop
+      , (_, enums, body, _) => // for loop
          Doc.text("for") + lparen + Doc.cat(enums.map(e => Doc.str(e) + Doc.text(";"))) + rparen + Doc.space + prettyPrint(body)
-      , (_l, enums, body, _t) => // for-yield loop
+      , (_, enums, body, _) => // for-yield loop
          Doc.text("for") + lparen + Doc.cat(enums.map(e => Doc.str(e) + Doc.text(";"))) + rparen + Doc.space + Doc.text("yield") + Doc.space + prettyPrint(body)
       , (_, _) => // return
          Doc.text("return")
-      , (_l, expr, _t) => // return with expr
+      , (_, expr, _) => // return with expr
          Doc.text("return") + Doc.space + prettyPrint(expr)
-      , (_l, expr, _t) => // throw
+      , (_, expr, _) => // throw
          Doc.text("throw") + Doc.space + prettyPrint(expr)
-      , (_l, stmts, _) => // block
+      , (_, stmts, _) => // block
          Doc.text("{") + Doc.stack(Doc.empty :: stmts.map(Statement.prettyPrint)).nested(2) + Doc.line + Doc.text("}")
-      , (_l, expr, _t) => // other expression
+      , (_, expr, _) => // other expression
          Doc.str(expr)
       )
   }
@@ -970,81 +969,81 @@ object Expr {
     }
 
     e.cata(
-        (_l, lit, typ) => // literal
+        (_, lit, typ) => // literal
           typeAnnot(Doc.str(lit), typ)
-      , (_l, ident, symbol, typ) => { // identifier reference
+      , (_, ident, symbol, typ) => { // identifier reference
           val i : Doc = Doc.text(ident)
           if (symbol.hasPackageFlag)
             i
           else
             typeAnnot(i, typ)
         }
-      , (_l, lhs, rhs, typ) => // assignment
+      , (_, lhs, rhs, typ) => // assignment
           typeAnnot(prettyPrintLint(lhs) + Doc.space + Doc.str("=") + Doc.lineOrSpace + prettyPrintLint(rhs), typ)
-      , (_l, m, args, t) => // application
+      , (_, m, args, t) => // application
           typeAnnot(prettyPrintLint(m) + prettyArgs(args), t)
-      , (_l, lhs, op, args, t) => // infix application
+      , (_, lhs, op, args, t) => // infix application
           typeAnnot(prettyPrintLint(lhs) + Doc.space + Doc.str(op) + Doc.lineOrSpace +
             (args match {
               case List(arg) => prettyPrintLint(arg)
               case _ => prettyArgs(args)
             }), t)
-      , (_l, op, arg, t) => // unary application
+      , (_, op, arg, t) => // unary application
           typeAnnot(Doc.str(op) + Doc.space + prettyPrintLint(arg), t)
-      , (_l, class_, argss, t) => // new
+      , (_, class_, argss, t) => // new
           typeAnnot(Doc.text("new") + Doc.space + Doc.str(class_) + prettyArgss(argss), t)
-      , (_l, obj, termName, symbol, t) => { // selection
+      , (_, obj, termName, symbol, t) => { // selection
           val sel : Doc = prettyPrintLint(obj) + Doc.text(".") + Doc.str(termName)
           if (symbol.hasPackageFlag)
             sel
           else
             typeAnnot(sel, t)
         }
-      , (_l, argss) => // this(...) application
+      , (_, argss) => // this(...) application
           Doc.text("this") + prettyArgss(argss)
-      , (_l, typeName, t) => // this
+      , (_, typeName, t) => // this
           typeAnnot(Doc.str(typeName) + Doc.text("this"), t)
-      , (_l, _thisp, _superp, t) => // super
+      , (_, _, _, t) => // super
           typeAnnot(Doc.text("super"), t)
-      , (_l, comps, t) => // tuple
+      , (_, comps, t) => // tuple
           typeAnnot(prettyArgs(comps), t)
-      , (_l, pred, thenE, t) => // if-then
+      , (_, pred, thenE, t) => // if-then
           typeAnnot(
               Doc.text("if") + Doc.space + paren(prettyPrintLint(pred)) + Doc.space +
               prettyPrintLint(thenE)
             , t
             )
-      , (_l, pred, thenE, elseE, t) => // if-then-else
+      , (_, pred, thenE, elseE, t) => // if-then-else
           typeAnnot(
               Doc.text("if") + Doc.space + paren(prettyPrintLint(pred)) + Doc.space +
               prettyPrintLint(thenE) + Doc.space + Doc.str("else") + Doc.space + prettyPrintLint(elseE)
             , t
             )
-      , (_l, pred, body, t) => // while loop
+      , (_, pred, body, t) => // while loop
           typeAnnot(
               Doc.text("while") + Doc.space + paren(prettyPrintLint(pred)) + Doc.space +
               prettyPrintLint(body)
             , t
             )
-      , (_l, enums, body, t) => // for loop
+      , (_, enums, body, t) => // for loop
          typeAnnot(
              Doc.text("for") + paren(Doc.cat(enums.map(e => Doc.str(e) + Doc.text(";")))) + Doc.space + prettyPrintLint(body)
            , t
            )
-      , (_l, enums, body, t) => // for-yield loop
+      , (_, enums, body, t) => // for-yield loop
          typeAnnot(
              Doc.text("for") + paren(Doc.cat(enums.map(e => Doc.str(e) + Doc.text(";")))) + Doc.space + Doc.text("yield") + Doc.space + prettyPrintLint(body)
            , t
            )
       , (_, _) => // return
          Doc.text("return")
-      , (_l, expr, t) => // return with expr
+      , (_, expr, t) => // return with expr
          typeAnnot(Doc.text("return") + Doc.space + prettyPrintLint(expr), t)
-      , (_l, expr, t) => // throw
+      , (_, expr, t) => // throw
          typeAnnot(Doc.text("throw") + Doc.space + prettyPrintLint(expr), t)
-      , (_l, stmts, t) => // block
+      , (_, stmts, t) => // block
          typeAnnot(curly(Doc.stack(Doc.empty :: stmts.map(Statement.prettyPrintLint)).nested(2) + Doc.line), t)
-      , (_l, expr, t) => // other expression
+      , (_, expr, t) => // other expression
          typeAnnot(paren(Doc.str(expr)), t)
       )
   }
@@ -1085,40 +1084,40 @@ object Expr {
                  _ <- DotGen.edge(app, lhsNode, "left");
                  _ <- DotGen.enum(app, nodes, "arg(%s)".format(_)))
             yield app
-        , (l, op, arg, _t) => // unary application
+        , (l, op, arg, _) => // unary application
             for (argNode <- toDotGen(arg);
                  app <- DotGen.node(DotNode.record(l, "Unary application", op.toString));
                  _ <- DotGen.edge(app, argNode, "arg"))
             yield app
-        , (l, class_, argss, t) => // new
+        , (l, class_, argss, _) => // new
             for (newE <- DotGen.node(DotNode.record(l, "New", class_.toString));
                  nodess <- mapM(mapM(toDotGen, _ : List[TypedExpr]), argss);
                  _ <- DotGen.deepEnum(newE, nodess, "arg(%s, %s)".format(_, _)))
             yield newE
-        , (l, obj, termName, _syms, t) => // selection
+        , (l, obj, _, _, _) => // selection
             for (o <- toDotGen(obj);
                  select <- DotGen.node(DotNode.record(l, "Selection", n.toString));
                  _ <- DotGen.edge(select, o, ""))
             yield select
-        , (l, argss) => // this(...) application
+        , (l, _) => // this(...) application
            DotGen.node(DotNode.record(l, "This application", ""))
-        , (l, typeName, _t) => // this
+        , (l, typeName, _) => // this
             DotGen.node(DotNode.record(l, "This", typeName.toString))
-        , (l, thisp, superp, _t) => // super
+        , (l, thisp, superp, _) => // super
             DotGen.node(DotNode.record(l, "Super", thisp.toString + " " + superp.toString))
         , (l, comps, t) => // tuple
             for (nodes <- mapM(toDotGen, comps);
                  tuple <- DotGen.node(DotNode.record(l, "Tuple", t.mkString(" or ")));
                  _ <- DotGen.enum(tuple, nodes,"comp(%s)".format(_)))
             yield tuple
-        , (l, pred, thenE, t) => // if-then
+        , (l, pred, thenE, _) => // if-then
             for (p <- toDotGen(pred);
                  then_ <- toDotGen(thenE);
                  ifE <- DotGen.node(DotNode.record(l, "If-then", ""));
                  _ <- DotGen.edge(ifE, p, "predicate");
                  _ <- DotGen.edge(ifE, then_, "then"))
             yield ifE
-        , (l, pred, thenE, elseE, t) => // if-then-else
+        , (l, pred, thenE, elseE, _) => // if-then-else
             for (p <- toDotGen(pred);
                  then_ <- toDotGen(thenE);
                  else_ <- toDotGen(elseE);
@@ -1127,31 +1126,31 @@ object Expr {
                  _ <- DotGen.edge(ifE, then_, "then");
                  _ <- DotGen.edge(ifE, else_, "else"))
             yield ifE
-        , (l, pred, body, t) => // while loop
+        , (l, pred, body, _) => // while loop
             for (p <- toDotGen(pred);
                  b <- toDotGen(body);
                  whileE <- DotGen.node(DotNode.record(l, "While loop", ""));
                  _ <- DotGen.edge(whileE, p, "predicate");
                  _ <- DotGen.edge(whileE, b, "body"))
             yield whileE
-        , (l, enums, body, t) => // for loop
+        , (l, _, body, _) => // for loop
             for (b <- toDotGen(body);
                  forE <- DotGen.node(DotNode.record(l, "For loop", ""));
                  _ <- DotGen.edge(forE, b, "body"))
             yield forE
-        , (l, enums, body, t) => // for-yield loop
+        , (l, _, body, _) => // for-yield loop
             for (b <- toDotGen(body);
                  forE <- DotGen.node(DotNode.record(l, "For-yield loop", ""));
                  _ <- DotGen.edge(forE, b, "yield"))
             yield forE
-        , (l, t) => // return
+        , (l, _) => // return
             DotGen.node(DotNode.record(l, "Return", ""))
-        , (l, expr, t) => // return with expr
+        , (l, expr, _) => // return with expr
             for (e <- toDotGen(expr);
                  returnE <- DotGen.node(DotNode.record(l, "Return", ""));
                  _ <- DotGen.edge(returnE, e, "return"))
             yield returnE
-        , (l, expr, t) => // throw
+        , (l, expr, _) => // throw
             for (e <- toDotGen(expr);
                  throwE <- DotGen.node(DotNode.record(l, "Throw", ""));
                  _ <- DotGen.edge(throwE, e, "throw"))
@@ -1177,7 +1176,7 @@ object Expr {
               })
             })
 */
-        , (l, expr, _t) => // other expression
+        , (l, expr, _) => // other expression
             DotGen.node(DotNode.record(l, "Expression", expr.toString()))
         )
   }

@@ -1,7 +1,7 @@
 package parscala
 package analysis
 
-import parscala.tree.{Expr, Defn, Decl, Statement, TypedExpr, TypedDecl, TypedDefn}
+import parscala.tree.{Defn, TypedExpr, TypedDecl, TypedDefn}
 
 object UnusedVariablesAnalysis {
   type AnalysisValue = (Map[Symbol, DLabel], Set[Symbol], Set[Symbol]) // TODO better name

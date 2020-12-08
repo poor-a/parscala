@@ -2,7 +2,7 @@ package parscala
 package tree
 
 import scala.meta
-import scalac.Quasiquote
+// import scalac.Quasiquote
 
 /**
  * Useful method over syntax trees.
@@ -248,7 +248,7 @@ object Control {
    * @param otherP handles yet unsupported patterns
    * @return the common type `A˙
    */
-  def patCata[A]( litP : (Constant) => A
+/*  def patCata[A]( litP : (Constant) => A
                 , idP : (Name, Tree) => A
                 , underP : () => A
                 , otherP : (Tree) => A
@@ -260,7 +260,7 @@ object Control {
       case pq"_" => underP()
       case _ => otherP(t)
     }
-
+*/
 
   /**
    * Catamorphism over literals.

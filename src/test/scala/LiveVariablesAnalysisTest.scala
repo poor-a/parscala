@@ -4,7 +4,6 @@ import parscala.SLabel
 import parscala.controlflow.CFGraph
 import parscala.tree.{Block, While, If}
 import parscala.tree.Defn.Var
-import parscala.{tree => tr}
 import parscala.df.LiveVariablesAnalysis
 
 class LiveVariablesAnalysisTestSuite extends AnyFlatSpec {

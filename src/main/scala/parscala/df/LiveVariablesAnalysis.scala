@@ -2,7 +2,6 @@ package parscala
 package df
 
 import parscala.{controlflow => cf}
-import parscala.{tree => tr}
 
 import scalaz.std.option
 
@@ -106,6 +105,7 @@ object LiveVariablesAnalysis {
                   (entryLV, analysis.updated(expr, succEntryLV))
                 }
               )
+        , const // definition
         , (expr, _, _) => // application
             option.cata(analysis.get(expr))(
                 exitLV =>

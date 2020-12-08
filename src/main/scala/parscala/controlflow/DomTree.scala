@@ -5,8 +5,8 @@ class DomTree(val tree : Map[BLabel, Option[BLabel]]) {
   val root : Option[BLabel] =
     tree find {case (_, parent) => parent.isEmpty} map (_._1)
 
-  def parent(l : BLabel) : Option[BLabel] = 
-    tree find {case (child, parent) => child == l} map (_._2) getOrElse None
+  def parent(l : BLabel) : Option[BLabel] =
+    tree find {case (child, parent @ _) => child == l} map (_._2) getOrElse None
 
   def children(l : BLabel) : Iterable[BLabel] = {
     for ((child, Some(parent)) <- tree if (parent == l)) yield child

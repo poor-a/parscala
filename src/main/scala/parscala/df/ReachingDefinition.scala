@@ -2,7 +2,6 @@ package parscala
 package df
 
 import parscala.{controlflow => cf}
-import parscala.{tree => tr}
 
 import scalaz.std.option
 
@@ -105,6 +104,7 @@ object ReachingDefinition {
                         (rd, analysis)
               , acc
               )
+        , const // definition
         , (expr, _, _) => // application
             option.cata(analysis.get(expr))(
                 rd => if (!(precRD subsetOf rd))
@@ -142,6 +142,7 @@ object ReachingDefinition {
                 rd => updateExprRd(expr, rd, precRD, analysis)
               , acc
               )
+        , const // definition
         , (expr, _, _) => // application
             option.cata(analysis.get(expr))(
                 rd => updateExprRd(expr, rd, precRD, analysis)
