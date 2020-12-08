@@ -10,6 +10,11 @@ package object tree {
   type TypedDefnMap = DefnMap[Symbol, List[scalac.Type]]
   type TypedDeclMap = DeclMap[Symbol, List[scalac.Type]]
 
+  type TypelessDecl = Decl[Unit, Unit]
+  type TypelessDefn = Defn[Unit, Unit]
+  type TypelessExpr = Expr[Unit, Unit]
+  type TypelessStatement = Statement[Unit, Unit]
+
   type ExprMap[IdentInfo, SemanticInfo] = Map[SLabel, tree.Expr[IdentInfo, SemanticInfo]]
   type DefnMap[IdentInfo, SemanticInfo] = Map[DLabel, tree.Defn[IdentInfo, SemanticInfo]]
   type DeclMap[IdentInfo, SemanticInfo] = Map[DLabel, tree.Decl[IdentInfo, SemanticInfo]]
