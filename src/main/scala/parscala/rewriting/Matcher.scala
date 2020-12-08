@@ -90,7 +90,7 @@ object Matcher {
         (l, lit, _) => // literal
           tree.Literal(l, lit, ())
       , (l, ident, _, _) => // identifier reference
-          tree.Ident(l, ident, List(), ())
+          tree.Ident(l, ident, (), ())
       , (l, lhs, rhs, _) => // assignment
           tree.Assign(l, eraseSemanticInfo(lhs), eraseSemanticInfo(rhs), ())
       , (l, m, args, _) => // application
@@ -219,7 +219,7 @@ object Matcher {
       case AST.Literal(lit) =>
         Some((tree.Literal(freshLabels.head, lit, ()), freshLabels.tail))
       case AST.Ident(name) =>
-        Some((tree.Ident(freshLabels.head, name.toString, List(), ()), freshLabels.tail))
+        Some((tree.Ident(freshLabels.head, name.toString, (), ()), freshLabels.tail))
       case metaVar @ AST.MetaVariable(_) =>
         def instantiateValue(v : Value) : Option[tree.TypelessExpr] =
           v.cata(
