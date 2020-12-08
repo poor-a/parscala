@@ -143,38 +143,40 @@ object Defn {
     }
   }
 
-  case class Class[IdentInfo, SemanticInfo](l : DLabel, infos : List[IdentInfo], mods : List[meta.Mod], name : meta.Type.Name, stats : List[Statement[IdentInfo, SemanticInfo]]) extends Defn[IdentInfo, SemanticInfo] {
+  case class Class[IdentInfo, SemanticInfo](l : DLabel, infos : List[IdentInfo], mods : List[meta.Mod], name : meta.Type.Name, stats : List[Statement[IdentInfo, SemanticInfo]]) extends Defn[IdentInfo, SemanticInfo] with MethodDefinitions[IdentInfo, SemanticInfo] {
     def label : DLabel = l
 
     override def toString : String = infos.toString
 
-    def methods : List[Either[Decl.Method[IdentInfo, SemanticInfo], Method[IdentInfo, SemanticInfo]]] = filterMethods(stats)
+    override def methods : List[Either[Decl.Method[IdentInfo, SemanticInfo], Method[IdentInfo, SemanticInfo]]] = filterMethods(stats)
   }
 
   type TypedClass = Class[Symbol, List[scalac.Type]]
 
-  case class Trait[IdentInfo, SemanticInfo](l : DLabel, infos : List[IdentInfo], mods : List[meta.Mod], name : meta.Type.Name, stats : List[Statement[IdentInfo, SemanticInfo]]) extends Defn[IdentInfo, SemanticInfo] {
+  case class Trait[IdentInfo, SemanticInfo](l : DLabel, infos : List[IdentInfo], mods : List[meta.Mod], name : meta.Type.Name, stats : List[Statement[IdentInfo, SemanticInfo]]) extends Defn[IdentInfo, SemanticInfo] with MethodDefinitions[IdentInfo, SemanticInfo] {
     def label : DLabel = l
 
     override def toString : String = infos.toString
 
-    def methods : List[Either[Decl.Method[IdentInfo, SemanticInfo], Method[IdentInfo, SemanticInfo]]] = filterMethods(stats)
+    override def methods : List[Either[Decl.Method[IdentInfo, SemanticInfo], Method[IdentInfo, SemanticInfo]]] = filterMethods(stats)
   }
 
-  case class Object[IdentInfo, SemanticInfo](l : DLabel, infos : List[IdentInfo], mods : List[meta.Mod], name : meta.Term.Name, stats : List[Statement[IdentInfo, SemanticInfo]]) extends Defn[IdentInfo, SemanticInfo] {
+  case class Object[IdentInfo, SemanticInfo](l : DLabel, infos : List[IdentInfo], mods : List[meta.Mod], name : meta.Term.Name, stats : List[Statement[IdentInfo, SemanticInfo]]) extends Defn[IdentInfo, SemanticInfo] with MethodDefinitions[IdentInfo, SemanticInfo] {
     def label : DLabel = l
 
     override def toString : String = infos.toString
 
-    def methods : List[Either[Decl.Method[IdentInfo, SemanticInfo], Method[IdentInfo, SemanticInfo]]] = filterMethods(stats)
+    override def methods : List[Either[Decl.Method[IdentInfo, SemanticInfo], Method[IdentInfo, SemanticInfo]]] = filterMethods(stats)
   }
 
   type TypedObject = Object[Symbol, List[scalac.Type]]
 
-  case class PackageObject[IdentInfo, SemanticInfo](l : DLabel, symbols : List[IdentInfo], mods : List[meta.Mod], name : meta.Term.Name, stats : List[Statement[IdentInfo, SemanticInfo]]) extends Defn[IdentInfo, SemanticInfo] {
+  case class PackageObject[IdentInfo, SemanticInfo](l : DLabel, symbols : List[IdentInfo], mods : List[meta.Mod], name : meta.Term.Name, stats : List[Statement[IdentInfo, SemanticInfo]]) extends Defn[IdentInfo, SemanticInfo] with MethodDefinitions[IdentInfo, SemanticInfo] {
     def label : DLabel = l
 
     override def toString : String = symbols.toString
+
+    override def methods : List[Either[Decl.Method[IdentInfo, SemanticInfo], Method[IdentInfo, SemanticInfo]]] = filterMethods(stats)
   }
 
   type TypedPackageObject = PackageObject[Symbol, List[scalac.Type]]
@@ -201,6 +203,14 @@ object Defn {
 
   type TypedPackage = Package[Symbol, List[scalac.Type]]
 
+  trait MethodDefinitions[IdentInfo, SemanticInfo] {
+    def methods : List[Either[Decl.Method[IdentInfo, SemanticInfo], Method[IdentInfo, SemanticInfo]]]
+
+    def methodDefns : List[Method[IdentInfo, SemanticInfo]] = parscala.Control.rights(methods)
+
+    def methodDecls : List[Decl.Method[IdentInfo, SemanticInfo]] = parscala.Control.lefts(methods)
+  }
+
   def toString(defn : TypedMethod) = {
     val params : String = defn.paramss.map(_.mkString("(",", ", ")")).mkString("")
     val tparams : String = if (defn.typeArgs.isEmpty) "" else defn.typeArgs.mkString("[", ", ", "]")
@@ -220,7 +230,7 @@ object Defn {
     parscala.Control.catSomes(statements.map{stat =>
       stat.asSymbolTree.flatMap{ symbolTree =>
         bitraverse.bitraverse(symbolTree.unSymbolTree)(asMethodDecl)(_.asMethod)(optionApplicative)
-      } 
+      }
     })
   }
 
@@ -279,7 +289,7 @@ object Defn {
           eachFollowedBy(Doc.space, mods) + Doc.text("var") + Doc.space + PrettyPrint.sepBy(Doc.comma + Doc.space, pats) + Doc.space + typ(oDeclType) + Doc.text("=") + Doc.space + oRhs.fold(Doc.text("_"))(prettyExpression)
       , (_l, _symbols, mods, name, typeArgs, argss, oDeclType, body) => // method
           eachFollowedBy(Doc.space, mods) + Doc.text("def") + Doc.space + Doc.str(name) + PrettyPrint.bracketMany1(Doc.comma + Doc.space, typeArgs) +
-          prettyArgss(argss) + spaceIf(!argss.isEmpty) + typ(oDeclType) + Doc.text("=") + Doc.lineOrSpace +
+          prettyArgss(argss) + spaceIf(!argss.isEmpty) + typ(oDeclType) + Doc.space + Doc.text("=") + Doc.lineOrSpace +
           prettyExpression(body)
       , (_l, _symbols, mods, name, params, body) => // type
           eachFollowedBy(Doc.space, mods) + Doc.text("type") + Doc.space + Doc.str(name) + PrettyPrint.bracketMany1(Doc.comma + Doc.space, params) + Doc.space + Doc.text("=") + Doc.lineOrSpace + Doc.str(body)

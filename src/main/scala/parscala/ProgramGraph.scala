@@ -20,6 +20,29 @@ case class ProgramGraph (
     definitions.get(l).map(Either3.middle3[tree.TypedDecl, tree.TypedDefn, Symbol](_)) orElse
     foreignSymbols.get(l).map(Either3.right3[tree.TypedDecl, tree.TypedDefn, Symbol](_))
 
+  def topLevelDefnByName(name : String) : List[tree.TypedDefn] = {
+    def nameMatches(defn : tree.TypedDefn) : Boolean =
+      defn.cata(
+          (_, _, _, _, _, _) => false // val
+        , (_, _, _, _, _, _) => false // var
+        , (_, _, _, _, _, _, _, _) => false // method
+        , (_, _, _, _, _, _) => false // type
+        , (_, _, _, _, _, _) => false // macro
+        , (_, _, _, _, _, _) => false // secondary constructor
+        , (_, _, _, name_, _) => // class
+          name_.toString == name
+        , (_, _, _, name_, _) => // trait
+          name_.toString == name
+        , (_, _, _, name_, _) => // object
+          name_.toString == name
+        , (_, _, _, name_, _) => // package object
+          name_.toString == name
+        , (_, _, _, _) => false // package
+        )
+
+    for (Right(defn) <- topLevels; if nameMatches(defn)) yield defn
+  }
+
   def classes : List[tree.Defn.TypedClass] = parscala.Control.catSomes(
       topLevels map (_.fold(
           (decl : tree.TypedDecl) => None

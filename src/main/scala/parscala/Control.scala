@@ -9,6 +9,9 @@ object Control {
     if (p(x)) x else until(p, f, f(x))
   }
 
+  def zipWith[A, B, C](f : (A, B) => C, l1 : List[A], l2 : List[B]) : List[C] =
+    l1.iterator.zip(l2.iterator).map{case ((a, b)) => f(a, b)}.toList
+
   def foldM[M[_], A, B](f : (A, B) => M[A], e : A, l : List[B])(implicit evidence : Monad[M]) : M[A] = {
     import scalaz.syntax.bind._
     l match {
@@ -43,10 +46,14 @@ object Control {
     }
 
   def catSomes[A](xs : List[Option[A]]) : List[A] =
-    xs.foldRight(List[A]())(
-        (mx, acc) => mx match {
-            case Some(x) => x :: acc
-            case None    => acc
-          }
-      )
+    for (Some(a) <- xs) yield a
+
+  def rights[A, B](xs : List[Either[A, B]]) : List[B] =
+    for (Right(r) <- xs) yield r
+
+  def lefts[A, B](xs : List[Either[A, B]]) : List[A] =
+    for (Left(r) <- xs) yield r
+
+  def as[Source, Target](l : List[Source])(conv : Source => Option[Target]) : List[Target] =
+    parscala.Control.catSomes(l.map(conv))
 }
