@@ -2,7 +2,7 @@
 
 MAINCLASSDIR=build/classes/scala/main
 TESTCLASSDIR=build/classes/scala/test
-COMPILER_OPTS="-Xlint:_ -feature -deprecation -Ywarn-unused:_ -Ywarn-dead-code -Ywarn-value-discard"
+COMPILER_OPTS="-Xlint:_ -feature -deprecation -Ywarn-unused:_ -Ywarn-dead-code -Ywarn-value-discard -Xfatal-warnings"
 
 # Main sources
 
