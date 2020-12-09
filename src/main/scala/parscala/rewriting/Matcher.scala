@@ -22,7 +22,7 @@ case class Decl(decl : tree.TypelessDecl) extends Value
 case class Defn(defn : tree.TypelessDefn) extends Value
 case class Expr(expr : tree.TypelessExpr) extends Value
 
-object MatchResult {
+private[rewriting] object MatchResult {
   val monoidInstance : Monoid[MatchResult] = new Monoid[MatchResult] {
     override def zero : MatchResult = Success(List())
     override def append(a : MatchResult, b : => MatchResult) : MatchResult =
@@ -56,7 +56,7 @@ object Matcher {
     }
   }
 
-  def doesPatternMatch(stmt : tree.Statement[_, _], pat : AST.Statement) : MatchResult =
+  def doesPatternMatchStmt(stmt : tree.Statement[_, _], pat : AST.Statement) : MatchResult =
     stmt.fold(
         (d : tree.Decl[_, _]) =>
           pat match {
@@ -77,15 +77,15 @@ object Matcher {
           }
       )
 
-  def doesPatternMatchBlock(stmts : List[tree.Statement[_, _]], pats : List[AST.Statement]) : MatchResult = {
+  private def doesPatternMatchBlock(stmts : List[tree.Statement[_, _]], pats : List[AST.Statement]) : MatchResult = {
     import MatchResult.monoidInstance.append
-    Control.zipWith(doesPatternMatch((_ : tree.Statement[_, _]), (_ : AST.Statement)), stmts, pats).fold(Success(List()))((mr1 : MatchResult, mr2 : MatchResult) => append(mr1, mr2))
+    Control.zipWith(doesPatternMatchStmt(_, _), stmts, pats).fold(Success(List()))((mr1 : MatchResult, mr2 : MatchResult) => append(mr1, mr2))
   }
 
-  def eraseSemanticInfo[IdentInfo, SemanticInfo](e : tree.ThisApply[IdentInfo, SemanticInfo]) : tree.ThisApply[Unit, Unit] =
+  private def eraseSemanticInfo[IdentInfo, SemanticInfo](e : tree.ThisApply[IdentInfo, SemanticInfo]) : tree.ThisApply[Unit, Unit] =
     e.copy(argss = e.argss.map(_.map(eraseSemanticInfo(_))))
 
-  def eraseSemanticInfo[IdentInfo, SemanticInfo](e : tree.Expr[IdentInfo, SemanticInfo]) : tree.TypelessExpr =
+  private def eraseSemanticInfo[IdentInfo, SemanticInfo](e : tree.Expr[IdentInfo, SemanticInfo]) : tree.TypelessExpr =
     e.cata(
         (l, lit, _) => // literal
           tree.Literal(l, lit, ())
@@ -133,7 +133,7 @@ object Matcher {
           tree.Other(l, expr, ())
       )
 
-  def eraseSemanticInfo[IdentInfo, SemanticInfo](decl : tree.Decl[IdentInfo, SemanticInfo]) : tree.TypelessDecl =
+  private def eraseSemanticInfo[IdentInfo, SemanticInfo](decl : tree.Decl[IdentInfo, SemanticInfo]) : tree.TypelessDecl =
     decl.cata(
         (l, mods, pats, _, declType) => // val
           tree.Decl.Val(l, mods, pats, List(), declType)
@@ -147,7 +147,7 @@ object Matcher {
           tree.Decl.Import(l, imports)
       )
 
-  def eraseSemanticInfo[IdentInfo, SemanticInfo](defn : tree.Defn[IdentInfo, SemanticInfo]) : tree.TypelessDefn =
+  private def eraseSemanticInfo[IdentInfo, SemanticInfo](defn : tree.Defn[IdentInfo, SemanticInfo]) : tree.TypelessDefn =
     defn.cata(
        (l, mods, pats, _, oDeclType, rhs) => // val
          tree.Defn.Val(l, mods, pats, List(), oDeclType, eraseSemanticInfo(rhs))
@@ -175,7 +175,7 @@ object Matcher {
          tree.Defn.Package(l, List(), name, statements.map(eraseSemanticInfo(_)))
      )
 
-  def eraseSemanticInfo[IdentInfo, SemanticInfo](stmt : tree.Statement[IdentInfo, SemanticInfo]) : tree.TypelessStatement =
+  private def eraseSemanticInfo[IdentInfo, SemanticInfo](stmt : tree.Statement[IdentInfo, SemanticInfo]) : tree.TypelessStatement =
     stmt.fold(
        (decl : tree.Decl[IdentInfo, SemanticInfo]) => tree.Statement.fromDecl(eraseSemanticInfo(decl))
      , (defn : tree.Defn[IdentInfo, SemanticInfo]) => tree.Statement.fromDefn(eraseSemanticInfo(defn))
@@ -185,12 +185,12 @@ object Matcher {
   def lookup[K, V](key : K, l : List[(K,V)], eq : (K, K) => Boolean) : Option[V] =
     l.collectFirst{case (k, v) if eq(k, key) => v}
 
-  def eqMetaVariables(v1 : AST.MetaVariable, v2 : AST.MetaVariable) : Boolean = {
+  private def eqMetaVariables(v1 : AST.MetaVariable, v2 : AST.MetaVariable) : Boolean = {
       val (AST.MetaVariable(meta.Term.Name(name1)), AST.MetaVariable(meta.Term.Name(name2))) = (v1, v2)
       name1 == name2
     }
 
-  def instantiateStmts(pats : List[AST.Statement], context : List[(AST.MetaVariable, Value)], freshLabels : Stream[SLabel]) : Option[(List[tree.TypelessStatement], Stream[SLabel])] =
+  private def instantiateStmts(pats : List[AST.Statement], context : List[(AST.MetaVariable, Value)], freshLabels : Stream[SLabel]) : Option[(List[tree.TypelessStatement], Stream[SLabel])] =
     pats.foldRight(Option((List[tree.TypelessStatement](), freshLabels)))( (p, acc) =>
       for ((stmtsToRight, freshLabelsN) <- acc;
            (stmt, freshLabelsNPlus1) <- instantiateStmt(p, context, freshLabelsN))
@@ -207,7 +207,7 @@ object Matcher {
         yield (tree.Statement.fromExpr(e), freshLabels2)
     }
 
-  def instantiateList(pats : List[AST.Term], context : List[(AST.MetaVariable, Value)], freshLabels : Stream[SLabel]) : Option[(List[tree.TypelessExpr], Stream[SLabel])] =
+  private def instantiateList(pats : List[AST.Term], context : List[(AST.MetaVariable, Value)], freshLabels : Stream[SLabel]) : Option[(List[tree.TypelessExpr], Stream[SLabel])] =
     pats.foldRight(Option((List[tree.TypelessExpr](), freshLabels)))( (p, acc) =>
       for ((exprsToRight, freshLabelsN) <- acc;
            (e, freshLabelsNPlus1) <- instantiate(p, context, freshLabelsN))
@@ -227,7 +227,7 @@ object Matcher {
           v.cata(
               _ => None
             , _ => None
-            , e => Some(eraseSemanticInfo(e))
+            , e => Some(e)
             )
 
         for (v <- lookup(metaVar, context, eqMetaVariables);
