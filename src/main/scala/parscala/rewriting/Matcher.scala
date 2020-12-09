@@ -48,8 +48,8 @@ object Matcher {
         if (name == name2.toString) Success(List()) else Failure
       case (tree.Assign(_, lhs, rhs, _), AST.Assign(lhs2, rhs2)) =>
         append(doesPatternMatch(lhs, lhs2), doesPatternMatch(rhs, rhs2))
-      case (tree.Block(_, stmts, _), AST.Block(terms)) =>
-        doesPatternMatchBlock(stmts, terms)
+      case (tree.Block(_, stmts, _), AST.Block(stmtPats)) =>
+        doesPatternMatchBlock(stmts, stmtPats)
       case (_, metaVar @ AST.MetaVariable(_)) => Success(List((metaVar, Expr(eraseSemanticInfo(e)))))
       case (_, AST.Wildcard) => Success(List())
       case (_, _) => Failure
@@ -77,9 +77,9 @@ object Matcher {
           }
       )
 
-  def doesPatternMatchBlock(stmts : List[tree.Statement[_, _]], terms : List[AST.Term]) : MatchResult = {
+  def doesPatternMatchBlock(stmts : List[tree.Statement[_, _]], pats : List[AST.Statement]) : MatchResult = {
     import MatchResult.monoidInstance.append
-    Control.zipWith(doesPatternMatch((_ : tree.Statement[_, _]), (_ : AST.Term)), stmts, terms).fold(Success(List()))((mr1 : MatchResult, mr2 : MatchResult) => append(mr1, mr2))
+    Control.zipWith(doesPatternMatch((_ : tree.Statement[_, _]), (_ : AST.Statement)), stmts, pats).fold(Success(List()))((mr1 : MatchResult, mr2 : MatchResult) => append(mr1, mr2))
   }
 
   def eraseSemanticInfo[IdentInfo, SemanticInfo](e : tree.ThisApply[IdentInfo, SemanticInfo]) : tree.ThisApply[Unit, Unit] =
@@ -190,20 +190,22 @@ object Matcher {
       name1 == name2
     }
 
-  def instantiateStmts(pats : List[AST.Term], context : List[(AST.MetaVariable, Value)], freshLabels : Stream[SLabel]) : Option[(List[tree.TypelessStatement], Stream[SLabel])] =
+  def instantiateStmts(pats : List[AST.Statement], context : List[(AST.MetaVariable, Value)], freshLabels : Stream[SLabel]) : Option[(List[tree.TypelessStatement], Stream[SLabel])] =
     pats.foldRight(Option((List[tree.TypelessStatement](), freshLabels)))( (p, acc) =>
       for ((stmtsToRight, freshLabelsN) <- acc;
            (stmt, freshLabelsNPlus1) <- instantiateStmt(p, context, freshLabelsN))
       yield (stmt :: stmtsToRight, freshLabelsNPlus1)
     )
 
-  def instantiateStmt(pat : AST.Term, context : List[(AST.MetaVariable, Value)], freshLabels : Stream[SLabel]) : Option[(tree.TypelessStatement, Stream[SLabel])] =
-    for ((e, freshLabels2) <- instantiate(pat, context, freshLabels))
-    yield (tree.Statement.fromExpr(e), freshLabels2)
-
-  def instantiateStmt(pat : AST.MetaVariable, context : List[(AST.MetaVariable, Value)], freshLabels : Stream[SLabel]) : Option[(tree.TypelessStatement, Stream[SLabel])] =
-    for (v <- lookup(pat, context, eqMetaVariables))
-    yield (v.cata(tree.Statement.fromDecl(_), tree.Statement.fromDefn(_), tree.Statement.fromExpr(_)), freshLabels)
+  def instantiateStmt(pat : AST.Statement, context : List[(AST.MetaVariable, Value)], freshLabels : Stream[SLabel]) : Option[(tree.TypelessStatement, Stream[SLabel])] =
+    pat match {
+      case p : AST.MetaVariable =>
+        for (v <- lookup(p, context, eqMetaVariables))
+        yield (v.cata(tree.Statement.fromDecl(_), tree.Statement.fromDefn(_), tree.Statement.fromExpr(_)), freshLabels)
+      case p : AST.Term =>
+        for ((e, freshLabels2) <- instantiate(p, context, freshLabels))
+        yield (tree.Statement.fromExpr(e), freshLabels2)
+    }
 
   def instantiateList(pats : List[AST.Term], context : List[(AST.MetaVariable, Value)], freshLabels : Stream[SLabel]) : Option[(List[tree.TypelessExpr], Stream[SLabel])] =
     pats.foldRight(Option((List[tree.TypelessExpr](), freshLabels)))( (p, acc) =>
@@ -248,8 +250,8 @@ object Matcher {
         for ((lExpr, freshLabels2) <- instantiate(lhs, context, freshLabels);
              (exprs, freshLabelsN) <- instantiateList(args, context, freshLabels2))
         yield (tree.AppInfix(freshLabelsN.head, lExpr, method, exprs, ()), freshLabelsN.tail)
-      case AST.Block(terms) =>
-        for ((stmts, freshLabelsN) <- instantiateStmts(terms, context, freshLabels))
+      case AST.Block(stmtPats) =>
+        for ((stmts, freshLabelsN) <- instantiateStmts(stmtPats, context, freshLabels))
         yield (tree.Block(freshLabelsN.head, stmts, ()), freshLabelsN.tail)
     }
   }

@@ -22,5 +22,5 @@ object AST {
   case class Assign(lhs : Term, rhs : Term) extends Term
   case class App(method : Term, args : List[Term]) extends Term
   case class AppInfix(lhs : Term, method : meta.Term.Name, args : List[Term]) extends Term
-  case class Block(terms : List[Term]) extends Term
+  case class Block(terms : List[Statement]) extends Term
 }
